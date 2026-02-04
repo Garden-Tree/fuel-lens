@@ -1,19 +1,15 @@
-// src/app/api/analyze/route.ts
 import { GoogleGenAI } from "@google/genai";
 import { NextResponse } from "next/server";
 
-// 新しいSDK初期化
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
 export async function POST(req: Request) {
-  // ★計測開始: サーバー処理全体
+  // ★計測開始
   console.time("③ Server: Total Process Time");
 
   try {
     const { imageBase64 } = await req.json();
     const base64Data = imageBase64.split(",")[1];
-
-    // 受信した画像サイズをログ出力 (KB単位)
     const sizeInKB = Math.round(base64Data.length * 0.75 / 1024);
     console.log(`📷 Server received image size: ${sizeInKB} KB`);
 
@@ -32,11 +28,10 @@ export async function POST(req: Request) {
       }
     `;
 
-    // ★計測開始: Gemini呼び出し
     console.time("④ Server: Gemini API Call");
 
     const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash-lite", 
+      model: "gemini-2.5-flash-lite", // 爆速モデル
       contents: [
         {
           role: "user",
@@ -56,17 +51,22 @@ export async function POST(req: Request) {
       },
     });
 
-    console.timeEnd("④ Server: Gemini API Call"); // ログ出力
+    console.timeEnd("④ Server: Gemini API Call");
 
     const responseText = response.text;
-    
-    if (!responseText) {
-        throw new Error("AIからの応答が空でした");
-    }
+    if (!responseText) throw new Error("AIからの応答が空でした");
 
     const data = JSON.parse(responseText);
 
-    console.timeEnd("③ Server: Total Process Time"); // ログ出力
+    // ★追加ロジック: 単価の自動計算（割り算）
+    // AIが「税抜単価」を読み取ってしまう問題を回避するため、
+    // 総額と給油量が読み取れていれば、強制的に割り算で「税込単価」を算出する
+    if (data.total_cost && data.fuel_amount && data.fuel_amount > 0) {
+      // 四捨五入して整数にする（例: 168.4円 → 168円）
+      data.price_per_unit = Math.round(data.total_cost / data.fuel_amount);
+    }
+
+    console.timeEnd("③ Server: Total Process Time");
     
     return NextResponse.json(data);
 
