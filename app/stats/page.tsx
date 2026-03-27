@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
+import { SignedIn, SignedOut, SignInButton, UserButton } from "@clerk/nextjs";
 import { ArrowLeft, TrendingUp } from "lucide-react";
 import { 
   LineChart, 
@@ -16,37 +17,24 @@ import {
   Legend
 } from "recharts";
 
-type FuelRecord = {
-  id: string;
-  date: string;
-  total_distance: number | null;
-  fuel_amount: number | null;
-  gas_station: string | null;
-  price_per_unit: number | null;
-  total_cost: number | null;
-  fuel_efficiency: number | null;
-};
+import { useFuelRecords } from "@/lib/useFuelRecords";
 
 export default function StatsPage() {
-  const [records, setRecords] = useState<FuelRecord[]>([]);
+  const { records, loading } = useFuelRecords();
+
+  const [validRecords, setValidRecords] = useState<any[]>([]);
 
   useEffect(() => {
-    const saved = localStorage.getItem("fuel_lens_data");
-    if (saved) {
-      // 古い順にソートする（過去→現在）
-      const parsed: FuelRecord[] = JSON.parse(saved);
-      const sorted = parsed.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-      
-      // 不完全なデータをフィルタリングするかどうか検討しますが
-      // 描画するために一旦表示可能なものだけフィルターする
-      const validRecords = sorted.filter(r => r.fuel_efficiency !== null || r.total_cost !== null);
-      
-      setRecords(validRecords);
+    if (records.length > 0) {
+      const sorted = [...records].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+      setValidRecords(sorted.filter(r => r.fuel_efficiency !== null || r.total_cost !== null));
+    } else {
+      setValidRecords([]);
     }
-  }, []);
+  }, [records]);
 
   // グラフ用データ
-  const data = records.map((r, i) => ({
+  const data = validRecords.map((r, i) => ({
     name: r.date || `Record ${i+1}`,
     efficiency: r.fuel_efficiency || 0,
     cost: r.total_cost || 0,
@@ -86,13 +74,28 @@ export default function StatsPage() {
       <div className="w-full max-w-5xl">
       
         {/* ヘッダー */}
-        <header className="flex items-center gap-4 py-4 mb-6 md:mb-10 sticky top-0 bg-black/80 backdrop-blur-md z-10 w-full">
-          <Link href="/" className="p-2 bg-gray-900 rounded-full hover:bg-gray-800 transition">
-            <ArrowLeft className="w-5 h-5 text-gray-300" />
-          </Link>
-          <h1 className="text-xl md:text-2xl font-bold flex items-center gap-2">
-            <TrendingUp className="w-6 h-6 text-blue-500" /> 統計・推移
-          </h1>
+        <header className="flex items-center justify-between py-4 mb-6 md:mb-10 sticky top-0 bg-black/80 backdrop-blur-md z-10 w-full">
+          <div className="flex items-center gap-4">
+            <Link href="/" className="p-2 bg-gray-900 rounded-full hover:bg-gray-800 transition">
+              <ArrowLeft className="w-5 h-5 text-gray-300" />
+            </Link>
+            <h1 className="text-xl md:text-2xl font-bold flex items-center gap-2">
+              <TrendingUp className="w-6 h-6 text-blue-500" /> 統計・推移
+            </h1>
+          </div>
+          
+          <div className="flex items-center gap-3">
+            <SignedOut>
+              <SignInButton forceRedirectUrl="/stats">
+                <button className="bg-blue-600 hover:bg-blue-500 text-white text-sm font-bold py-1.5 px-4 rounded-full transition shadow-lg">
+                  ログイン
+                </button>
+              </SignInButton>
+            </SignedOut>
+            <SignedIn>
+              <UserButton />
+            </SignedIn>
+          </div>
         </header>
 
         {records.length < 2 ? (

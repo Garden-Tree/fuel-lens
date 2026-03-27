@@ -2,36 +2,22 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
+import { SignedIn, SignedOut, SignInButton, UserButton } from "@clerk/nextjs";
 import { ArrowLeft, Trash2, MapPin, Calendar, Fuel, BarChart3 } from "lucide-react";
 
-// 型定義 (共通化していないので一旦ここにも書きます)
-type FuelRecord = {
-  id: string;
-  date: string;
-  total_distance: number | null;
-  fuel_amount: number | null;
-  gas_station: string | null;
-  price_per_unit: number | null;
-  total_cost: number | null;
-  fuel_efficiency: number | null;
-};
+import { useFuelRecords } from "@/lib/useFuelRecords";
 
 export default function HistoryPage() {
-  const [records, setRecords] = useState<FuelRecord[]>([]);
-
-  // ロード時にデータを取得
-  useEffect(() => {
-    const saved = localStorage.getItem("fuel_lens_data");
-    if (saved) setRecords(JSON.parse(saved));
-  }, []);
+  const { records, deleteRecord } = useFuelRecords();
 
   // 削除機能
-  const deleteRecord = (id: string) => {
+  const handleDelete = async (id: string) => {
     if (!confirm("この記録を削除しますか？")) return;
-    
-    const newRecords = records.filter(r => r.id !== id);
-    setRecords(newRecords);
-    localStorage.setItem("fuel_lens_data", JSON.stringify(newRecords));
+    try {
+      await deleteRecord(id);
+    } catch(e) {
+      alert("削除に失敗しました");
+    }
   };
 
   return (
@@ -47,10 +33,23 @@ export default function HistoryPage() {
           <h1 className="text-xl md:text-2xl font-bold">給油履歴</h1>
         </div>
         
-        <Link href="/stats" className="p-2 bg-gray-900 rounded-full hover:bg-gray-800 transition text-gray-300 group flex items-center gap-2">
-          <span className="hidden sm:inline text-sm font-bold pr-1">グラフを見る</span>
-          <BarChart3 className="w-5 h-5 text-blue-400" />
-        </Link>
+        <div className="flex items-center gap-3">
+          <Link href="/stats" className="p-2 bg-gray-900 rounded-full hover:bg-gray-800 transition text-gray-300 group flex items-center gap-2">
+            <span className="hidden sm:inline text-sm font-bold pr-1">グラフを見る</span>
+            <BarChart3 className="w-5 h-5 text-blue-400" />
+          </Link>
+
+          <SignedOut>
+            <SignInButton forceRedirectUrl="/history">
+              <button className="bg-blue-600 hover:bg-blue-500 text-white text-sm font-bold py-1.5 px-4 rounded-full transition shadow-lg">
+                ログイン
+              </button>
+            </SignInButton>
+          </SignedOut>
+          <SignedIn>
+            <UserButton />
+          </SignedIn>
+        </div>
       </header>
 
       {/* リスト表示 */}
@@ -103,7 +102,7 @@ export default function HistoryPage() {
 
               {/* 削除ボタン (右上に配置) */}
               <button 
-                onClick={() => deleteRecord(rec.id)}
+                onClick={() => handleDelete(rec.id)}
                 className="absolute top-4 right-4 p-2 text-gray-600 hover:text-red-500 transition opacity-100 sm:opacity-0 sm:group-hover:opacity-100"
               >
                 <Trash2 className="w-4 h-4" />

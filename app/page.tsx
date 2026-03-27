@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import Link from "next/link"; // ★追加: リンク用
+import { SignedIn, SignedOut, SignInButton, UserButton } from "@clerk/nextjs";
 import { 
   Camera, 
   History, 
@@ -20,35 +21,22 @@ import {
   BarChart3 // ★追加: アイコン
 } from "lucide-react";
 import imageCompression from "browser-image-compression";
+import { useFuelRecords, FuelRecord } from "@/lib/useFuelRecords";
 
-// 型定義
-type FuelRecord = {
-  id: string;
-  date: string;
-  total_distance: number | null;
-  fuel_amount: number | null;
-  gas_station: string | null;
-  price_per_unit: number | null;
-  total_cost: number | null;
-  fuel_efficiency: number | null;
-};
+
 
 export default function Home() {
+  const { records, loading: recordsLoading, addRecord, updateRecord } = useFuelRecords();
+
   const [loading, setLoading] = useState(false);
   const [loadingStep, setLoadingStep] = useState<"compress" | "analyze" | null>(null);
-  const [records, setRecords] = useState<FuelRecord[]>([]);
   const [preview, setPreview] = useState<string | null>(null);
   
   const [isEditing, setIsEditing] = useState(false);
-  const [editForm, setEditForm] = useState<FuelRecord | null>(null);
+  const [editForm, setEditForm] = useState<Partial<FuelRecord> | null>(null);
   
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const galleryInputRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    const saved = localStorage.getItem("fuel_lens_data");
-    if (saved) setRecords(JSON.parse(saved));
-  }, []);
 
   // 画像処理
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -102,15 +90,17 @@ export default function Home() {
         calcEfficiency = parseFloat((data.total_distance / data.fuel_amount).toFixed(2));
       }
 
-      const newRecord: FuelRecord = {
-        id: Date.now().toString(),
-        ...data,
+      const newRecord = {
+        date: data.date,
+        total_distance: data.total_distance,
+        fuel_amount: data.fuel_amount,
+        gas_station: data.gas_station,
+        price_per_unit: data.price_per_unit,
+        total_cost: data.total_cost,
         fuel_efficiency: calcEfficiency,
       };
 
-      const updatedRecords = [newRecord, ...records];
-      setRecords(updatedRecords);
-      localStorage.setItem("fuel_lens_data", JSON.stringify(updatedRecords));
+      await addRecord(newRecord);
       
       // プレビューは維持
 
@@ -137,21 +127,16 @@ export default function Home() {
     setEditForm(null);
   };
 
-  const saveEditing = () => {
-    if (!editForm) return;
+  const saveEditing = async () => {
+    if (!editForm || !editForm.id) return;
 
     let newEfficiency = editForm.fuel_efficiency;
     if (editForm.total_distance && editForm.fuel_amount && editForm.fuel_amount > 0) {
       newEfficiency = parseFloat((editForm.total_distance / editForm.fuel_amount).toFixed(2));
     }
 
-    const updatedRecord = { ...editForm, fuel_efficiency: newEfficiency };
-    const updatedRecords = records.map((rec) => 
-      rec.id === updatedRecord.id ? updatedRecord : rec
-    );
-
-    setRecords(updatedRecords);
-    localStorage.setItem("fuel_lens_data", JSON.stringify(updatedRecords));
+    const { id, ...updates } = editForm;
+    await updateRecord(id as string, { ...updates, fuel_efficiency: newEfficiency });
     
     setIsEditing(false);
     setEditForm(null);
@@ -206,6 +191,17 @@ export default function Home() {
             <span className="hidden md:inline text-sm font-semibold pr-1">給油履歴</span>
             <History className="w-5 h-5" />
           </Link>
+
+          <SignedOut>
+            <SignInButton forceRedirectUrl="/">
+              <button className="bg-blue-600 hover:bg-blue-500 text-white text-sm font-bold py-1.5 px-4 rounded-full transition shadow-lg">
+                ログイン
+              </button>
+            </SignInButton>
+          </SignedOut>
+          <SignedIn>
+            <UserButton />
+          </SignedIn>
         </div>
       </header>
 
