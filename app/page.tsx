@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
+import Link from "next/link"; // ★追加: リンク用
 import { 
   Camera, 
   History, 
@@ -13,7 +14,10 @@ import {
   Save,  
   X,     
   Calculator,
-  Lock
+  Lock,
+  ChevronRight,
+  TrendingUp,
+  BarChart3 // ★追加: アイコン
 } from "lucide-react";
 import imageCompression from "browser-image-compression";
 
@@ -35,7 +39,6 @@ export default function Home() {
   const [records, setRecords] = useState<FuelRecord[]>([]);
   const [preview, setPreview] = useState<string | null>(null);
   
-  // 編集モード管理
   const [isEditing, setIsEditing] = useState(false);
   const [editForm, setEditForm] = useState<FuelRecord | null>(null);
   
@@ -56,7 +59,8 @@ export default function Home() {
     const options = {
       maxSizeMB: 0.8,
       maxWidthOrHeight: 1200,
-      useWebWorker: true,
+      useWebWorker: false,
+      fileType: "image/jpeg"
     };
 
     setLoading(true);
@@ -64,14 +68,17 @@ export default function Home() {
 
     try {
       const compressedFile = await imageCompression(file, options);
+      console.log(`圧縮成功: ${(compressedFile.size / 1024 / 1024).toFixed(2)} MB`);
+
       const reader = new FileReader();
       reader.onload = async (event) => {
         const base64 = event.target?.result as string;
-        setPreview(base64); // ★ここでセットした画像を表示し続ける
+        setPreview(base64);
         analyzeImage(base64);
       };
       reader.readAsDataURL(compressedFile);
     } catch (error) {
+      console.error(error);
       setLoading(false);
       alert("画像の処理に失敗しました");
     }
@@ -90,7 +97,6 @@ export default function Home() {
 
       if (data.error) throw new Error(data.error);
 
-      // 燃費計算
       let calcEfficiency = null;
       if (data.total_distance && data.fuel_amount && data.fuel_amount > 0) {
         calcEfficiency = parseFloat((data.total_distance / data.fuel_amount).toFixed(2));
@@ -106,8 +112,7 @@ export default function Home() {
       setRecords(updatedRecords);
       localStorage.setItem("fuel_lens_data", JSON.stringify(updatedRecords));
       
-      // ★修正: 解析が終わってもプレビューを消さない
-      // setPreview(null); 
+      // プレビューは維持
 
     } catch (err) {
       alert("解析に失敗しました。");
@@ -118,24 +123,20 @@ export default function Home() {
     }
   };
 
-  // プレビューを閉じる
   const clearPreview = () => {
     setPreview(null);
   };
 
-  // 編集開始
   const startEditing = (record: FuelRecord) => {
     setEditForm({ ...record });
     setIsEditing(true);
   };
 
-  // 編集キャンセル
   const cancelEditing = () => {
     setIsEditing(false);
     setEditForm(null);
   };
 
-  // 編集保存
   const saveEditing = () => {
     if (!editForm) return;
 
@@ -156,7 +157,6 @@ export default function Home() {
     setEditForm(null);
   };
 
-  // フォーム入力ハンドラ
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>, field: keyof FuelRecord) => {
     if (!editForm) return;
     const val = e.target.value;
@@ -180,11 +180,12 @@ export default function Home() {
     setEditForm(newForm);
   };
 
+  // 最新の1件のみ取得
   const latestRecord = records[0];
-  const pastRecords = records.slice(1);
 
   return (
-    <main className="min-h-screen bg-gradient-to-b from-gray-900 to-black text-white p-4 pb-32 max-w-md mx-auto font-sans">
+    <main className="min-h-screen bg-gradient-to-b from-gray-900 to-black text-white p-4 md:p-8 pb-32 font-sans flex flex-col items-center">
+      <div className="w-full max-w-5xl">
       
       {/* ヘッダー */}
       <header className="flex items-center justify-between py-4 mb-6">
@@ -194,12 +195,25 @@ export default function Home() {
           </div>
           <h1 className="text-xl font-bold tracking-tight">FuelLens</h1>
         </div>
+        
+        {/* ヘッダーの履歴ボタンもリンクに変更 */}
+        <div className="flex items-center gap-3">
+          <Link href="/stats" className="p-2 bg-gray-800/50 rounded-full border border-gray-700/50 text-gray-400 hover:text-white transition group flex items-center gap-2">
+            <span className="hidden md:inline text-sm font-semibold pr-1">グラフ</span>
+            <BarChart3 className="w-5 h-5" />
+          </Link>
+          <Link href="/history" className="p-2 bg-gray-800/50 rounded-full border border-gray-700/50 text-gray-400 hover:text-white transition group flex items-center gap-2">
+            <span className="hidden md:inline text-sm font-semibold pr-1">給油履歴</span>
+            <History className="w-5 h-5" />
+          </Link>
+        </div>
       </header>
 
-      {/* アクションエリア（プレビュー or カメラボタン） */}
-      <div className="relative overflow-hidden bg-gray-800/40 backdrop-blur-xl border border-gray-700/50 rounded-3xl mb-8 shadow-2xl transition-all">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-start">
+        <div className="flex flex-col gap-6">
+          {/* アクションエリア */}
+          <div className="relative overflow-hidden bg-gray-800/40 backdrop-blur-xl border border-gray-700/50 rounded-3xl shadow-2xl transition-all">
         
-        {/* ローディングオーバーレイ (画像の有無に関わらず表示) */}
         {loading && (
           <div className="absolute inset-0 z-50 bg-black/60 flex flex-col items-center justify-center backdrop-blur-sm">
             <Loader2 className="w-10 h-10 text-blue-500 animate-spin mb-3" />
@@ -210,7 +224,6 @@ export default function Home() {
         )}
 
         {preview ? (
-          /* ★プレビュー画像表示エリア */
           <div className="relative">
              {/* eslint-disable-next-line @next/next/no-img-element */}
             <img 
@@ -218,7 +231,6 @@ export default function Home() {
               alt="Preview" 
               className="w-full max-h-[300px] object-cover opacity-90" 
             />
-            {/* 閉じるボタン (解析中でも押せるようにz-index調整はお好みで。今回は解析中は触れないようにLoadingの下) */}
             {!loading && (
               <button 
                 onClick={clearPreview}
@@ -227,8 +239,6 @@ export default function Home() {
                 <X className="w-5 h-5" />
               </button>
             )}
-            
-            {/* 解析完了後の再撮影ボタン（画像の下部に配置） */}
             {!loading && (
               <div className="absolute bottom-3 right-3 flex gap-2">
                 <button
@@ -241,7 +251,6 @@ export default function Home() {
             )}
           </div>
         ) : (
-          /* ★カメラボタンエリア（画像がない時だけ表示） */
           <div className="p-6 flex flex-col items-center gap-6">
             <div className="text-center space-y-1">
               <h2 className="text-lg font-semibold text-white">スキャンして記録</h2>
@@ -269,12 +278,14 @@ export default function Home() {
         )}
       </div>
 
-      {/* 隠しinput */}
       <input type="file" accept="image/*" capture="environment" className="hidden" ref={cameraInputRef} onChange={handleFileChange} />
       <input type="file" accept="image/*" className="hidden" ref={galleryInputRef} onChange={handleFileChange} />
+        </div>
 
-      {/* 最新リザルトカード */}
-      {latestRecord && (
+      {/* 右カラム (最新リザルト + 履歴ボタン) */}
+      <div className="flex flex-col gap-6">
+          {/* 最新リザルトカード */}
+          {latestRecord && (
         <div className="mb-8 animate-in slide-in-from-bottom-5 duration-500">
           <div className="flex items-center justify-between px-2 mb-2">
             <h3 className="text-sm font-bold text-gray-400 uppercase tracking-wider flex items-center gap-2">
@@ -396,37 +407,30 @@ export default function Home() {
             )}
           </div>
         </div>
-      )}
-
-      {/* 過去の履歴リスト */}
-      {pastRecords.length > 0 && (
-        <div className="opacity-60 hover:opacity-100 transition-opacity">
-          <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3 px-2 flex items-center gap-2">
-            <History className="w-3 h-3" /> History
-          </h3>
-          <div className="space-y-2">
-            {pastRecords.map((rec) => (
-              <div key={rec.id} className="bg-gray-900 border border-gray-800 rounded-xl p-4 flex justify-between items-center">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-lg bg-gray-800 flex items-center justify-center text-gray-400 font-mono text-sm font-bold">
-                    {rec.fuel_efficiency?.toFixed(1) || "-"}
-                  </div>
-                  <div>
-                    <p className="text-xs text-gray-400">{rec.date}</p>
-                    <p className="text-sm text-gray-300 truncate w-32">{rec.gas_station}</p>
-                  </div>
-                </div>
-                <div className="text-right">
-                   <p className="text-sm font-mono text-gray-400">¥{rec.total_cost?.toLocaleString()}</p>
-                </div>
+        )}
+        
+        {/* 履歴画面へのリンクボタン */}
+        <div className="mt-auto">
+          <Link 
+            href="/history"
+            className="group flex items-center justify-between w-full p-4 md:p-6 rounded-2xl bg-gray-900 border border-gray-800 hover:border-gray-700 transition"
+          >
+            <div className="flex items-center gap-4">
+              <div className="p-3 bg-gray-800 rounded-xl">
+                  <History className="w-6 h-6 text-gray-400" />
               </div>
-            ))}
-          </div>
-          <button className="w-full py-4 text-center text-xs text-gray-500 hover:text-white transition mt-2">
-            すべての履歴を見る →
-          </button>
+              <div>
+                  <p className="text-base md:text-lg font-bold text-gray-200">過去の記録を見る</p>
+                  <p className="text-sm text-gray-500">{records.length}件の履歴</p>
+              </div>
+            </div>
+            <ChevronRight className="w-6 h-6 text-gray-500 group-hover:text-white transition" />
+          </Link>
         </div>
-      )}
+
+      </div>
+      </div>
+      </div>
     </main>
   );
 }
