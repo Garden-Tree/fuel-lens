@@ -3,12 +3,15 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { SignedIn, SignedOut, SignInButton, UserButton } from "@clerk/nextjs";
-import { ArrowLeft, Trash2, MapPin, Calendar, Fuel, BarChart3 } from "lucide-react";
+import { ArrowLeft, Trash2, MapPin, Calendar, Fuel, BarChart3, Edit2, Save, X, Lock } from "lucide-react";
 
-import { useFuelRecords } from "@/lib/useFuelRecords";
+import { useFuelRecords, FuelRecord } from "@/lib/useFuelRecords";
 
 export default function HistoryPage() {
-  const { records, deleteRecord } = useFuelRecords();
+  const { records, deleteRecord, updateRecord } = useFuelRecords();
+
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editForm, setEditForm] = useState<Partial<FuelRecord> | null>(null);
 
   // 削除機能
   const handleDelete = async (id: string) => {
@@ -18,6 +21,55 @@ export default function HistoryPage() {
     } catch(e) {
       alert("削除に失敗しました");
     }
+  };
+
+  // 編集開始
+  const startEditing = (record: FuelRecord) => {
+    setEditingId(record.id);
+    setEditForm({ ...record });
+  };
+
+  const cancelEditing = () => {
+    setEditingId(null);
+    setEditForm(null);
+  };
+
+  const saveEditing = async () => {
+    if (!editForm || !editForm.id) return;
+    
+    let newEfficiency = editForm.fuel_efficiency;
+    if (editForm.total_distance && editForm.fuel_amount && editForm.fuel_amount > 0) {
+      newEfficiency = parseFloat((editForm.total_distance / editForm.fuel_amount).toFixed(2));
+    }
+
+    const { id, ...updates } = editForm;
+    await updateRecord(id as string, { ...updates, fuel_efficiency: newEfficiency });
+    
+    setEditingId(null);
+    setEditForm(null);
+  };
+
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>, field: keyof FuelRecord) => {
+    if (!editForm) return;
+    const val = e.target.value;
+    
+    let newForm = { ...editForm };
+    const numFields = ["total_distance", "fuel_amount", "price_per_unit", "total_cost"];
+    
+    if (numFields.includes(field)) {
+      (newForm as any)[field] = val === "" ? null : parseFloat(val);
+    } else {
+      (newForm as any)[field] = val;
+    }
+
+    if (field === "fuel_amount" || field === "total_cost") {
+      const amount = (newForm as any).fuel_amount;
+      const cost = (newForm as any).total_cost;
+      if (amount && cost && amount > 0) {
+        (newForm as any).price_per_unit = Math.round(cost / amount);
+      }
+    }
+    setEditForm(newForm);
   };
 
   return (
@@ -60,54 +112,127 @@ export default function HistoryPage() {
           </div>
         ) : (
           records.map((rec) => (
-            <div key={rec.id} className="bg-gray-900 border border-gray-800 rounded-2xl p-5 relative group">
-              
-              <div className="flex justify-between items-start mb-3">
-                <div>
-                  <div className="flex items-center gap-2 text-xs text-gray-500 mb-1">
-                    <Calendar className="w-3 h-3" />
-                    {rec.date || "日付不明"}
+            editingId === rec.id && editForm ? (
+              <div key={`edit-${rec.id}`} className="bg-gray-800 border border-blue-500 ring-1 ring-blue-500 rounded-2xl p-5 relative">
+                <div className="space-y-4">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="text-xs text-gray-500 block mb-1">給油量 (L)</label>
+                      <input 
+                        type="number" 
+                        value={editForm.fuel_amount || ""} 
+                        onChange={(e) => handleInputChange(e, "fuel_amount")}
+                        className="w-full bg-gray-900 border border-gray-600 rounded-lg p-2 text-white font-mono focus:border-blue-500 outline-none"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs text-gray-500 block mb-1">支払総額 (円)</label>
+                      <input 
+                        type="number" 
+                        value={editForm.total_cost || ""} 
+                        onChange={(e) => handleInputChange(e, "total_cost")}
+                        className="w-full bg-gray-900 border border-gray-600 rounded-lg p-2 text-white font-mono focus:border-blue-500 outline-none"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs text-gray-500 block mb-1">走行距離 (km)</label>
+                      <input 
+                        type="number" 
+                        value={editForm.total_distance || ""} 
+                        onChange={(e) => handleInputChange(e, "total_distance")}
+                        className="w-full bg-gray-900 border border-gray-600 rounded-lg p-2 text-white font-mono focus:border-blue-500 outline-none"
+                      />
+                    </div>
+                    <div className="relative">
+                      <label className="text-xs text-gray-500 block mb-1 flex items-center gap-1">
+                         単価 (円/L) <Lock className="w-3 h-3 opacity-50"/>
+                      </label>
+                      <input 
+                        type="number" 
+                        value={editForm.price_per_unit || ""} 
+                        readOnly 
+                        className="w-full bg-gray-950/50 border border-gray-800 rounded-lg p-2 text-gray-500 font-mono focus:outline-none cursor-not-allowed"
+                      />
+                    </div>
                   </div>
-                  <div className="flex items-baseline gap-1">
-                    <span className={`text-2xl font-bold font-mono ${rec.fuel_efficiency ? 'text-white' : 'text-gray-600'}`}>
-                      {rec.fuel_efficiency ? rec.fuel_efficiency.toFixed(2) : "--.--"}
-                    </span>
-                    <span className="text-xs font-bold text-blue-500">km/L</span>
+                  <div>
+                     <label className="text-xs text-gray-500 block mb-1">ガソリンスタンド名</label>
+                     <input 
+                        type="text" 
+                        value={editForm.gas_station || ""} 
+                        onChange={(e) => handleInputChange(e, "gas_station")}
+                        className="w-full bg-gray-900 border border-gray-600 rounded-lg p-2 text-white text-sm focus:border-blue-500 outline-none"
+                      />
+                  </div>
+                  <div className="flex gap-2 pt-2">
+                    <button onClick={cancelEditing} className="flex-1 py-2.5 rounded-xl bg-gray-700 text-white font-bold flex items-center justify-center gap-1 text-sm">
+                      <X className="w-4 h-4" /> キャンセル
+                    </button>
+                    <button onClick={saveEditing} className="flex-1 py-2.5 rounded-xl bg-blue-600 text-white font-bold flex items-center justify-center gap-1 text-sm shadow-lg shadow-blue-900/50">
+                      <Save className="w-4 h-4" /> 保存
+                    </button>
                   </div>
                 </div>
-                
-                <div className="text-right">
-                  <p className="text-lg font-bold text-green-400 font-mono">
-                    ¥{rec.total_cost?.toLocaleString() || "---"}
-                  </p>
-                  <p className="text-[10px] text-gray-500">Total Cost</p>
+              </div>
+            ) : (
+              <div key={rec.id} className="bg-gray-900 border border-gray-800 rounded-2xl p-5 relative group">
+                <div className="flex justify-between items-start mb-3">
+                  <div>
+                    <div className="flex items-center gap-2 text-xs text-gray-500 mb-1">
+                      <Calendar className="w-3 h-3" />
+                      {rec.date || "日付不明"}
+                    </div>
+                    <div className="flex items-baseline gap-1">
+                      <span className={`text-2xl font-bold font-mono ${rec.fuel_efficiency ? 'text-white' : 'text-gray-600'}`}>
+                        {rec.fuel_efficiency ? rec.fuel_efficiency.toFixed(2) : "--.--"}
+                      </span>
+                      <span className="text-xs font-bold text-blue-500">km/L</span>
+                    </div>
+                  </div>
+                  
+                  <div className="text-right">
+                    <p className="text-lg font-bold text-green-400 font-mono pr-8">
+                      ¥{rec.total_cost?.toLocaleString() || "---"}
+                    </p>
+                    <p className="text-[10px] text-gray-500 pr-8">Total Cost</p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2 text-sm bg-black/20 p-3 rounded-lg">
+                  <div className="flex justify-between border-r border-gray-800 pr-2">
+                      <span className="text-gray-500 text-xs">給油量</span>
+                      <span className="font-mono text-gray-300">{rec.fuel_amount} L</span>
+                  </div>
+                  <div className="flex justify-between pl-2">
+                      <span className="text-gray-500 text-xs">走行</span>
+                      <span className="font-mono text-gray-300">{rec.total_distance} km</span>
+                  </div>
+                </div>
+
+                <div className="mt-3 flex items-center gap-2 text-xs text-gray-500">
+                  <MapPin className="w-3 h-3" />
+                  <span className="truncate">{rec.gas_station || "SS不明"}</span>
+                </div>
+
+                {/* 操作ボタン群 (右上に配置) */}
+                <div className="absolute top-4 right-4 flex items-center opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition duration-200">
+                  <button 
+                    onClick={() => startEditing(rec)}
+                    className="p-1.5 text-gray-500 hover:text-blue-400 transition"
+                    title="編集"
+                  >
+                    <Edit2 className="w-4 h-4" />
+                  </button>
+                  <button 
+                    onClick={() => handleDelete(rec.id)}
+                    className="p-1.5 text-gray-500 hover:text-red-500 transition"
+                    title="削除"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
                 </div>
               </div>
-
-              <div className="grid grid-cols-2 gap-2 text-sm bg-black/20 p-3 rounded-lg">
-                <div className="flex justify-between border-r border-gray-800 pr-2">
-                    <span className="text-gray-500 text-xs">給油量</span>
-                    <span className="font-mono text-gray-300">{rec.fuel_amount} L</span>
-                </div>
-                <div className="flex justify-between pl-2">
-                    <span className="text-gray-500 text-xs">走行</span>
-                    <span className="font-mono text-gray-300">{rec.total_distance} km</span>
-                </div>
-              </div>
-
-              <div className="mt-3 flex items-center gap-2 text-xs text-gray-500">
-                <MapPin className="w-3 h-3" />
-                <span className="truncate">{rec.gas_station || "SS不明"}</span>
-              </div>
-
-              {/* 削除ボタン (右上に配置) */}
-              <button 
-                onClick={() => handleDelete(rec.id)}
-                className="absolute top-4 right-4 p-2 text-gray-600 hover:text-red-500 transition opacity-100 sm:opacity-0 sm:group-hover:opacity-100"
-              >
-                <Trash2 className="w-4 h-4" />
-              </button>
-            </div>
+            )
           ))
         )}
       </div>
