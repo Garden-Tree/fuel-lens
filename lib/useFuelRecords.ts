@@ -48,10 +48,14 @@ export function useFuelRecords() {
             return { ...rest, user_id: userId };
           });
 
-          for (const rec of recordsToInsert) {
-            await supabase.from("fuel_records").insert(rec);
+          // Bulk insert for better performance
+          const { error: insertError } = await supabase.from("fuel_records").insert(recordsToInsert);
+          
+          if (!insertError) {
+            localStorage.removeItem("fuel_lens_data");
+          } else {
+            console.error("マイグレーションに失敗しました", insertError);
           }
-          localStorage.removeItem("fuel_lens_data");
         }
       }
 
