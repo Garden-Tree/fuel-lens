@@ -1,36 +1,28 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# FuelLens
 
-## Getting Started
+FuelLensは、車の給油時にガソリンスタンドのレシートと車のメーターを撮影（または画像アップロード）するだけで、AIが自動的に給油量・走行距離・金額などを読み取り、燃費を計算して記録してくれるWebアプリケーションです。
 
-First, run the development server:
+## 特徴
+- **AI OCRによる自動入力**: レシートとメーターの画像をAI（Google Gemini）が解析し、給油情報を自動抽出。手入力の手間を省きます。
+- **燃費の自動計算**: 読み取った「走行距離」と「給油量」から燃費（km/L）を自動算出して記録。
+- **履歴とグラフ**: 過去の履歴を一覧表示できるだけでなく、チャートで燃費の推移や支出を可視化できます。
+- **クラウド同期**: アカウント登録（Clerk）することで、ローカルストレージだけでなくSupabaseのデータベースに記録が保存され、マルチデバイスでデータを一元管理できます。未ログインのままでの体験も可能です。
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
+## 使い方
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+1. プロジェクトをクローン
+2. 依存パッケージのインストール
+   ```bash
+   npm install
+   ```
+3. 環境変数の設定
+   プロジェクト直下に `.env.local` を作成し、各種APIキー・URLを設定します（詳細はドキュメント参照）。
+4. 開発サーバーの起動
+   ```bash
+   npm run dev
+   ```
+5. `http://localhost:3000` にアクセスして動作を確認します。
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
-
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
-
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## ドキュメント
+開発者向けの詳細な技術スタックや構成については、`docs/` フォルダ内を参照してください。
+- [技術スタックと選定理由](./docs/tech_stack.md)
