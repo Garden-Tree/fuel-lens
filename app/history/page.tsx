@@ -1,17 +1,31 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import Link from "next/link";
 import { SignedIn, SignedOut, SignInButton, UserButton } from "@clerk/nextjs";
-import { ArrowLeft, Trash2, MapPin, Calendar, Fuel, BarChart3, Edit2, Save, X, Lock } from "lucide-react";
+import { ArrowLeft, Trash2, MapPin, Calendar, Fuel, BarChart3, Edit2, Save, X, Lock, ArrowUpDown } from "lucide-react";
 
 import { useFuelRecords, FuelRecord } from "@/lib/useFuelRecords";
+import EditFuelRecordForm from "@/components/EditFuelRecordForm";
 
 export default function HistoryPage() {
   const { records, deleteRecord, updateRecord } = useFuelRecords();
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editForm, setEditForm] = useState<Partial<FuelRecord> | null>(null);
+
+  const [sortType, setSortType] = useState<"date" | "created_at">("date");
+
+  const sortedRecords = useMemo(() => {
+    if (sortType === "created_at") {
+      return records;
+    }
+    return [...records].sort((a, b) => {
+      const dateA = a.date ? new Date(a.date).getTime() : 0;
+      const dateB = b.date ? new Date(b.date).getTime() : 0;
+      return dateB - dateA;
+    });
+  }, [records, sortType]);
 
   // 削除機能
   const handleDelete = async (id: string) => {
@@ -104,75 +118,42 @@ export default function HistoryPage() {
         </div>
       </header>
 
+      {/* 操作パネル */}
+      {records.length > 0 && (
+        <div className="flex justify-end mb-4">
+          <div className="flex items-center gap-1 bg-gray-900 rounded-lg p-1 border border-gray-800">
+            <button
+              onClick={() => setSortType("date")}
+              className={`px-3 py-1.5 text-xs font-bold rounded-md transition ${sortType === "date" ? "bg-blue-600 text-white shadow-sm" : "text-gray-400 hover:text-white"}`}
+            >
+              給油日順
+            </button>
+            <button
+              onClick={() => setSortType("created_at")}
+              className={`px-3 py-1.5 text-xs font-bold rounded-md transition ${sortType === "created_at" ? "bg-blue-600 text-white shadow-sm" : "text-gray-400 hover:text-white"}`}
+            >
+              登録順
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* リスト表示 */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
-        {records.length === 0 ? (
+        {sortedRecords.length === 0 ? (
           <div className="text-center py-20 text-gray-600 col-span-full">
             <p>履歴がありません</p>
           </div>
         ) : (
-          records.map((rec) => (
+          sortedRecords.map((rec) => (
             editingId === rec.id && editForm ? (
               <div key={`edit-${rec.id}`} className="bg-gray-800 border border-blue-500 ring-1 ring-blue-500 rounded-2xl p-5 relative">
-                <div className="space-y-4">
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="text-xs text-gray-500 block mb-1">給油量 (L)</label>
-                      <input 
-                        type="number" 
-                        value={editForm.fuel_amount || ""} 
-                        onChange={(e) => handleInputChange(e, "fuel_amount")}
-                        className="w-full bg-gray-900 border border-gray-600 rounded-lg p-2 text-white font-mono focus:border-blue-500 outline-none"
-                      />
-                    </div>
-                    <div>
-                      <label className="text-xs text-gray-500 block mb-1">支払総額 (円)</label>
-                      <input 
-                        type="number" 
-                        value={editForm.total_cost || ""} 
-                        onChange={(e) => handleInputChange(e, "total_cost")}
-                        className="w-full bg-gray-900 border border-gray-600 rounded-lg p-2 text-white font-mono focus:border-blue-500 outline-none"
-                      />
-                    </div>
-                    <div>
-                      <label className="text-xs text-gray-500 block mb-1">走行距離 (km)</label>
-                      <input 
-                        type="number" 
-                        value={editForm.total_distance || ""} 
-                        onChange={(e) => handleInputChange(e, "total_distance")}
-                        className="w-full bg-gray-900 border border-gray-600 rounded-lg p-2 text-white font-mono focus:border-blue-500 outline-none"
-                      />
-                    </div>
-                    <div className="relative">
-                      <label className="text-xs text-gray-500 block mb-1 flex items-center gap-1">
-                         単価 (円/L) <Lock className="w-3 h-3 opacity-50"/>
-                      </label>
-                      <input 
-                        type="number" 
-                        value={editForm.price_per_unit || ""} 
-                        readOnly 
-                        className="w-full bg-gray-950/50 border border-gray-800 rounded-lg p-2 text-gray-500 font-mono focus:outline-none cursor-not-allowed"
-                      />
-                    </div>
-                  </div>
-                  <div>
-                     <label className="text-xs text-gray-500 block mb-1">ガソリンスタンド名</label>
-                     <input 
-                        type="text" 
-                        value={editForm.gas_station || ""} 
-                        onChange={(e) => handleInputChange(e, "gas_station")}
-                        className="w-full bg-gray-900 border border-gray-600 rounded-lg p-2 text-white text-sm focus:border-blue-500 outline-none"
-                      />
-                  </div>
-                  <div className="flex gap-2 pt-2">
-                    <button onClick={cancelEditing} className="flex-1 py-2.5 rounded-xl bg-gray-700 text-white font-bold flex items-center justify-center gap-1 text-sm">
-                      <X className="w-4 h-4" /> キャンセル
-                    </button>
-                    <button onClick={saveEditing} className="flex-1 py-2.5 rounded-xl bg-blue-600 text-white font-bold flex items-center justify-center gap-1 text-sm shadow-lg shadow-blue-900/50">
-                      <Save className="w-4 h-4" /> 保存
-                    </button>
-                  </div>
-                </div>
+                <EditFuelRecordForm 
+                  editForm={editForm}
+                  handleInputChange={handleInputChange}
+                  cancelEditing={cancelEditing}
+                  saveEditing={saveEditing}
+                />
               </div>
             ) : (
               <div key={rec.id} className="bg-gray-900 border border-gray-800 rounded-2xl p-5 relative group">
@@ -191,10 +172,10 @@ export default function HistoryPage() {
                   </div>
                   
                   <div className="text-right">
-                    <p className="text-lg font-bold text-green-400 font-mono pr-8">
+                    <p className="text-lg font-bold text-green-400 font-mono">
                       ¥{rec.total_cost?.toLocaleString() || "---"}
                     </p>
-                    <p className="text-[10px] text-gray-500 pr-8">Total Cost</p>
+                    <p className="text-[10px] text-gray-500">Total Cost</p>
                   </div>
                 </div>
 
@@ -209,13 +190,13 @@ export default function HistoryPage() {
                   </div>
                 </div>
 
-                <div className="mt-3 flex items-center gap-2 text-xs text-gray-500">
-                  <MapPin className="w-3 h-3" />
+                <div className="mt-3 flex items-center gap-2 text-xs text-gray-500 pr-16">
+                  <MapPin className="w-3 h-3 flex-shrink-0" />
                   <span className="truncate">{rec.gas_station || "SS不明"}</span>
                 </div>
 
-                {/* 操作ボタン群 (右上に配置) */}
-                <div className="absolute top-4 right-4 flex items-center opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition duration-200">
+                {/* 操作ボタン群 (右下に配置) */}
+                <div className="absolute bottom-4 right-4 flex items-center opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition duration-200">
                   <button 
                     onClick={() => startEditing(rec)}
                     className="p-1.5 text-gray-500 hover:text-blue-400 transition"

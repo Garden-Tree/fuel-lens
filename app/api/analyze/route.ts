@@ -3,11 +3,44 @@ import { NextResponse } from "next/server";
 
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
+// 簡易的なオンメモリ・レートリミット (IPベース)
+// サーバーレス環境（Vercel等）ではエッジ/インスタンス毎に分離されますが、
+// 短時間での単純な連打スパムを抑止する効果はあります。
+const RATE_LIMIT_WINDOW_MS = 60 * 1000; // 1分
+const MAX_REQUESTS_PER_WINDOW = 5;      // 1分間に5回まで
+const ipRequests = new Map<string, { count: number; firstRequest: number }>();
+
 export async function POST(req: Request) {
   // ★計測開始
   console.time("③ Server: Total Process Time");
 
   try {
+    // ---- レートリミット検証 ----
+    const ip = req.headers.get("x-forwarded-for") || "unknown_ip";
+    const now = Date.now();
+    
+    if (ip !== "unknown_ip") {
+      const record = ipRequests.get(ip);
+      if (!record) {
+        ipRequests.set(ip, { count: 1, firstRequest: now });
+      } else {
+        if (now - record.firstRequest > RATE_LIMIT_WINDOW_MS) {
+          // 期限切れならリセット
+          ipRequests.set(ip, { count: 1, firstRequest: now });
+        } else {
+          record.count++;
+          if (record.count > MAX_REQUESTS_PER_WINDOW) {
+            console.warn(`🚨 Rate limit exceeded for IP: ${ip}`);
+            return NextResponse.json(
+              { error: "リクエストが多すぎます。しばらく時間をおいて再度お試しください。" }, 
+              { status: 429 }
+            );
+          }
+        }
+      }
+    }
+    // -------------------------
+
     const { imageBase64 } = await req.json();
     const base64Data = imageBase64.split(",")[1];
     const sizeInKB = Math.round(base64Data.length * 0.75 / 1024);
