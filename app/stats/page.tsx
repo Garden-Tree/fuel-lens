@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useMemo } from "react";
 import Link from "next/link";
 import { SignedIn, SignedOut, SignInButton, UserButton } from "@clerk/nextjs";
 import { ArrowLeft, TrendingUp } from "lucide-react";
@@ -13,68 +13,82 @@ import {
   Tooltip, 
   ResponsiveContainer,
   BarChart,
-  Bar,
-  Legend
+  Bar
 } from "recharts";
 
 import { useFuelRecords } from "@/lib/useFuelRecords";
+import { useVehicles } from "@/lib/useVehicles";
+import VehicleSelector from "@/components/VehicleSelector";
+
+interface TooltipProps {
+  active?: boolean;
+  payload?: Array<{
+    value: number;
+    payload: {
+      name: string;
+      efficiency: number;
+      cost: number;
+      gasStation: string;
+    };
+  }>;
+  label?: string;
+}
+
+function CustomEfficiencyTooltip({ active, payload, label }: TooltipProps) {
+  if (active && payload && payload.length > 0) {
+    const data = payload[0].payload;
+    return (
+      <div className="bg-gray-800 p-3 rounded-lg border border-gray-700 shadow-xl opacity-95">
+        <p className="text-gray-400 text-xs mb-1">{label}</p>
+        <p className="font-mono text-xl text-blue-400 font-bold">{payload[0].value.toFixed(2)} km/L</p>
+        <p className="text-xs text-gray-500 mt-1 truncate max-w-[150px]">{data.gasStation}</p>
+      </div>
+    );
+  }
+  return null;
+}
+
+function CustomCostTooltip({ active, payload, label }: TooltipProps) {
+  if (active && payload && payload.length > 0) {
+    return (
+      <div className="bg-gray-800 p-3 rounded-lg border border-gray-700 shadow-xl opacity-95">
+        <p className="text-gray-400 text-xs mb-1">{label}</p>
+        <p className="font-mono text-xl text-green-400 font-bold">¥{payload[0].value.toLocaleString()}</p>
+      </div>
+    );
+  }
+  return null;
+}
 
 export default function StatsPage() {
-  const { records, loading } = useFuelRecords();
+  const { vehicles, selectedVehicleId, setSelectedVehicleId, addVehicle, deleteVehicle } = useVehicles();
+  const { records } = useFuelRecords(selectedVehicleId);
 
-  const [validRecords, setValidRecords] = useState<any[]>([]);
-
-  useEffect(() => {
-    if (records.length > 0) {
-      const sorted = [...records].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-      setValidRecords(sorted.filter(r => r.fuel_efficiency !== null || r.total_cost !== null));
-    } else {
-      setValidRecords([]);
-    }
+  const validRecords = useMemo(() => {
+    if (!records || records.length === 0) return [];
+    const sorted = [...records].sort((a, b) => {
+      const timeA = a.date ? new Date(a.date).getTime() : 0;
+      const timeB = b.date ? new Date(b.date).getTime() : 0;
+      return timeA - timeB;
+    });
+    return sorted.filter(r => r.fuel_efficiency !== null || r.total_cost !== null);
   }, [records]);
 
-  // グラフ用データ
-  const data = validRecords.map((r, i) => ({
-    name: r.date || `Record ${i+1}`,
-    efficiency: r.fuel_efficiency || 0,
-    cost: r.total_cost || 0,
-    gasStation: r.gas_station || "不明",
-  }));
-
-  // カスタムツールチップ (燃費)
-  const CustomEfficiencyTooltip = ({ active, payload, label }: any) => {
-    if (active && payload && payload.length) {
-      const data = payload[0].payload;
-      return (
-        <div className="bg-gray-800 p-3 rounded-lg border border-gray-700 shadow-xl opacity-95">
-          <p className="text-gray-400 text-xs mb-1">{label}</p>
-          <p className="font-mono text-xl text-blue-400 font-bold">{payload[0].value.toFixed(2)} km/L</p>
-          <p className="text-xs text-gray-500 mt-1 truncate max-w-[150px]">{data.gasStation}</p>
-        </div>
-      );
-    }
-    return null;
-  };
-
-  // カスタムツールチップ (コスト)
-  const CustomCostTooltip = ({ active, payload, label }: any) => {
-    if (active && payload && payload.length) {
-      return (
-        <div className="bg-gray-800 p-3 rounded-lg border border-gray-700 shadow-xl opacity-95">
-          <p className="text-gray-400 text-xs mb-1">{label}</p>
-          <p className="font-mono text-xl text-green-400 font-bold">¥{payload[0].value.toLocaleString()}</p>
-        </div>
-      );
-    }
-    return null;
-  };
+  const data = useMemo(() => {
+    return validRecords.map((r, i) => ({
+      name: r.date || `Record ${i + 1}`,
+      efficiency: r.fuel_efficiency || 0,
+      cost: r.total_cost || 0,
+      gasStation: r.gas_station || "不明",
+    }));
+  }, [validRecords]);
 
   return (
     <main className="min-h-screen bg-black text-white p-4 md:p-8 pb-20 font-sans flex flex-col items-center">
       <div className="w-full max-w-5xl">
       
         {/* ヘッダー */}
-        <header className="flex items-center justify-between py-4 mb-6 md:mb-10 sticky top-0 bg-black/80 backdrop-blur-md z-10 w-full">
+        <header className="flex items-center justify-between py-4 mb-2 sticky top-0 bg-black/80 backdrop-blur-md z-10 w-full">
           <div className="flex items-center gap-4">
             <Link href="/" className="p-2 bg-gray-900 rounded-full hover:bg-gray-800 transition">
               <ArrowLeft className="w-5 h-5 text-gray-300" />
@@ -98,10 +112,19 @@ export default function StatsPage() {
           </div>
         </header>
 
+        {/* ★追加: 車両セレクタータブ */}
+        <VehicleSelector 
+          vehicles={vehicles} 
+          selectedVehicleId={selectedVehicleId} 
+          onSelect={setSelectedVehicleId} 
+          onAddVehicle={addVehicle} 
+          onDeleteVehicle={deleteVehicle}
+        />
+
         {records.length < 2 ? (
           <div className="text-center py-20 text-gray-600">
             <TrendingUp className="w-12 h-12 text-gray-800 mx-auto mb-4" />
-            <p>グラフを表示するには、少なくとも2件以上の記録が必要です。</p>
+            <p>グラフを表示するには、この車両に少なくとも2件以上の記録が必要です。</p>
           </div>
         ) : (
           <div className="space-y-8 animate-in fade-in duration-700">
@@ -128,9 +151,8 @@ export default function StatsPage() {
                       fontSize={11} 
                       tickMargin={10} 
                       tickFormatter={(val) => {
-                        // "YYYY-MM-DD" を "M/D" に変換するような簡易フォーマット
                         const parts = val.split('-');
-                        if(parts.length >= 3) return `${parseInt(parts[1])}/${parseInt(parts[2])}`;
+                        if (parts.length >= 3) return `${parseInt(parts[1])}/${parseInt(parts[2])}`;
                         return val;
                       }}
                     />
@@ -171,7 +193,7 @@ export default function StatsPage() {
                       tickMargin={10}
                       tickFormatter={(val) => {
                         const parts = val.split('-');
-                        if(parts.length >= 3) return `${parseInt(parts[1])}/${parseInt(parts[2])}`;
+                        if (parts.length >= 3) return `${parseInt(parts[1])}/${parseInt(parts[2])}`;
                         return val;
                       }}
                     />

@@ -11,100 +11,176 @@ export type FuelRecord = {
   price_per_unit: number | null;
   total_cost: number | null;
   fuel_efficiency: number | null;
+  vehicle_id?: string | null;
 };
 
-export function useFuelRecords() {
+function sortRecordsByDateDesc(list: FuelRecord[]): FuelRecord[] {
+  return [...list].sort((a, b) => {
+    const timeA = a.date ? new Date(a.date).getTime() : 0;
+    const timeB = b.date ? new Date(b.date).getTime() : 0;
+    if (timeB !== timeA) return timeB - timeA;
+    return b.id > a.id ? 1 : -1;
+  });
+}
+
+export function useFuelRecords(selectedVehicleId?: string) {
   const { getToken, userId, isSignedIn, isLoaded } = useAuth();
   const [records, setRecords] = useState<FuelRecord[]>([]);
   const [loading, setLoading] = useState(true);
 
   const loadData = useCallback(async () => {
     if (!isLoaded) return;
-
     setLoading(true);
+
     if (!isSignedIn) {
-      // 未ログイン: ローカルストレージを利用
-      const saved = localStorage.getItem("fuel_lens_data");
-      if (saved) setRecords(JSON.parse(saved));
-      else setRecords([]);
+      const saved = typeof window !== "undefined" ? localStorage.getItem("fuel_lens_data") : null;
+      if (saved) {
+        try {
+          const parsed: FuelRecord[] = JSON.parse(saved);
+          const filtered = parsed.filter(r => {
+            if (!selectedVehicleId || selectedVehicleId.startsWith("default-")) {
+              return !r.vehicle_id || r.vehicle_id.startsWith("default-");
+            }
+            return r.vehicle_id === selectedVehicleId;
+          });
+          setRecords(sortRecordsByDateDesc(filtered));
+        } catch {
+          setRecords([]);
+        }
+      } else {
+        setRecords([]);
+      }
       setLoading(false);
       return;
     }
 
-    // ログイン済: Supabaseから取得 + マイグレーション
     try {
       const token = await getToken({ template: "supabase" });
-      if (!token) throw new Error("No Auth Token for Supabase");
+      if (!token) throw new Error("Missing Supabase Token");
       const supabase = createClerkSupabaseClient(token);
 
-      // マイグレーション確認 (ローカルにデータがあればSupabaseへアップロード)
-      const localData = localStorage.getItem("fuel_lens_data");
+      // ローカル給油データのマイグレーション
+      const localData = typeof window !== "undefined" ? localStorage.getItem("fuel_lens_data") : null;
       if (localData) {
-        const parsedLocal: FuelRecord[] = JSON.parse(localData);
-        if (parsedLocal.length > 0) {
-          const recordsToInsert = parsedLocal.map(r => {
-            const { id, ...rest } = r;
-            // idフィールドはUUIDを使いたいため除外(Cloudで生成)
-            return { ...rest, user_id: userId };
-          });
+        localStorage.removeItem("fuel_lens_data");
+        try {
+          const parsedLocal: FuelRecord[] = JSON.parse(localData);
+          if (parsedLocal.length > 0) {
+            const recordsToInsert = parsedLocal.map(r => {
+              // UUID不一致や外部キーエラーを防ぐため、クラウド移行時はローカルの id と vehicle_id を安全に除外
+              // eslint-disable-next-line @typescript-eslint/no-unused-vars
+              const { id: _, vehicle_id: __, ...rest } = r;
+              return { ...rest, user_id: userId };
+            });
 
-          // Bulk insert for better performance
-          const { error: insertError } = await supabase.from("fuel_records").insert(recordsToInsert);
-          
-          if (!insertError) {
-            localStorage.removeItem("fuel_lens_data");
-          } else {
-            console.error("マイグレーションに失敗しました", insertError);
+            const { error: insertError } = await supabase.from("fuel_records").insert(recordsToInsert);
+            if (insertError) {
+              localStorage.setItem("fuel_lens_data", localData);
+            }
           }
+        } catch {
+          localStorage.setItem("fuel_lens_data", localData);
         }
       }
 
-      // Supabaseから実際のデータを取得
-      const { data, error } = await supabase
-        .from("fuel_records")
-        .select("*")
-        .order("created_at", { ascending: false });
+      // クエリ構築: 選択中の車両UUIDに一致するもの、および移行直後の過去データ (null) を両方取得
+      let query = supabase.from("fuel_records").select("*").order("date", { ascending: false });
 
-      if (error) throw error;
-      setRecords(data as FuelRecord[]);
+      if (selectedVehicleId && !selectedVehicleId.startsWith("default-")) {
+        query = query.or(`vehicle_id.eq.${selectedVehicleId},vehicle_id.is.null`);
+      } else {
+        query = query.or("vehicle_id.is.null,vehicle_id.eq.default-car");
+      }
+
+      const { data, error } = await query;
+
+      if (error) {
+        const fallbackQuery = await supabase.from("fuel_records").select("*").order("date", { ascending: false });
+        setRecords(fallbackQuery.data ? sortRecordsByDateDesc(fallbackQuery.data as FuelRecord[]) : []);
+        setLoading(false);
+        return;
+      }
+
+      setRecords(sortRecordsByDateDesc(data as FuelRecord[]));
     } catch (e) {
-      console.error("データの取得に失敗しました", e);
+      console.error("給油データの取得失敗:", e);
     } finally {
       setLoading(false);
     }
-  }, [isSignedIn, isLoaded, userId, getToken]);
+  }, [isSignedIn, isLoaded, userId, getToken, selectedVehicleId]);
 
   useEffect(() => {
     loadData();
   }, [loadData]);
 
-  const addRecord = async (record: Omit<FuelRecord, 'id'>) => {
+  const addRecord = async (record: Omit<FuelRecord, "id" | "vehicle_id">) => {
+    const targetVehicleId = selectedVehicleId && !selectedVehicleId.startsWith("default-") ? selectedVehicleId : null;
+
     if (!isSignedIn) {
-      const newRecord = { ...record, id: Date.now().toString() };
-      const newRecords = [newRecord, ...records];
-      setRecords(newRecords);
-      localStorage.setItem("fuel_lens_data", JSON.stringify(newRecords));
+      const newRecord: FuelRecord = { 
+        ...record, 
+        id: Date.now().toString(),
+        vehicle_id: targetVehicleId || "default-car" 
+      };
+      
+      const allSaved = typeof window !== "undefined" ? localStorage.getItem("fuel_lens_data") : null;
+      let allRecords: FuelRecord[] = [];
+      if (allSaved) {
+        try { allRecords = JSON.parse(allSaved); } catch {}
+      }
+      
+      const updatedAll = [newRecord, ...allRecords];
+      if (typeof window !== "undefined") {
+        localStorage.setItem("fuel_lens_data", JSON.stringify(updatedAll));
+      }
+      
+      setRecords(prev => sortRecordsByDateDesc([newRecord, ...prev]));
       return newRecord;
     }
 
     const token = await getToken({ template: "supabase" });
     const supabase = createClerkSupabaseClient(token!);
+
+    const insertPayload: Record<string, unknown> = { ...record, user_id: userId };
+    if (targetVehicleId) insertPayload.vehicle_id = targetVehicleId;
+
     const { data, error } = await supabase
       .from("fuel_records")
-      .insert({ ...record, user_id: userId })
+      .insert(insertPayload)
       .select()
       .single();
 
-    if (error) throw error;
-    setRecords([data, ...records]);
-    return data;
+    if (error) {
+      // カラム未設定環境用のフォールバックインサート
+      const fallbackPayload = { ...record, user_id: userId };
+      const fallbackRes = await supabase.from("fuel_records").insert(fallbackPayload).select().single();
+      if (fallbackRes.error) throw fallbackRes.error;
+      setRecords(prev => sortRecordsByDateDesc([fallbackRes.data as FuelRecord, ...prev]));
+      return fallbackRes.data as FuelRecord;
+    }
+
+    setRecords(prev => sortRecordsByDateDesc([data as FuelRecord, ...prev]));
+    return data as FuelRecord;
   };
 
   const updateRecord = async (id: string, updates: Partial<FuelRecord>) => {
     if (!isSignedIn) {
-      const newRecords = records.map(r => r.id === id ? { ...r, ...updates } : r);
-      setRecords(newRecords);
-      localStorage.setItem("fuel_lens_data", JSON.stringify(newRecords));
+      setRecords(prev => {
+        const updated = prev.map(r => r.id === id ? { ...r, ...updates } : r);
+        const sorted = sortRecordsByDateDesc(updated);
+        
+        const allSaved = typeof window !== "undefined" ? localStorage.getItem("fuel_lens_data") : null;
+        if (allSaved) {
+          try {
+            const all: FuelRecord[] = JSON.parse(allSaved);
+            const mappedAll = all.map(r => r.id === id ? { ...r, ...updates } : r);
+            localStorage.setItem("fuel_lens_data", JSON.stringify(mappedAll));
+          } catch {}
+        } else {
+          localStorage.setItem("fuel_lens_data", JSON.stringify(sorted));
+        }
+        return sorted;
+      });
       return;
     }
 
@@ -113,14 +189,25 @@ export function useFuelRecords() {
     const { error } = await supabase.from("fuel_records").update(updates).eq("id", id);
     if (error) throw error;
 
-    setRecords(records.map(r => r.id === id ? { ...r, ...updates } : r));
+    setRecords(prev => sortRecordsByDateDesc(
+      prev.map(r => r.id === id ? { ...r, ...updates } : r)
+    ));
   };
 
   const deleteRecord = async (id: string) => {
     if (!isSignedIn) {
-      const newRecords = records.filter(r => r.id !== id);
-      setRecords(newRecords);
-      localStorage.setItem("fuel_lens_data", JSON.stringify(newRecords));
+      setRecords(prev => {
+        const updated = prev.filter(r => r.id !== id);
+        const allSaved = typeof window !== "undefined" ? localStorage.getItem("fuel_lens_data") : null;
+        if (allSaved) {
+          try {
+            const all: FuelRecord[] = JSON.parse(allSaved);
+            const filteredAll = all.filter(r => r.id !== id);
+            localStorage.setItem("fuel_lens_data", JSON.stringify(filteredAll));
+          } catch {}
+        }
+        return updated;
+      });
       return;
     }
 
@@ -129,7 +216,7 @@ export function useFuelRecords() {
     const { error } = await supabase.from("fuel_records").delete().eq("id", id);
     if (error) throw error;
 
-    setRecords(records.filter(r => r.id !== id));
+    setRecords(prev => prev.filter(r => r.id !== id));
   };
 
   return {
