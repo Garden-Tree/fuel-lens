@@ -21,15 +21,20 @@ import imageCompression from "browser-image-compression";
 import { useFuelRecords, FuelRecord } from "@/lib/useFuelRecords";
 import EditFuelRecordForm from "@/components/EditFuelRecordForm";
 import { calculateFuelMetrics } from "@/lib/calculations";
+import { useVehicles } from "@/lib/useVehicles";
+import VehicleSelector from "@/components/VehicleSelector";
 
 export default function Home() {
-  const { records, addRecord, updateRecord } = useFuelRecords();
+  // 車両管理フックの統合
+  const { vehicles, selectedVehicleId, setSelectedVehicleId, addVehicle, deleteVehicle } = useVehicles();
+  // 選択中車両IDを渡してレコード一覧を動的に同期
+  const { records, addRecord, updateRecord } = useFuelRecords(selectedVehicleId);
 
   const [loading, setLoading] = useState(false);
   const [loadingStep, setLoadingStep] = useState<"compress" | "analyze" | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
   
-  // ★追加: スキャン直後のレコードIDを保持し、優先表示するためのステート
+  // スキャン直後のレコードIDを保持し、優先表示するためのステート
   const [activeRecordId, setActiveRecordId] = useState<string | null>(null);
 
   const [isEditing, setIsEditing] = useState(false);
@@ -85,7 +90,6 @@ export default function Home() {
 
       if (data.error) throw new Error(data.error);
 
-      // 共通計算関数を利用
       const metrics = calculateFuelMetrics(data.total_distance, data.fuel_amount, data.total_cost);
 
       const newRecordData = {
@@ -100,7 +104,6 @@ export default function Home() {
 
       const added = await addRecord(newRecordData);
       
-      // ★たった今読み取ったものを優先表示するためにIDをセット
       if (added && added.id) {
         setActiveRecordId(added.id);
       }
@@ -131,7 +134,6 @@ export default function Home() {
   const saveEditing = async () => {
     if (!editForm || !editForm.id) return;
 
-    // 共通関数を利用して再計算
     const metrics = calculateFuelMetrics(editForm.total_distance, editForm.fuel_amount, editForm.total_cost);
 
     const { id, ...updates } = editForm;
@@ -160,7 +162,6 @@ export default function Home() {
       (newForm as any)[field] = val;
     }
 
-    // 入力変更時のリアルタイム単価計算
     if (field === "fuel_amount" || field === "total_cost") {
       const amount = newForm.fuel_amount;
       const cost = newForm.total_cost;
@@ -173,18 +174,19 @@ export default function Home() {
     setEditForm(newForm);
   };
 
-  // ★表示するレコードの決定ロジック
-  // たった今読み取ったものがあればそれを優先し、なければ全体の最新（date降順の先頭）を表示
+  // 表示するレコードの決定ロジック
   const displayRecord = activeRecordId 
     ? records.find(r => r.id === activeRecordId) || records[0]
     : records[0];
+
+  const currentVehicleName = vehicles.find(v => v.id === selectedVehicleId)?.name || "車両";
 
   return (
     <main className="min-h-screen bg-gradient-to-b from-gray-900 to-black text-white p-4 md:p-8 pb-32 font-sans flex flex-col items-center">
       <div className="w-full max-w-5xl">
       
         {/* ヘッダー */}
-        <header className="flex items-center justify-between py-4 mb-6">
+        <header className="flex items-center justify-between py-4 mb-2">
           <div className="flex items-center gap-2">
             <div className="w-10 h-10 bg-gradient-to-tr from-blue-600 to-cyan-400 rounded-xl flex items-center justify-center shadow-lg shadow-blue-900/20">
               <Fuel className="text-white w-6 h-6 fill-current" />
@@ -214,6 +216,15 @@ export default function Home() {
             </SignedIn>
           </div>
         </header>
+
+        {/* ★追加: 車両切り替えセレクタータブ */}
+        <VehicleSelector 
+          vehicles={vehicles} 
+          selectedVehicleId={selectedVehicleId} 
+          onSelect={setSelectedVehicleId} 
+          onAddVehicle={addVehicle} 
+          onDeleteVehicle={deleteVehicle}
+        />
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-start">
           <div className="flex flex-col gap-6">
@@ -259,6 +270,7 @@ export default function Home() {
                 <div className="p-6 flex flex-col items-center gap-6">
                   <div className="text-center space-y-1">
                     <h2 className="text-lg font-semibold text-white">スキャンして記録</h2>
+                    <p className="text-xs text-blue-400 font-semibold">対象: {currentVehicleName}</p>
                     <p className="text-sm text-gray-400">レシートとメーターを撮影</p>
                   </div>
 
@@ -372,7 +384,7 @@ export default function Home() {
                   </div>
                   <div>
                     <p className="text-base md:text-lg font-bold text-gray-200">過去の記録を見る</p>
-                    <p className="text-sm text-gray-500">{records.length}件の履歴</p>
+                    <p className="text-sm text-gray-500">対象: {currentVehicleName}</p>
                   </div>
                 </div>
                 <ChevronRight className="w-6 h-6 text-gray-500 group-hover:text-white transition" />

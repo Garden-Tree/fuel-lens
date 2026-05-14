@@ -8,9 +8,12 @@ import { ArrowLeft, Trash2, MapPin, Calendar, BarChart3, Edit2 } from "lucide-re
 import { useFuelRecords, FuelRecord } from "@/lib/useFuelRecords";
 import EditFuelRecordForm from "@/components/EditFuelRecordForm";
 import { calculateFuelMetrics } from "@/lib/calculations";
+import { useVehicles } from "@/lib/useVehicles";
+import VehicleSelector from "@/components/VehicleSelector";
 
 export default function HistoryPage() {
-  const { records, deleteRecord, updateRecord } = useFuelRecords();
+  const { vehicles, selectedVehicleId, setSelectedVehicleId, addVehicle, deleteVehicle } = useVehicles();
+  const { records, deleteRecord, updateRecord } = useFuelRecords(selectedVehicleId);
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editForm, setEditForm] = useState<Partial<FuelRecord> | null>(null);
@@ -19,10 +22,8 @@ export default function HistoryPage() {
 
   const sortedRecords = useMemo(() => {
     if (sortType === "created_at") {
-      // 登録順の場合は、records配列そのまま（取得時の並び順に依存）
       return records;
     }
-    // 給油日順
     return [...records].sort((a, b) => {
       const dateA = a.date ? new Date(a.date).getTime() : 0;
       const dateB = b.date ? new Date(b.date).getTime() : 0;
@@ -31,7 +32,6 @@ export default function HistoryPage() {
     });
   }, [records, sortType]);
 
-  // 削除機能
   const handleDelete = async (id: string) => {
     if (!confirm("この記録を削除しますか？")) return;
     try {
@@ -41,7 +41,6 @@ export default function HistoryPage() {
     }
   };
 
-  // 編集開始
   const startEditing = (record: FuelRecord) => {
     setEditingId(record.id);
     setEditForm({ ...record });
@@ -55,7 +54,6 @@ export default function HistoryPage() {
   const saveEditing = async () => {
     if (!editForm || !editForm.id) return;
     
-    // 共通関数を利用して単価と燃費を安全に計算
     const metrics = calculateFuelMetrics(editForm.total_distance, editForm.fuel_amount, editForm.total_cost);
 
     const { id, ...updates } = editForm;
@@ -84,7 +82,6 @@ export default function HistoryPage() {
       (newForm as any)[field] = val;
     }
 
-    // 単価のリアルタイム計算
     if (field === "fuel_amount" || field === "total_cost") {
       const amount = newForm.fuel_amount;
       const cost = newForm.total_cost;
@@ -102,7 +99,7 @@ export default function HistoryPage() {
       <div className="w-full max-w-5xl">
 
         {/* ヘッダー */}
-        <header className="flex items-center justify-between py-4 mb-6 md:mb-10 sticky top-0 bg-black/80 backdrop-blur-md z-10">
+        <header className="flex items-center justify-between py-4 mb-2 sticky top-0 bg-black/80 backdrop-blur-md z-10">
           <div className="flex items-center gap-4">
             <Link href="/" className="p-2 bg-gray-900 rounded-full hover:bg-gray-800 transition">
               <ArrowLeft className="w-5 h-5 text-gray-300" />
@@ -129,6 +126,15 @@ export default function HistoryPage() {
           </div>
         </header>
 
+        {/* ★追加: 車両セレクタータブ */}
+        <VehicleSelector 
+          vehicles={vehicles} 
+          selectedVehicleId={selectedVehicleId} 
+          onSelect={setSelectedVehicleId} 
+          onAddVehicle={addVehicle} 
+          onDeleteVehicle={deleteVehicle}
+        />
+
         {/* 操作パネル */}
         {records.length > 0 && (
           <div className="flex justify-end mb-4">
@@ -153,7 +159,7 @@ export default function HistoryPage() {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
           {sortedRecords.length === 0 ? (
             <div className="text-center py-20 text-gray-600 col-span-full">
-              <p>履歴がありません</p>
+              <p>この車両の履歴はありません</p>
             </div>
           ) : (
             sortedRecords.map((rec) => (

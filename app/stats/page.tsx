@@ -17,6 +17,8 @@ import {
 } from "recharts";
 
 import { useFuelRecords } from "@/lib/useFuelRecords";
+import { useVehicles } from "@/lib/useVehicles";
+import VehicleSelector from "@/components/VehicleSelector";
 
 interface TooltipProps {
   active?: boolean;
@@ -32,7 +34,6 @@ interface TooltipProps {
   label?: string;
 }
 
-// カスタムツールチップ (燃費) - レンダリング関数の外側で定義
 function CustomEfficiencyTooltip({ active, payload, label }: TooltipProps) {
   if (active && payload && payload.length > 0) {
     const data = payload[0].payload;
@@ -47,7 +48,6 @@ function CustomEfficiencyTooltip({ active, payload, label }: TooltipProps) {
   return null;
 }
 
-// カスタムツールチップ (コスト) - レンダリング関数の外側で定義
 function CustomCostTooltip({ active, payload, label }: TooltipProps) {
   if (active && payload && payload.length > 0) {
     return (
@@ -61,12 +61,11 @@ function CustomCostTooltip({ active, payload, label }: TooltipProps) {
 }
 
 export default function StatsPage() {
-  const { records } = useFuelRecords();
+  const { vehicles, selectedVehicleId, setSelectedVehicleId, addVehicle, deleteVehicle } = useVehicles();
+  const { records } = useFuelRecords(selectedVehicleId);
 
-  // useEffect/useStateによるカスケードレンダリングを回避し、useMemoでスマートに算出
   const validRecords = useMemo(() => {
     if (!records || records.length === 0) return [];
-    // 日付の古い順（昇順）でグラフ表示用に並び替え
     const sorted = [...records].sort((a, b) => {
       const timeA = a.date ? new Date(a.date).getTime() : 0;
       const timeB = b.date ? new Date(b.date).getTime() : 0;
@@ -75,7 +74,6 @@ export default function StatsPage() {
     return sorted.filter(r => r.fuel_efficiency !== null || r.total_cost !== null);
   }, [records]);
 
-  // グラフ用データ
   const data = useMemo(() => {
     return validRecords.map((r, i) => ({
       name: r.date || `Record ${i + 1}`,
@@ -90,7 +88,7 @@ export default function StatsPage() {
       <div className="w-full max-w-5xl">
       
         {/* ヘッダー */}
-        <header className="flex items-center justify-between py-4 mb-6 md:mb-10 sticky top-0 bg-black/80 backdrop-blur-md z-10 w-full">
+        <header className="flex items-center justify-between py-4 mb-2 sticky top-0 bg-black/80 backdrop-blur-md z-10 w-full">
           <div className="flex items-center gap-4">
             <Link href="/" className="p-2 bg-gray-900 rounded-full hover:bg-gray-800 transition">
               <ArrowLeft className="w-5 h-5 text-gray-300" />
@@ -114,10 +112,19 @@ export default function StatsPage() {
           </div>
         </header>
 
+        {/* ★追加: 車両セレクタータブ */}
+        <VehicleSelector 
+          vehicles={vehicles} 
+          selectedVehicleId={selectedVehicleId} 
+          onSelect={setSelectedVehicleId} 
+          onAddVehicle={addVehicle} 
+          onDeleteVehicle={deleteVehicle}
+        />
+
         {records.length < 2 ? (
           <div className="text-center py-20 text-gray-600">
             <TrendingUp className="w-12 h-12 text-gray-800 mx-auto mb-4" />
-            <p>グラフを表示するには、少なくとも2件以上の記録が必要です。</p>
+            <p>グラフを表示するには、この車両に少なくとも2件以上の記録が必要です。</p>
           </div>
         ) : (
           <div className="space-y-8 animate-in fade-in duration-700">

@@ -11,41 +11,40 @@ export type FuelRecord = {
   price_per_unit: number | null;
   total_cost: number | null;
   fuel_efficiency: number | null;
+  vehicle_id?: string | null;
 };
 
-/**
- * レコード配列を「給油日 (date) の降順」で安全にソートするヘルパー関数
- */
 function sortRecordsByDateDesc(list: FuelRecord[]): FuelRecord[] {
   return [...list].sort((a, b) => {
     const timeA = a.date ? new Date(a.date).getTime() : 0;
     const timeB = b.date ? new Date(b.date).getTime() : 0;
-    if (timeB !== timeA) {
-      return timeB - timeA;
-    }
-    // 日付が同一の場合はID文字列（または順序）で安定ソート
+    if (timeB !== timeA) return timeB - timeA;
     return b.id > a.id ? 1 : -1;
   });
 }
 
-export function useFuelRecords() {
+export function useFuelRecords(selectedVehicleId?: string) {
   const { getToken, userId, isSignedIn, isLoaded } = useAuth();
   const [records, setRecords] = useState<FuelRecord[]>([]);
   const [loading, setLoading] = useState(true);
 
   const loadData = useCallback(async () => {
     if (!isLoaded) return;
-
     setLoading(true);
+
     if (!isSignedIn) {
-      // 未ログイン: ローカルストレージを利用
-      const saved = localStorage.getItem("fuel_lens_data");
+      const saved = typeof window !== "undefined" ? localStorage.getItem("fuel_lens_data") : null;
       if (saved) {
         try {
-          const parsed = JSON.parse(saved);
-          setRecords(sortRecordsByDateDesc(parsed));
-        } catch (e) {
-          console.error("ローカルデータのパース失敗", e);
+          const parsed: FuelRecord[] = JSON.parse(saved);
+          const filtered = parsed.filter(r => {
+            if (!selectedVehicleId || selectedVehicleId.startsWith("default-")) {
+              return !r.vehicle_id || r.vehicle_id.startsWith("default-");
+            }
+            return r.vehicle_id === selectedVehicleId;
+          });
+          setRecords(sortRecordsByDateDesc(filtered));
+        } catch {
           setRecords([]);
         }
       } else {
@@ -55,85 +54,111 @@ export function useFuelRecords() {
       return;
     }
 
-    // ログイン済: Supabaseから取得 + マイグレーション
     try {
       const token = await getToken({ template: "supabase" });
-      if (!token) throw new Error("No Auth Token for Supabase");
+      if (!token) throw new Error("Missing Supabase Token");
       const supabase = createClerkSupabaseClient(token);
 
-      // マイグレーション確認 (ローカルにデータがあればSupabaseへアップロード)
-      const localData = localStorage.getItem("fuel_lens_data");
+      // ローカル給油データのマイグレーション
+      const localData = typeof window !== "undefined" ? localStorage.getItem("fuel_lens_data") : null;
       if (localData) {
-        // 二重実行を防ぐため、処理開始前にローカルストレージから削除
         localStorage.removeItem("fuel_lens_data");
         try {
           const parsedLocal: FuelRecord[] = JSON.parse(localData);
           if (parsedLocal.length > 0) {
             const recordsToInsert = parsedLocal.map(r => {
+              // UUID不一致や外部キーエラーを防ぐため、クラウド移行時はローカルの id と vehicle_id を安全に除外
               // eslint-disable-next-line @typescript-eslint/no-unused-vars
-              const { id: _, ...rest } = r;
-              // idフィールドは除外(CloudでUUID自動生成させるため)
+              const { id: _, vehicle_id: __, ...rest } = r;
               return { ...rest, user_id: userId };
             });
 
-            // Bulk insert
             const { error: insertError } = await supabase.from("fuel_records").insert(recordsToInsert);
-            
             if (insertError) {
-              console.error("マイグレーションに失敗しました", insertError);
-              // 失敗時は安全にローカルストレージへ復元
               localStorage.setItem("fuel_lens_data", localData);
             }
           }
-        } catch (err) {
-          console.error("マイグレーション処理中に例外が発生しました", err);
+        } catch {
           localStorage.setItem("fuel_lens_data", localData);
         }
       }
 
-      // Supabaseから実際のデータを取得 (date降順を基本とする)
-      const { data, error } = await supabase
-        .from("fuel_records")
-        .select("*")
-        .order("date", { ascending: false });
+      // クエリ構築: 選択中の車両UUIDに一致するもの、および移行直後の過去データ (null) を両方取得
+      let query = supabase.from("fuel_records").select("*").order("date", { ascending: false });
 
-      if (error) throw error;
-      
-      // クライアント側でも念のため給油日順ソートを徹底
+      if (selectedVehicleId && !selectedVehicleId.startsWith("default-")) {
+        query = query.or(`vehicle_id.eq.${selectedVehicleId},vehicle_id.is.null`);
+      } else {
+        query = query.or("vehicle_id.is.null,vehicle_id.eq.default-car");
+      }
+
+      const { data, error } = await query;
+
+      if (error) {
+        const fallbackQuery = await supabase.from("fuel_records").select("*").order("date", { ascending: false });
+        setRecords(fallbackQuery.data ? sortRecordsByDateDesc(fallbackQuery.data as FuelRecord[]) : []);
+        setLoading(false);
+        return;
+      }
+
       setRecords(sortRecordsByDateDesc(data as FuelRecord[]));
     } catch (e) {
-      console.error("データの取得に失敗しました", e);
+      console.error("給油データの取得失敗:", e);
     } finally {
       setLoading(false);
     }
-  }, [isSignedIn, isLoaded, userId, getToken]);
+  }, [isSignedIn, isLoaded, userId, getToken, selectedVehicleId]);
 
   useEffect(() => {
     loadData();
   }, [loadData]);
 
-  const addRecord = async (record: Omit<FuelRecord, 'id'>) => {
+  const addRecord = async (record: Omit<FuelRecord, "id" | "vehicle_id">) => {
+    const targetVehicleId = selectedVehicleId && !selectedVehicleId.startsWith("default-") ? selectedVehicleId : null;
+
     if (!isSignedIn) {
-      const newRecord: FuelRecord = { ...record, id: Date.now().toString() };
-      setRecords(prev => {
-        const updated = sortRecordsByDateDesc([newRecord, ...prev]);
-        localStorage.setItem("fuel_lens_data", JSON.stringify(updated));
-        return updated;
-      });
+      const newRecord: FuelRecord = { 
+        ...record, 
+        id: Date.now().toString(),
+        vehicle_id: targetVehicleId || "default-car" 
+      };
+      
+      const allSaved = typeof window !== "undefined" ? localStorage.getItem("fuel_lens_data") : null;
+      let allRecords: FuelRecord[] = [];
+      if (allSaved) {
+        try { allRecords = JSON.parse(allSaved); } catch {}
+      }
+      
+      const updatedAll = [newRecord, ...allRecords];
+      if (typeof window !== "undefined") {
+        localStorage.setItem("fuel_lens_data", JSON.stringify(updatedAll));
+      }
+      
+      setRecords(prev => sortRecordsByDateDesc([newRecord, ...prev]));
       return newRecord;
     }
 
     const token = await getToken({ template: "supabase" });
     const supabase = createClerkSupabaseClient(token!);
+
+    const insertPayload: Record<string, unknown> = { ...record, user_id: userId };
+    if (targetVehicleId) insertPayload.vehicle_id = targetVehicleId;
+
     const { data, error } = await supabase
       .from("fuel_records")
-      .insert({ ...record, user_id: userId })
+      .insert(insertPayload)
       .select()
       .single();
 
-    if (error) throw error;
-    
-    // ステート追加時も一貫してソート順を維持
+    if (error) {
+      // カラム未設定環境用のフォールバックインサート
+      const fallbackPayload = { ...record, user_id: userId };
+      const fallbackRes = await supabase.from("fuel_records").insert(fallbackPayload).select().single();
+      if (fallbackRes.error) throw fallbackRes.error;
+      setRecords(prev => sortRecordsByDateDesc([fallbackRes.data as FuelRecord, ...prev]));
+      return fallbackRes.data as FuelRecord;
+    }
+
     setRecords(prev => sortRecordsByDateDesc([data as FuelRecord, ...prev]));
     return data as FuelRecord;
   };
@@ -143,7 +168,17 @@ export function useFuelRecords() {
       setRecords(prev => {
         const updated = prev.map(r => r.id === id ? { ...r, ...updates } : r);
         const sorted = sortRecordsByDateDesc(updated);
-        localStorage.setItem("fuel_lens_data", JSON.stringify(sorted));
+        
+        const allSaved = typeof window !== "undefined" ? localStorage.getItem("fuel_lens_data") : null;
+        if (allSaved) {
+          try {
+            const all: FuelRecord[] = JSON.parse(allSaved);
+            const mappedAll = all.map(r => r.id === id ? { ...r, ...updates } : r);
+            localStorage.setItem("fuel_lens_data", JSON.stringify(mappedAll));
+          } catch {}
+        } else {
+          localStorage.setItem("fuel_lens_data", JSON.stringify(sorted));
+        }
         return sorted;
       });
       return;
@@ -163,7 +198,14 @@ export function useFuelRecords() {
     if (!isSignedIn) {
       setRecords(prev => {
         const updated = prev.filter(r => r.id !== id);
-        localStorage.setItem("fuel_lens_data", JSON.stringify(updated));
+        const allSaved = typeof window !== "undefined" ? localStorage.getItem("fuel_lens_data") : null;
+        if (allSaved) {
+          try {
+            const all: FuelRecord[] = JSON.parse(allSaved);
+            const filteredAll = all.filter(r => r.id !== id);
+            localStorage.setItem("fuel_lens_data", JSON.stringify(filteredAll));
+          } catch {}
+        }
         return updated;
       });
       return;

@@ -2,6 +2,7 @@ import { GoogleGenAI } from "@google/genai";
 import { NextResponse } from "next/server";
 
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-3.1-flash-lite";
 
 // 簡易的なオンメモリ・レートリミット (IPベース)
 const RATE_LIMIT_WINDOW_MS = 60 * 1000; // 1分
@@ -72,7 +73,7 @@ export async function POST(req: Request) {
     `;
 
     const response = await ai.models.generateContent({
-      model: "gemini-3.1-flash-lite",
+      model: GEMINI_MODEL,
       contents: [
         {
           role: "user",
