@@ -3,7 +3,7 @@
 import { useState, useMemo } from "react";
 import Link from "next/link";
 import { SignedIn, SignedOut, SignInButton, UserButton } from "@clerk/nextjs";
-import { ArrowLeft, Trash2, MapPin, Calendar, BarChart3, Edit2 } from "lucide-react";
+import { ArrowLeft, Trash2, MapPin, Calendar, BarChart3, Edit2, Download } from "lucide-react";
 
 import { useFuelRecords, FuelRecord } from "@/lib/useFuelRecords";
 import EditFuelRecordForm from "@/components/EditFuelRecordForm";
@@ -94,6 +94,51 @@ export default function HistoryPage() {
     setEditForm(newForm);
   };
 
+  const exportToCsv = () => {
+    if (sortedRecords.length === 0) return;
+
+    // BOMを追加してExcelでの文字化けを防ぐ
+    const bom = new Uint8Array([0xef, 0xbb, 0xbf]);
+    
+    // ヘッダー行
+    const headers = ["給油日", "走行距離(km)", "給油量(L)", "単価(円/L)", "支払総額(円)", "燃費(km/L)", "ガソリンスタンド名"];
+    
+    // データ行の作成
+    const rows = sortedRecords.map(rec => {
+      const escapeQuotes = (str: string | null | undefined) => {
+        if (!str) return '""';
+        return `"${str.replace(/"/g, '""')}"`;
+      };
+
+      return [
+        escapeQuotes(rec.date),
+        rec.total_distance ?? "",
+        rec.fuel_amount ?? "",
+        rec.price_per_unit ?? "",
+        rec.total_cost ?? "",
+        rec.fuel_efficiency ?? "",
+        escapeQuotes(rec.gas_station)
+      ].join(",");
+    });
+
+    const csvContent = [headers.join(","), ...rows].join("\n");
+    const blob = new Blob([bom, csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    
+    const currentVehicleName = vehicles.find(v => v.id === selectedVehicleId)?.name || "vehicle";
+    // ファイル名に安全な文字列を使用
+    const safeVehicleName = currentVehicleName.replace(/[^a-zA-Z0-9ぁ-んァ-ヶ亜-熙]/g, "_");
+    const filename = `fuellens_${safeVehicleName}_${new Date().toISOString().slice(0,10)}.csv`;
+
+    const link = document.createElement("a");
+    link.href = url;
+    link.setAttribute("download", filename);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
   return (
     <main className="min-h-screen bg-black text-white p-4 md:p-8 pb-20 font-sans flex flex-col items-center">
       <div className="w-full max-w-5xl">
@@ -137,8 +182,17 @@ export default function HistoryPage() {
 
         {/* 操作パネル */}
         {records.length > 0 && (
-          <div className="flex justify-end mb-4">
-            <div className="flex items-center gap-1 bg-gray-900 rounded-lg p-1 border border-gray-800">
+          <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
+            <button
+              onClick={exportToCsv}
+              className="flex items-center gap-2 px-3 py-2 bg-gray-900 hover:bg-gray-800 text-gray-300 hover:text-white text-xs font-bold rounded-xl border border-gray-800 hover:border-gray-700 transition"
+              title="CSV形式でダウンロード"
+            >
+              <Download className="w-4 h-4 text-green-500" />
+              <span>CSV出力</span>
+            </button>
+
+            <div className="flex items-center gap-1 bg-gray-900 rounded-lg p-1 border border-gray-800 ml-auto">
               <button
                 onClick={() => setSortType("date")}
                 className={`px-3 py-1.5 text-xs font-bold rounded-md transition ${sortType === "date" ? "bg-blue-600 text-white shadow-sm" : "text-gray-400 hover:text-white"}`}
