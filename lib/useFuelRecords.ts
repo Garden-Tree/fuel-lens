@@ -13,6 +13,21 @@ export type FuelRecord = {
   fuel_efficiency: number | null;
 };
 
+/**
+ * レコード配列を「給油日 (date) の降順」で安全にソートするヘルパー関数
+ */
+function sortRecordsByDateDesc(list: FuelRecord[]): FuelRecord[] {
+  return [...list].sort((a, b) => {
+    const timeA = a.date ? new Date(a.date).getTime() : 0;
+    const timeB = b.date ? new Date(b.date).getTime() : 0;
+    if (timeB !== timeA) {
+      return timeB - timeA;
+    }
+    // 日付が同一の場合はID文字列（または順序）で安定ソート
+    return b.id > a.id ? 1 : -1;
+  });
+}
+
 export function useFuelRecords() {
   const { getToken, userId, isSignedIn, isLoaded } = useAuth();
   const [records, setRecords] = useState<FuelRecord[]>([]);
@@ -25,8 +40,17 @@ export function useFuelRecords() {
     if (!isSignedIn) {
       // 未ログイン: ローカルストレージを利用
       const saved = localStorage.getItem("fuel_lens_data");
-      if (saved) setRecords(JSON.parse(saved));
-      else setRecords([]);
+      if (saved) {
+        try {
+          const parsed = JSON.parse(saved);
+          setRecords(sortRecordsByDateDesc(parsed));
+        } catch (e) {
+          console.error("ローカルデータのパース失敗", e);
+          setRecords([]);
+        }
+      } else {
+        setRecords([]);
+      }
       setLoading(false);
       return;
     }
@@ -40,33 +64,43 @@ export function useFuelRecords() {
       // マイグレーション確認 (ローカルにデータがあればSupabaseへアップロード)
       const localData = localStorage.getItem("fuel_lens_data");
       if (localData) {
-        const parsedLocal: FuelRecord[] = JSON.parse(localData);
-        if (parsedLocal.length > 0) {
-          const recordsToInsert = parsedLocal.map(r => {
-            const { id, ...rest } = r;
-            // idフィールドはUUIDを使いたいため除外(Cloudで生成)
-            return { ...rest, user_id: userId };
-          });
+        // 二重実行を防ぐため、処理開始前にローカルストレージから削除
+        localStorage.removeItem("fuel_lens_data");
+        try {
+          const parsedLocal: FuelRecord[] = JSON.parse(localData);
+          if (parsedLocal.length > 0) {
+            const recordsToInsert = parsedLocal.map(r => {
+              // eslint-disable-next-line @typescript-eslint/no-unused-vars
+              const { id: _, ...rest } = r;
+              // idフィールドは除外(CloudでUUID自動生成させるため)
+              return { ...rest, user_id: userId };
+            });
 
-          // Bulk insert for better performance
-          const { error: insertError } = await supabase.from("fuel_records").insert(recordsToInsert);
-          
-          if (!insertError) {
-            localStorage.removeItem("fuel_lens_data");
-          } else {
-            console.error("マイグレーションに失敗しました", insertError);
+            // Bulk insert
+            const { error: insertError } = await supabase.from("fuel_records").insert(recordsToInsert);
+            
+            if (insertError) {
+              console.error("マイグレーションに失敗しました", insertError);
+              // 失敗時は安全にローカルストレージへ復元
+              localStorage.setItem("fuel_lens_data", localData);
+            }
           }
+        } catch (err) {
+          console.error("マイグレーション処理中に例外が発生しました", err);
+          localStorage.setItem("fuel_lens_data", localData);
         }
       }
 
-      // Supabaseから実際のデータを取得
+      // Supabaseから実際のデータを取得 (date降順を基本とする)
       const { data, error } = await supabase
         .from("fuel_records")
         .select("*")
-        .order("created_at", { ascending: false });
+        .order("date", { ascending: false });
 
       if (error) throw error;
-      setRecords(data as FuelRecord[]);
+      
+      // クライアント側でも念のため給油日順ソートを徹底
+      setRecords(sortRecordsByDateDesc(data as FuelRecord[]));
     } catch (e) {
       console.error("データの取得に失敗しました", e);
     } finally {
@@ -80,10 +114,12 @@ export function useFuelRecords() {
 
   const addRecord = async (record: Omit<FuelRecord, 'id'>) => {
     if (!isSignedIn) {
-      const newRecord = { ...record, id: Date.now().toString() };
-      const newRecords = [newRecord, ...records];
-      setRecords(newRecords);
-      localStorage.setItem("fuel_lens_data", JSON.stringify(newRecords));
+      const newRecord: FuelRecord = { ...record, id: Date.now().toString() };
+      setRecords(prev => {
+        const updated = sortRecordsByDateDesc([newRecord, ...prev]);
+        localStorage.setItem("fuel_lens_data", JSON.stringify(updated));
+        return updated;
+      });
       return newRecord;
     }
 
@@ -96,15 +132,20 @@ export function useFuelRecords() {
       .single();
 
     if (error) throw error;
-    setRecords([data, ...records]);
-    return data;
+    
+    // ステート追加時も一貫してソート順を維持
+    setRecords(prev => sortRecordsByDateDesc([data as FuelRecord, ...prev]));
+    return data as FuelRecord;
   };
 
   const updateRecord = async (id: string, updates: Partial<FuelRecord>) => {
     if (!isSignedIn) {
-      const newRecords = records.map(r => r.id === id ? { ...r, ...updates } : r);
-      setRecords(newRecords);
-      localStorage.setItem("fuel_lens_data", JSON.stringify(newRecords));
+      setRecords(prev => {
+        const updated = prev.map(r => r.id === id ? { ...r, ...updates } : r);
+        const sorted = sortRecordsByDateDesc(updated);
+        localStorage.setItem("fuel_lens_data", JSON.stringify(sorted));
+        return sorted;
+      });
       return;
     }
 
@@ -113,14 +154,18 @@ export function useFuelRecords() {
     const { error } = await supabase.from("fuel_records").update(updates).eq("id", id);
     if (error) throw error;
 
-    setRecords(records.map(r => r.id === id ? { ...r, ...updates } : r));
+    setRecords(prev => sortRecordsByDateDesc(
+      prev.map(r => r.id === id ? { ...r, ...updates } : r)
+    ));
   };
 
   const deleteRecord = async (id: string) => {
     if (!isSignedIn) {
-      const newRecords = records.filter(r => r.id !== id);
-      setRecords(newRecords);
-      localStorage.setItem("fuel_lens_data", JSON.stringify(newRecords));
+      setRecords(prev => {
+        const updated = prev.filter(r => r.id !== id);
+        localStorage.setItem("fuel_lens_data", JSON.stringify(updated));
+        return updated;
+      });
       return;
     }
 
@@ -129,7 +174,7 @@ export function useFuelRecords() {
     const { error } = await supabase.from("fuel_records").delete().eq("id", id);
     if (error) throw error;
 
-    setRecords(records.filter(r => r.id !== id));
+    setRecords(prev => prev.filter(r => r.id !== id));
   };
 
   return {

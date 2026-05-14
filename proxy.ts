@@ -1,8 +1,9 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
 import { clerkMiddleware, createRouteMatcher } from '@clerk/nextjs/server';
 
-const isPublicRoute = createRouteMatcher(['/', '/api/analyze']);
+const _isPublicRoute = createRouteMatcher(['/', '/api/analyze']);
 
-export default clerkMiddleware(async (auth, req) => {
+export default clerkMiddleware(async (_auth, _req) => {
   // すべてのルートをパブリックにしつつ、必要な画面で個別対応する場合は protect() をスキップ
   // ここでは基本的に、公開してよいトップページ等以外を保護します
   // if (!isPublicRoute(req)) {
