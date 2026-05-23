@@ -146,7 +146,7 @@ export default function HistoryPage() {
         {/* ヘッダー */}
         <header className="flex items-center justify-between py-4 mb-2 sticky top-0 bg-black/80 backdrop-blur-md z-10">
           <div className="flex items-center gap-4">
-            <Link href="/" className="p-2 bg-gray-900 rounded-full hover:bg-gray-800 transition">
+            <Link href="/app" className="p-2 bg-gray-900 rounded-full hover:bg-gray-800 transition">
               <ArrowLeft className="w-5 h-5 text-gray-300" />
             </Link>
             <h1 className="text-xl md:text-2xl font-bold">給油履歴</h1>
