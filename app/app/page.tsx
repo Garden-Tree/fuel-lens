@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import Link from "next/link";
 import { SignedIn, SignedOut, SignInButton, UserButton } from "@clerk/nextjs";
 import { 
@@ -26,9 +26,9 @@ import VehicleSelector from "@/components/VehicleSelector";
 
 export default function Home() {
   // 車両管理フックの統合
-  const { vehicles, selectedVehicleId, setSelectedVehicleId, addVehicle, deleteVehicle } = useVehicles();
+  const { vehicles, selectedVehicleId, setSelectedVehicleId, addVehicle, deleteVehicle, updateVehicle, loading: vehiclesLoading } = useVehicles();
   // 選択中車両IDを渡してレコード一覧を動的に同期
-  const { records, addRecord, updateRecord } = useFuelRecords(selectedVehicleId);
+  const { records, addRecord, updateRecord, loading: recordsLoading } = useFuelRecords(selectedVehicleId);
 
   const [loading, setLoading] = useState(false);
   const [loadingStep, setLoadingStep] = useState<"compress" | "analyze" | null>(null);
@@ -45,6 +45,13 @@ export default function Home() {
 
   const [isDragging, setIsDragging] = useState(false);
   const dragCounter = useRef(0);
+
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  const isLoading = vehiclesLoading || recordsLoading;
 
   const processImageFile = async (file: File) => {
     const options = {
@@ -225,14 +232,16 @@ export default function Home() {
     ? records.find(r => r.id === activeRecordId) || records[0]
     : records[0];
 
-  const currentVehicleName = vehicles.find(v => v.id === selectedVehicleId)?.name || "車両";
+  const currentVehicleName = mounted
+    ? vehicles.find(v => v.id === selectedVehicleId)?.name || "車両"
+    : "車両";
 
   return (
     <main className="min-h-screen bg-gradient-to-b from-gray-900 to-black text-white p-4 md:p-8 pb-32 font-sans flex flex-col items-center">
       <div className="w-full max-w-5xl">
       
         {/* ヘッダー */}
-        <header className="flex items-center justify-between py-4 mb-2">
+        <header className="flex items-center justify-between py-4 mb-2 w-full">
           <div className="flex items-center gap-2">
             <div className="w-10 h-10 bg-gradient-to-tr from-blue-600 to-cyan-400 rounded-xl flex items-center justify-center shadow-lg shadow-blue-900/20">
               <Fuel className="text-white w-6 h-6 fill-current" />
@@ -263,118 +272,183 @@ export default function Home() {
           </div>
         </header>
 
-        {/* ★追加: 車両切り替えセレクタータブ */}
-        <VehicleSelector 
-          vehicles={vehicles} 
-          selectedVehicleId={selectedVehicleId} 
-          onSelect={setSelectedVehicleId} 
-          onAddVehicle={addVehicle} 
-          onDeleteVehicle={deleteVehicle}
-        />
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-start">
-          <div className="flex flex-col gap-6">
-            {/* アクションエリア */}
-            <div 
-              onDragOver={handleDragOver}
-              onDragEnter={handleDragEnter}
-              onDragLeave={handleDragLeave}
-              onDrop={handleDrop}
-              className={`relative overflow-hidden bg-gray-800/40 backdrop-blur-xl border rounded-3xl shadow-2xl transition-all duration-300 ${
-                isDragging ? "border-blue-500 bg-blue-500/10 scale-[1.01]" : "border-gray-700/50"
-              }`}
-            >
-              {isDragging && (
-                <div className="absolute inset-0 z-50 bg-blue-600/20 border-2 border-dashed border-blue-500 rounded-3xl flex flex-col items-center justify-center backdrop-blur-xs pointer-events-none transition-all duration-300">
-                  <div className="bg-gray-900/90 border border-blue-500/30 p-4 rounded-2xl flex flex-col items-center gap-2 shadow-2xl animate-pulse">
-                    <Camera className="w-8 h-8 text-blue-400" />
-                    <p className="text-sm font-bold text-white">ここに画像をドロップして解析</p>
-                  </div>
-                </div>
-              )}
-
-              {loading && (
-                <div className="absolute inset-0 z-50 bg-black/60 flex flex-col items-center justify-center backdrop-blur-sm">
-                  <Loader2 className="w-10 h-10 text-blue-500 animate-spin mb-3" />
-                  <p className="text-blue-200 font-medium animate-pulse text-sm">
-                    {loadingStep === "compress" ? "画像を圧縮中..." : "AIが解析中..."}
-                  </p>
-                </div>
-              )}
-
-              <div className={isDragging ? "pointer-events-none" : ""}>
-                {preview ? (
-                  <div className="relative">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img 
-                      src={preview} 
-                      alt="Preview" 
-                      className="w-full max-h-[300px] object-cover opacity-90" 
-                      draggable="false"
-                    />
-                    {!loading && (
-                      <button 
-                        onClick={clearPreview}
-                        className="absolute top-3 right-3 p-2 bg-black/50 rounded-full text-white backdrop-blur hover:bg-black/70 transition pointer-events-auto"
-                      >
-                        <X className="w-5 h-5" />
-                      </button>
-                    )}
-                    {!loading && (
-                      <div className="absolute bottom-3 right-3 flex gap-2">
-                        <button
-                          onClick={() => cameraInputRef.current?.click()}
-                          className="bg-blue-600/90 hover:bg-blue-500 text-white text-xs font-bold py-2 px-4 rounded-full shadow-lg backdrop-blur flex items-center gap-2 pointer-events-auto"
-                        >
-                          <Camera className="w-3 h-3" /> 次を撮る
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                ) : (
-                  <div className="p-6 flex flex-col items-center gap-6">
-                    <div className="text-center space-y-1">
-                      <h2 className="text-lg font-semibold text-white">スキャンして記録</h2>
-                      <p className="text-xs text-blue-400 font-semibold">対象: {currentVehicleName}</p>
-                      <p className="text-sm text-gray-400">レシートとメーターを1枚に収めて撮影</p>
-                    </div>
-
-                    <button
-                      onClick={() => cameraInputRef.current?.click()}
-                      disabled={loading}
-                      className="group relative w-24 h-24 rounded-full bg-gradient-to-b from-blue-500 to-blue-700 shadow-[0_0_40px_-10px_rgba(59,130,246,0.5)] flex items-center justify-center transition-transform active:scale-95"
-                    >
-                      <div className="absolute inset-0 rounded-full border-4 border-blue-400/30 group-hover:border-blue-400/50 transition-colors" />
-                      <Camera className="w-10 h-10 text-white fill-blue-500" />
-                    </button>
-
-                    <button
-                      onClick={() => galleryInputRef.current?.click()}
-                      disabled={loading}
-                      className="flex items-center gap-2 text-sm text-gray-500 hover:text-blue-400 transition-colors py-2 px-4 rounded-full hover:bg-gray-800"
-                    >
-                      <ImageIcon className="w-4 h-4" />
-                      <span>アルバムから選択</span>
-                    </button>
-                  </div>
-                )}
+        {/* 車両切り替えセレクタータブ */}
+        {vehiclesLoading ? (
+          <div className="w-full mb-6">
+            <div className="flex items-center gap-2 overflow-x-auto pb-2 scrollbar-none">
+              <div className="flex items-center gap-2 p-1.5 bg-gray-950/40 border border-gray-800/80 rounded-2xl shadow-inner">
+                <div className="w-20 h-8 md:h-[36px] bg-gray-850 rounded-xl animate-pulse" />
+                <div className="w-20 h-8 md:h-[36px] bg-gray-850 rounded-xl animate-pulse" />
+                <div className="w-[34px] h-[34px] bg-gray-850 rounded-xl animate-pulse" />
               </div>
             </div>
+          </div>
+        ) : (
+          <VehicleSelector 
+            vehicles={vehicles} 
+            selectedVehicleId={selectedVehicleId} 
+            onSelect={setSelectedVehicleId} 
+            onAddVehicle={addVehicle} 
+            onDeleteVehicle={deleteVehicle}
+            onUpdateVehicle={updateVehicle}
+          />
+        )}
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-start w-full">
+          <div className="flex flex-col gap-6 w-full">
+            {/* アクションエリア */}
+            {isLoading ? (
+              <div className="relative overflow-hidden bg-gray-800/40 backdrop-blur-xl border border-gray-700/50 rounded-3xl shadow-2xl w-full">
+                <div className="p-6 flex flex-col items-center gap-6 text-center">
+                  <div className="space-y-1">
+                    <h2 className="text-lg font-semibold text-white">スキャンして記録</h2>
+                    <p className="text-xs text-blue-500/40">対象: 車両</p>
+                    <p className="text-sm text-gray-500">レシートとメーターを1枚に収めて撮影</p>
+                  </div>
+                  <div className="w-24 h-24 rounded-full bg-gray-800/60 animate-pulse border-4 border-gray-800/30" />
+                  <div className="w-32 h-9 bg-gray-800/40 rounded-full animate-pulse" />
+                </div>
+              </div>
+            ) : (
+              <div 
+                onDragOver={handleDragOver}
+                onDragEnter={handleDragEnter}
+                onDragLeave={handleDragLeave}
+                onDrop={handleDrop}
+                className={`relative overflow-hidden bg-gray-800/40 backdrop-blur-xl border rounded-3xl shadow-2xl transition-all duration-300 w-full ${
+                  isDragging ? "border-blue-500 bg-blue-500/10 scale-[1.01]" : "border-gray-700/50"
+                }`}
+              >
+                {isDragging && (
+                  <div className="absolute inset-0 z-50 bg-blue-600/20 border-2 border-dashed border-blue-500 rounded-3xl flex flex-col items-center justify-center backdrop-blur-xs pointer-events-none transition-all duration-300">
+                    <div className="bg-gray-900/90 border border-blue-500/30 p-4 rounded-2xl flex flex-col items-center gap-2 shadow-2xl animate-pulse">
+                      <Camera className="w-8 h-8 text-blue-400" />
+                      <p className="text-sm font-bold text-white">ここに画像をドロップして解析</p>
+                    </div>
+                  </div>
+                )}
+
+                {loading && (
+                  <div className="absolute inset-0 z-50 bg-black/60 flex flex-col items-center justify-center backdrop-blur-sm">
+                    <Loader2 className="w-10 h-10 text-blue-500 animate-spin mb-3" />
+                    <p className="text-blue-200 font-medium animate-pulse text-sm">
+                      {loadingStep === "compress" ? "画像を圧縮中..." : "AIが解析中..."}
+                    </p>
+                  </div>
+                )}
+
+                <div className={isDragging ? "pointer-events-none" : ""}>
+                  {preview ? (
+                    <div className="relative">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img 
+                        src={preview} 
+                        alt="Preview" 
+                        className="w-full max-h-[300px] object-cover opacity-90" 
+                        draggable="false"
+                      />
+                      {!loading && (
+                        <button 
+                          onClick={clearPreview}
+                          className="absolute top-3 right-3 p-2 bg-black/50 rounded-full text-white backdrop-blur hover:bg-black/70 transition pointer-events-auto"
+                        >
+                          <X className="w-5 h-5" />
+                        </button>
+                      )}
+                      {!loading && (
+                        <div className="absolute bottom-3 right-3 flex gap-2">
+                          <button
+                            onClick={() => cameraInputRef.current?.click()}
+                            className="bg-blue-600/90 hover:bg-blue-500 text-white text-xs font-bold py-2 px-4 rounded-full shadow-lg backdrop-blur flex items-center gap-2 pointer-events-auto"
+                          >
+                            <Camera className="w-3 h-3" /> 次を撮る
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="p-6 flex flex-col items-center gap-6">
+                      <div className="text-center space-y-1">
+                        <h2 className="text-lg font-semibold text-white">スキャンして記録</h2>
+                        <p className="text-xs text-blue-400 font-semibold">対象: {currentVehicleName}</p>
+                        <p className="text-sm text-gray-400">レシートとメーターを1枚に収めて撮影</p>
+                      </div>
+
+                      <button
+                        onClick={() => cameraInputRef.current?.click()}
+                        disabled={loading}
+                        className="group relative w-24 h-24 rounded-full bg-gradient-to-b from-blue-500 to-blue-700 shadow-[0_0_40px_-10px_rgba(59,130,246,0.5)] flex items-center justify-center transition-transform active:scale-95"
+                      >
+                        <div className="absolute inset-0 rounded-full border-4 border-blue-400/30 group-hover:border-blue-400/50 transition-colors" />
+                        <Camera className="w-10 h-10 text-white fill-blue-500" />
+                      </button>
+
+                      <button
+                        onClick={() => galleryInputRef.current?.click()}
+                        disabled={loading}
+                        className="flex items-center gap-2 text-sm text-gray-500 hover:text-blue-400 transition-colors py-2 px-4 rounded-full hover:bg-gray-800"
+                      >
+                        <ImageIcon className="w-4 h-4" />
+                        <span>アルバムから選択</span>
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
 
             <input type="file" accept="image/*" capture="environment" className="hidden" ref={cameraInputRef} onChange={handleFileChange} />
             <input type="file" accept="image/*" className="hidden" ref={galleryInputRef} onChange={handleFileChange} />
           </div>
 
           {/* 右カラム (最新リザルト + 履歴ボタン) */}
-          <div className="flex flex-col gap-6">
+          <div className="flex flex-col gap-6 w-full">
             {/* 最新リザルトカード */}
-            {displayRecord && (
-              <div className="mb-8 animate-in slide-in-from-bottom-5 duration-500">
+            {isLoading ? (
+              <div>
+                <div className="flex items-center justify-between px-2 mb-2">
+                  <h3 className="text-sm font-bold text-gray-500 uppercase tracking-wider flex items-center gap-2">
+                    <Calculator className="w-4 h-4" /> Latest Record
+                  </h3>
+                </div>
+                <div className="bg-gray-900 border border-gray-800 rounded-3xl p-6 shadow-2xl relative overflow-hidden w-full">
+                  <div className="flex justify-between items-start mb-6">
+                    <div>
+                      <div className="w-12 h-3 bg-gray-800 rounded animate-pulse mb-2" />
+                      <div className="flex items-baseline gap-1">
+                        <div className="w-24 h-9 bg-gray-800 rounded animate-pulse" />
+                        <span className="text-sm font-bold text-blue-500">km/L</span>
+                      </div>
+                    </div>
+                    <div className="text-right flex flex-col items-end">
+                      <div className="w-16 h-7 bg-gray-800 rounded animate-pulse mb-1" />
+                      <p className="text-xs text-gray-500">Total Cost</p>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4 bg-black/20 rounded-xl p-4 border border-white/5">
+                    <div>
+                      <p className="text-[10px] text-gray-400 uppercase mb-2">給油量</p>
+                      <div className="w-12 h-5 bg-gray-800 rounded animate-pulse" />
+                    </div>
+                    <div>
+                      <p className="text-[10px] text-gray-400 uppercase mb-2">走行距離</p>
+                      <div className="w-16 h-5 bg-gray-800 rounded animate-pulse" />
+                    </div>
+                    <div className="col-span-2 flex items-center gap-2 pt-2 border-t border-white/5">
+                      <MapPin className="w-3 h-3 text-gray-500" />
+                      <div className="w-24 h-3 bg-gray-800 rounded animate-pulse" />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="mb-8 w-full">
                 <div className="flex items-center justify-between px-2 mb-2">
                   <h3 className="text-sm font-bold text-gray-400 uppercase tracking-wider flex items-center gap-2">
-                    <Calculator className="w-4 h-4" /> {activeRecordId === displayRecord.id ? "Scanned Result" : "Latest Record"}
+                    <Calculator className="w-4 h-4" /> {displayRecord && activeRecordId === displayRecord.id ? "Scanned Result" : "Latest Record"}
                   </h3>
-                  {!isEditing && (
+                  {displayRecord && !isEditing && (
                     <button 
                       onClick={() => startEditing(displayRecord)}
                       className="text-xs text-blue-400 flex items-center gap-1 hover:text-blue-300 transition"
@@ -384,62 +458,74 @@ export default function Home() {
                   )}
                 </div>
 
-                <div className={`relative overflow-hidden rounded-3xl border transition-all duration-300 ${isEditing ? 'bg-gray-800 border-blue-500 ring-1 ring-blue-500' : 'bg-gradient-to-br from-gray-800 to-gray-900 border-gray-700'}`}>
-                  {/* 編集モード */}
-                  {isEditing && editForm ? (
-                    <div className="p-5">
-                      <EditFuelRecordForm 
-                        editForm={editForm}
-                        handleInputChange={handleInputChange}
-                        cancelEditing={cancelEditing}
-                        saveEditing={saveEditing}
-                      />
-                    </div>
-                  ) : (
-                    /* 表示モード */
-                    <div className="p-6">
-                      <div className="flex justify-between items-start mb-6">
-                        <div>
-                          <p className="text-xs text-gray-500 mb-1 flex items-center gap-1">
-                            <Calendar className="w-3 h-3" /> {displayRecord.date || "日付不明"}
-                          </p>
-                          <div className="flex items-baseline gap-1">
-                            <span className="text-4xl font-bold text-white font-mono tracking-tighter">
-                              {displayRecord.fuel_efficiency ? displayRecord.fuel_efficiency.toFixed(2) : "--.--"}
-                            </span>
-                            <span className="text-sm font-bold text-blue-500">km/L</span>
+                {displayRecord ? (
+                  <div className={`relative overflow-hidden rounded-3xl border transition-colors duration-300 w-full ${isEditing ? 'bg-gray-800 border-blue-500 ring-1 ring-blue-500' : 'bg-gradient-to-br from-gray-800 to-gray-900 border-gray-700'}`}>
+                    {/* 編集モード */}
+                    {isEditing && editForm ? (
+                      <div className="p-5">
+                        <EditFuelRecordForm 
+                          editForm={editForm}
+                          handleInputChange={handleInputChange}
+                          cancelEditing={cancelEditing}
+                          saveEditing={saveEditing}
+                        />
+                      </div>
+                    ) : (
+                      /* 表示モード */
+                      <div className="p-6">
+                        <div className="flex justify-between items-start mb-6">
+                          <div>
+                            <p className="text-xs text-gray-500 mb-1 flex items-center gap-1">
+                              <Calendar className="w-3 h-3" /> {displayRecord.date || "日付不明"}
+                            </p>
+                            <div className="flex items-baseline gap-1">
+                              <span className="text-4xl font-bold text-white font-mono tracking-tighter">
+                                {displayRecord.fuel_efficiency ? displayRecord.fuel_efficiency.toFixed(2) : "--.--"}
+                              </span>
+                              <span className="text-sm font-bold text-blue-500">km/L</span>
+                            </div>
+                          </div>
+                          <div className="text-right">
+                            <p className="text-2xl font-bold text-green-400 font-mono">
+                              ¥{displayRecord.total_cost?.toLocaleString() || "---"}
+                            </p>
+                            <p className="text-xs text-gray-500">Total Cost</p>
                           </div>
                         </div>
-                        <div className="text-right">
-                          <p className="text-2xl font-bold text-green-400 font-mono">
-                            ¥{displayRecord.total_cost?.toLocaleString() || "---"}
-                          </p>
-                          <p className="text-xs text-gray-500">Total Cost</p>
-                        </div>
-                      </div>
 
-                      <div className="grid grid-cols-2 gap-4 bg-black/20 rounded-xl p-4 border border-white/5">
-                        <div>
-                          <p className="text-[10px] text-gray-400 uppercase">給油量</p>
-                          <p className="text-lg font-mono font-bold text-blue-200">{displayRecord.fuel_amount} <span className="text-xs text-gray-500">L</span></p>
-                        </div>
-                        <div>
-                          <p className="text-[10px] text-gray-400 uppercase">走行距離</p>
-                          <p className="text-lg font-mono font-bold text-gray-200">{displayRecord.total_distance} <span className="text-xs text-gray-500">km</span></p>
-                        </div>
-                        <div className="col-span-2 flex items-center gap-2 pt-2 border-t border-white/5">
-                           <MapPin className="w-3 h-3 text-gray-500" />
-                          <p className="text-xs text-gray-400 truncate">{displayRecord.gas_station || "場所不明"}</p>
+                        <div className="grid grid-cols-2 gap-4 bg-black/20 rounded-xl p-4 border border-white/5">
+                          <div>
+                            <p className="text-[10px] text-gray-400 uppercase">給油量</p>
+                            <p className="text-lg font-mono font-bold text-blue-200">{displayRecord.fuel_amount} <span className="text-xs text-gray-500">L</span></p>
+                          </div>
+                          <div>
+                            <p className="text-[10px] text-gray-400 uppercase">走行距離</p>
+                            <p className="text-lg font-mono font-bold text-gray-200">{displayRecord.total_distance} <span className="text-xs text-gray-500">km</span></p>
+                          </div>
+                          <div className="col-span-2 flex items-center gap-2 pt-2 border-t border-white/5">
+                             <MapPin className="w-3 h-3 text-gray-500" />
+                            <p className="text-xs text-gray-400 truncate">{displayRecord.gas_station || "場所不明"}</p>
+                          </div>
                         </div>
                       </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="bg-gray-900/30 border border-gray-800/80 rounded-3xl p-8 text-center flex flex-col items-center justify-center min-h-[220px] w-full">
+                    <div className="w-12 h-12 rounded-full bg-gray-800/50 flex items-center justify-center mb-3">
+                      <Fuel className="w-6 h-6 text-gray-500" />
                     </div>
-                  )}
-                </div>
+                    <p className="text-sm font-bold text-gray-300 mb-1">給油記録がまだありません</p>
+                    <p className="text-xs text-gray-500 max-w-[280px] leading-relaxed">
+                      レシートやメーターの写真をスキャンするか、過去の記録を入力して最初の記録を作成しましょう！
+                    </p>
+                  </div>
+                )}
               </div>
             )}
             
             {/* 履歴画面へのリンクボタン */}
-            <div className="mt-auto">
+            <div className="mt-auto w-full">
               <Link 
                 href="/history"
                 className="group flex items-center justify-between w-full p-4 md:p-6 rounded-2xl bg-gray-900 border border-gray-800 hover:border-gray-700 transition"

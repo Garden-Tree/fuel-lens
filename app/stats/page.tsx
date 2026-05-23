@@ -3,7 +3,7 @@
 import { useMemo } from "react";
 import Link from "next/link";
 import { SignedIn, SignedOut, SignInButton, UserButton } from "@clerk/nextjs";
-import { ArrowLeft, TrendingUp } from "lucide-react";
+import { ArrowLeft, TrendingUp, Loader2 } from "lucide-react";
 import { 
   LineChart, 
   Line, 
@@ -61,8 +61,8 @@ function CustomCostTooltip({ active, payload, label }: TooltipProps) {
 }
 
 export default function StatsPage() {
-  const { vehicles, selectedVehicleId, setSelectedVehicleId, addVehicle, deleteVehicle } = useVehicles();
-  const { records } = useFuelRecords(selectedVehicleId);
+  const { vehicles, selectedVehicleId, setSelectedVehicleId, addVehicle, deleteVehicle, updateVehicle, loading: vehiclesLoading } = useVehicles();
+  const { records, loading: recordsLoading } = useFuelRecords(selectedVehicleId);
 
   const validRecords = useMemo(() => {
     if (!records || records.length === 0) return [];
@@ -82,6 +82,135 @@ export default function StatsPage() {
       gasStation: r.gas_station || "不明",
     }));
   }, [validRecords]);
+
+  if (vehiclesLoading || recordsLoading) {
+    return (
+      <main className="min-h-screen bg-black text-white p-4 md:p-8 pb-20 font-sans flex flex-col items-center">
+        <div className="w-full max-w-5xl">
+          {/* ヘッダー (ソリッド表示) */}
+          <header className="flex items-center justify-between py-4 mb-2 sticky top-0 bg-black/80 backdrop-blur-md z-10">
+            <div className="flex items-center gap-4">
+              <Link href="/app" className="p-2 bg-gray-900 rounded-full hover:bg-gray-800 transition">
+                <ArrowLeft className="w-5 h-5 text-gray-300" />
+              </Link>
+              <h1 className="text-xl md:text-2xl font-bold flex items-center gap-2">
+                <TrendingUp className="w-6 h-6 text-blue-500" /> 統計・推移
+              </h1>
+            </div>
+            
+            <div className="flex items-center gap-3">
+              <SignedOut>
+                <SignInButton forceRedirectUrl="/stats">
+                  <button className="bg-blue-600 hover:bg-blue-500 text-white text-sm font-bold py-1.5 px-4 rounded-full transition shadow-lg">
+                    ログイン
+                  </button>
+                </SignInButton>
+              </SignedOut>
+              <SignedIn>
+                <UserButton />
+              </SignedIn>
+            </div>
+          </header>
+
+          {/* 車両セレクター (すでに読み込み済みの場合は実コンポーネントを表示、初期ロード中のみスケルトンを表示) */}
+          {vehiclesLoading ? (
+            <div className="w-full mb-6">
+              <div className="flex items-center gap-2 overflow-x-auto pb-2 scrollbar-none">
+                <div className="flex items-center gap-2 p-1.5 bg-gray-950/40 border border-gray-800/80 rounded-2xl shadow-inner">
+                  <div className="w-20 h-8 md:h-[36px] bg-gray-850 rounded-xl animate-pulse" />
+                  <div className="w-20 h-8 md:h-[36px] bg-gray-850 rounded-xl animate-pulse" />
+                  <div className="w-[34px] h-[34px] bg-gray-850 rounded-xl animate-pulse" />
+                </div>
+              </div>
+            </div>
+          ) : (
+            <VehicleSelector 
+              vehicles={vehicles} 
+              selectedVehicleId={selectedVehicleId} 
+              onSelect={setSelectedVehicleId} 
+              onAddVehicle={addVehicle} 
+              onDeleteVehicle={deleteVehicle}
+              onUpdateVehicle={updateVehicle}
+            />
+          )}
+
+          {/* グラフエリアスケルトン (実カードと100%同じ bg/border/内部余白/mb-6の見出し) */}
+          <div className="space-y-8">
+            <div className="bg-gray-900/50 border border-gray-800 rounded-3xl p-5 md:p-8">
+              {/* グラフタイトル (ソリッド表示・実画面と全く同じ mb-6) */}
+              <h2 className="text-lg font-bold text-gray-300 mb-6 flex items-center gap-2">
+                <span className="w-3 h-3 rounded-full bg-blue-500 shadow-[0_0_10px_#3b82f6]"></span>
+                燃費の推移 (km/L)
+              </h2>
+              {/* グラフコンテナ (実画面と100%同じ相対高さ定義) */}
+              <div className="h-64 md:h-80 w-full relative">
+                <div className="absolute inset-0 bg-gray-950/40 rounded-2xl border border-gray-800/50 p-6 flex flex-col justify-between">
+                  <div className="flex-1 flex items-end gap-4 px-4 pb-2 border-b border-gray-800/80">
+                    {/* Mock line chart points */}
+                    <div className="flex-1 flex flex-col items-center justify-end h-full relative">
+                      <div className="absolute w-2.5 h-2.5 rounded-full bg-blue-500/40 bottom-[20%] animate-pulse" />
+                      <div className="w-px h-full bg-gray-850/60 border-dashed" />
+                    </div>
+                    <div className="flex-1 flex flex-col items-center justify-end h-full relative">
+                      <div className="absolute w-2.5 h-2.5 rounded-full bg-blue-500/40 bottom-[50%] animate-pulse" />
+                      <div className="w-px h-full bg-gray-850/60 border-dashed" />
+                    </div>
+                    <div className="flex-1 flex flex-col items-center justify-end h-full relative">
+                      <div className="absolute w-2.5 h-2.5 rounded-full bg-blue-500/40 bottom-[35%] animate-pulse" />
+                      <div className="w-px h-full bg-gray-850/60 border-dashed" />
+                    </div>
+                    <div className="flex-1 flex flex-col items-center justify-end h-full relative">
+                      <div className="absolute w-2.5 h-2.5 rounded-full bg-blue-500/40 bottom-[70%] animate-pulse" />
+                      <div className="w-px h-full bg-gray-850/60 border-dashed" />
+                    </div>
+                    <div className="flex-1 flex flex-col items-center justify-end h-full relative">
+                      <div className="absolute w-2.5 h-2.5 rounded-full bg-blue-500/40 bottom-[60%] animate-pulse" />
+                      <div className="w-px h-full bg-gray-850/60 border-dashed" />
+                    </div>
+                  </div>
+                  <div className="flex justify-between text-[10px] text-gray-600 mt-2 px-2">
+                    <div className="w-8 h-3 bg-gray-800 rounded animate-pulse" />
+                    <div className="w-8 h-3 bg-gray-800 rounded animate-pulse" />
+                    <div className="w-8 h-3 bg-gray-800 rounded animate-pulse" />
+                    <div className="w-8 h-3 bg-gray-800 rounded animate-pulse" />
+                    <div className="w-8 h-3 bg-gray-800 rounded animate-pulse" />
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-gray-900/50 border border-gray-800 rounded-3xl p-5 md:p-8">
+              {/* グラフタイトル (ソリッド表示・実画面と全く同じ mb-6) */}
+              <h2 className="text-lg font-bold text-gray-300 mb-6 flex items-center gap-2">
+                <span className="w-3 h-3 rounded-full bg-green-500 shadow-[0_0_10px_#22c55e]"></span>
+                支払総額の推移 (円)
+              </h2>
+              {/* グラフコンテナ (実画面と100%同じ相対高さ定義) */}
+              <div className="h-64 w-full relative">
+                <div className="absolute inset-0 bg-gray-950/40 rounded-2xl border border-gray-800/50 p-6 flex flex-col justify-between">
+                  <div className="flex-1 flex items-end gap-6 px-4 pb-2 border-b border-gray-800/80">
+                    {/* Mock bar chart columns */}
+                    <div className="flex-1 bg-green-500/20 rounded-t h-[30%] animate-pulse" />
+                    <div className="flex-1 bg-green-500/20 rounded-t h-[65%] animate-pulse" />
+                    <div className="flex-1 bg-green-500/20 rounded-t h-[45%] animate-pulse" />
+                    <div className="flex-1 bg-green-500/20 rounded-t h-[80%] animate-pulse" />
+                    <div className="flex-1 bg-green-500/20 rounded-t h-[55%] animate-pulse" />
+                  </div>
+                  <div className="flex justify-between text-[10px] text-gray-600 mt-2 px-2">
+                    <div className="w-8 h-3 bg-gray-800 rounded animate-pulse" />
+                    <div className="w-8 h-3 bg-gray-800 rounded animate-pulse" />
+                    <div className="w-8 h-3 bg-gray-800 rounded animate-pulse" />
+                    <div className="w-8 h-3 bg-gray-800 rounded animate-pulse" />
+                    <div className="w-8 h-3 bg-gray-800 rounded animate-pulse" />
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </main>
+    );
+  }
 
   return (
     <main className="min-h-screen bg-black text-white p-4 md:p-8 pb-20 font-sans flex flex-col items-center">
@@ -119,6 +248,7 @@ export default function StatsPage() {
           onSelect={setSelectedVehicleId} 
           onAddVehicle={addVehicle} 
           onDeleteVehicle={deleteVehicle}
+          onUpdateVehicle={updateVehicle}
         />
 
         {records.length < 2 ? (
