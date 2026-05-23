@@ -23,7 +23,12 @@ const LOCAL_VEHICLES_KEY = "fuel_lens_vehicles";
 export function useVehicles() {
   const { getToken, userId, isSignedIn, isLoaded } = useAuth();
   const [vehicles, setVehicles] = useState<Vehicle[]>([DEFAULT_VEHICLE]);
-  const [selectedVehicleId, setSelectedVehicleIdState] = useState<string>(DEFAULT_VEHICLE.id);
+  const [selectedVehicleId, setSelectedVehicleIdState] = useState<string>(() => {
+    if (typeof window !== "undefined") {
+      return localStorage.getItem(SELECTED_VEHICLE_KEY) || DEFAULT_VEHICLE.id;
+    }
+    return DEFAULT_VEHICLE.id;
+  });
   const [loading, setLoading] = useState(true);
 
   const setSelectedVehicleId = useCallback((id: string) => {
@@ -203,6 +208,38 @@ export function useVehicles() {
     }
   };
 
+  const updateVehicle = async (id: string, name: string, type: "car" | "bike") => {
+    if (!isSignedIn) {
+      const updated = vehicles.map(v => v.id === id ? { ...v, name, type } : v);
+      setVehicles(updated);
+      if (typeof window !== "undefined") {
+        localStorage.setItem(LOCAL_VEHICLES_KEY, JSON.stringify(updated));
+        window.dispatchEvent(new CustomEvent("vehicle_changed", { detail: { id: selectedVehicleId } }));
+      }
+      return;
+    }
+
+    try {
+      const token = await getToken({ template: "supabase" });
+      const supabase = createClerkSupabaseClient(token!);
+      const { error } = await supabase
+        .from("vehicles")
+        .update({ name, type })
+        .eq("id", id);
+
+      if (error) throw error;
+
+      setVehicles(prev => prev.map(v => v.id === id ? { ...v, name, type } : v));
+      
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent("vehicle_changed", { detail: { id: selectedVehicleId } }));
+      }
+    } catch (e) {
+      console.error("車両の更新失敗:", e);
+      throw e;
+    }
+  };
+
   return {
     vehicles,
     selectedVehicleId,
@@ -211,6 +248,7 @@ export function useVehicles() {
     setSelectedVehicleId,
     addVehicle,
     deleteVehicle,
+    updateVehicle,
     refreshVehicles: loadVehicles,
   };
 }

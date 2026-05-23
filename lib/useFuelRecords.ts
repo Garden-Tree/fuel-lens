@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useAuth } from "@clerk/nextjs";
 import { createClerkSupabaseClient } from "./supabaseClient";
 
@@ -27,13 +27,15 @@ export function useFuelRecords(selectedVehicleId?: string) {
   const { getToken, userId, isSignedIn, isLoaded } = useAuth();
   const [records, setRecords] = useState<FuelRecord[]>([]);
   const [loading, setLoading] = useState(true);
+  const fetchCounter = useRef(0);
 
-  const loadData = useCallback(async () => {
+  const loadData = useCallback(async (fetchId: number) => {
     if (!isLoaded) return;
     setLoading(true);
 
     if (!isSignedIn) {
       const saved = typeof window !== "undefined" ? localStorage.getItem("fuel_lens_data") : null;
+      if (fetchId !== fetchCounter.current) return;
       if (saved) {
         try {
           const parsed: FuelRecord[] = JSON.parse(saved);
@@ -57,6 +59,7 @@ export function useFuelRecords(selectedVehicleId?: string) {
     try {
       const token = await getToken({ template: "supabase" });
       if (!token) throw new Error("Missing Supabase Token");
+      if (fetchId !== fetchCounter.current) return;
       const supabase = createClerkSupabaseClient(token);
 
       // ローカル給油データのマイグレーション
@@ -93,9 +96,11 @@ export function useFuelRecords(selectedVehicleId?: string) {
       }
 
       const { data, error } = await query;
+      if (fetchId !== fetchCounter.current) return;
 
       if (error) {
         const fallbackQuery = await supabase.from("fuel_records").select("*").order("date", { ascending: false });
+        if (fetchId !== fetchCounter.current) return;
         setRecords(fallbackQuery.data ? sortRecordsByDateDesc(fallbackQuery.data as FuelRecord[]) : []);
         setLoading(false);
         return;
@@ -105,12 +110,15 @@ export function useFuelRecords(selectedVehicleId?: string) {
     } catch (e) {
       console.error("給油データの取得失敗:", e);
     } finally {
-      setLoading(false);
+      if (fetchId === fetchCounter.current) {
+        setLoading(false);
+      }
     }
   }, [isSignedIn, isLoaded, userId, getToken, selectedVehicleId]);
 
   useEffect(() => {
-    loadData();
+    const currentFetchId = ++fetchCounter.current;
+    loadData(currentFetchId);
   }, [loadData]);
 
   const addRecord = async (record: Omit<FuelRecord, "id" | "vehicle_id">) => {
@@ -167,7 +175,13 @@ export function useFuelRecords(selectedVehicleId?: string) {
     if (!isSignedIn) {
       setRecords(prev => {
         const updated = prev.map(r => r.id === id ? { ...r, ...updates } : r);
-        const sorted = sortRecordsByDateDesc(updated);
+        const filtered = updated.filter(r => {
+          if (!selectedVehicleId || selectedVehicleId.startsWith("default-")) {
+            return !r.vehicle_id || r.vehicle_id.startsWith("default-");
+          }
+          return r.vehicle_id === selectedVehicleId;
+        });
+        const sorted = sortRecordsByDateDesc(filtered);
         
         const allSaved = typeof window !== "undefined" ? localStorage.getItem("fuel_lens_data") : null;
         if (allSaved) {
@@ -189,9 +203,16 @@ export function useFuelRecords(selectedVehicleId?: string) {
     const { error } = await supabase.from("fuel_records").update(updates).eq("id", id);
     if (error) throw error;
 
-    setRecords(prev => sortRecordsByDateDesc(
-      prev.map(r => r.id === id ? { ...r, ...updates } : r)
-    ));
+    setRecords(prev => {
+      const updated = prev.map(r => r.id === id ? { ...r, ...updates } : r);
+      const filtered = updated.filter(r => {
+        if (!selectedVehicleId || selectedVehicleId.startsWith("default-")) {
+          return !r.vehicle_id || r.vehicle_id.startsWith("default-");
+        }
+        return r.vehicle_id === selectedVehicleId;
+      });
+      return sortRecordsByDateDesc(filtered);
+    });
   };
 
   const deleteRecord = async (id: string) => {
