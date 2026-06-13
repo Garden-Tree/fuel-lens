@@ -51,6 +51,33 @@ export default function Home() {
     setMounted(true);
   }, []);
 
+  // クリップボードからのペースト対応
+  useEffect(() => {
+    const handlePaste = async (e: ClipboardEvent) => {
+      // 入力フォーム等にフォーカスがある場合は無視する
+      if (
+        document.activeElement?.tagName === "INPUT" ||
+        document.activeElement?.tagName === "TEXTAREA"
+      ) {
+        return;
+      }
+      
+      const file = e.clipboardData?.files?.[0];
+      if (!file) return;
+      
+      if (!file.type.startsWith("image/")) {
+        alert("画像ファイルのみペースト可能です。");
+        return;
+      }
+      
+      e.preventDefault();
+      await processImageFile(file);
+    };
+
+    window.addEventListener("paste", handlePaste);
+    return () => window.removeEventListener("paste", handlePaste);
+  });
+
   const isLoading = vehiclesLoading || recordsLoading;
 
   const processImageFile = async (file: File) => {
@@ -372,6 +399,7 @@ export default function Home() {
                         <h2 className="text-lg font-semibold text-white">スキャンして記録</h2>
                         <p className="text-xs text-blue-400 font-semibold">対象: {currentVehicleName}</p>
                         <p className="text-sm text-gray-400">レシートとメーターを1枚に収めて撮影</p>
+                        <p className="text-xs text-gray-500 pt-1">画像のペースト（Ctrl+V）にも対応</p>
                       </div>
 
                       <button
