@@ -38,6 +38,7 @@ export default function Home() {
   const [activeRecordId, setActiveRecordId] = useState<string | null>(null);
 
   const [isEditing, setIsEditing] = useState(false);
+  const [isManualEntry, setIsManualEntry] = useState(false);
   const [editForm, setEditForm] = useState<Partial<FuelRecord> | null>(null);
   
   const cameraInputRef = useRef<HTMLInputElement>(null);
@@ -49,6 +50,32 @@ export default function Home() {
   const [mounted, setMounted] = useState(false);
   useEffect(() => {
     setMounted(true);
+  }, []);
+  // クリップボードからのペースト対応
+  useEffect(() => {
+    const handlePaste = async (e: ClipboardEvent) => {
+      // 入力フォーム等にフォーカスがある場合は無視する
+      if (
+        document.activeElement?.tagName === "INPUT" ||
+        document.activeElement?.tagName === "TEXTAREA"
+      ) {
+        return;
+      }
+      
+      const file = e.clipboardData?.files?.[0];
+      if (!file) return;
+      
+      if (!file.type.startsWith("image/")) {
+        alert("画像ファイルのみペースト可能です。");
+        return;
+      }
+      
+      e.preventDefault();
+      await processImageFileRef.current(file);
+    };
+
+    window.addEventListener("paste", handlePaste);
+    return () => window.removeEventListener("paste", handlePaste);
   }, []);
 
   const isLoading = vehiclesLoading || recordsLoading;
@@ -74,6 +101,12 @@ export default function Home() {
         setPreview(base64);
         analyzeImage(base64);
       };
+      reader.onerror = () => {
+        console.error("画像の読み込みに失敗しました");
+        setLoading(false);
+        setLoadingStep(null);
+        alert("画像の読み込みに失敗しました");
+      };
       reader.readAsDataURL(compressedFile);
     } catch (error) {
       console.error(error);
@@ -81,6 +114,12 @@ export default function Home() {
       alert("画像の処理に失敗しました");
     }
   };
+
+  // processImageFile の最新版を参照するための ref
+  const processImageFileRef = useRef(processImageFile);
+  useEffect(() => {
+    processImageFileRef.current = processImageFile;
+  });
 
   // 画像処理
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -139,9 +178,23 @@ export default function Home() {
         method: "POST",
         body: JSON.stringify({ imageBase64: base64 }),
       });
-      const data = await res.json();
 
-      if (data.error) throw new Error(data.error);
+      if (!res.ok) {
+        let errorText = "サーバーエラーが発生しました。";
+        try {
+          const errData = await res.json();
+          if (errData && errData.error) {
+            errorText = errData.error;
+          }
+        } catch {
+          if (res.status === 429) {
+            errorText = "リクエストが多すぎます。しばらくお待ちください。";
+          }
+        }
+        throw new Error(errorText);
+      }
+
+      const data = await res.json();
 
       const metrics = calculateFuelMetrics(data.total_distance, data.fuel_amount, data.total_cost);
 
@@ -161,8 +214,9 @@ export default function Home() {
         setActiveRecordId(added.id);
       }
 
-    } catch (err) {
-      alert("解析に失敗しました。");
+    } catch (err: unknown) {
+      const errorMessage = err instanceof Error ? err.message : "解析に失敗しました。";
+      alert(errorMessage);
       console.error(err);
     } finally {
       setLoading(false);
@@ -179,22 +233,56 @@ export default function Home() {
     setIsEditing(true);
   };
 
+  const startManualEntry = () => {
+    const d = new Date();
+    const todayStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    
+    setEditForm({ 
+      date: todayStr,
+      total_distance: null,
+      fuel_amount: null,
+      gas_station: "",
+      price_per_unit: null,
+      total_cost: null,
+    });
+    setIsManualEntry(true);
+    setIsEditing(true);
+    setActiveRecordId(null);
+  };
+
   const cancelEditing = () => {
     setIsEditing(false);
+    setIsManualEntry(false);
     setEditForm(null);
   };
 
   const saveEditing = async () => {
-    if (!editForm || !editForm.id) return;
+    if (!editForm) return;
 
     const metrics = calculateFuelMetrics(editForm.total_distance, editForm.fuel_amount, editForm.total_cost);
 
-    const { id, ...updates } = editForm;
-    await updateRecord(id as string, { 
-      ...updates, 
-      price_per_unit: metrics.price_per_unit ?? editForm.price_per_unit,
-      fuel_efficiency: metrics.fuel_efficiency 
-    });
+    if (isManualEntry) {
+      const newRecordData = {
+        ...editForm,
+        date: editForm.date || new Date().toISOString().split("T")[0],
+        price_per_unit: metrics.price_per_unit ?? editForm.price_per_unit,
+        fuel_efficiency: metrics.fuel_efficiency 
+      };
+      
+      const added = await addRecord(newRecordData as Omit<FuelRecord, "id" | "vehicle_id">);
+      if (added && added.id) {
+        setActiveRecordId(added.id);
+      }
+      setIsManualEntry(false);
+    } else {
+      if (!editForm.id) return;
+      const { id, ...updates } = editForm;
+      await updateRecord(id as string, { 
+        ...updates, 
+        price_per_unit: metrics.price_per_unit ?? editForm.price_per_unit,
+        fuel_efficiency: metrics.fuel_efficiency 
+      });
+    }
     
     setIsEditing(false);
     setEditForm(null);
@@ -208,11 +296,9 @@ export default function Home() {
     const numFields = ["total_distance", "fuel_amount", "price_per_unit", "total_cost"];
     
     if (numFields.includes(field)) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (newForm as any)[field] = val === "" ? null : parseFloat(val);
+      (newForm as Record<string, unknown>)[field] = val === "" ? null : parseFloat(val);
     } else {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (newForm as any)[field] = val;
+      (newForm as Record<string, unknown>)[field] = val;
     }
 
     if (field === "fuel_amount" || field === "total_cost") {
@@ -372,6 +458,7 @@ export default function Home() {
                         <h2 className="text-lg font-semibold text-white">スキャンして記録</h2>
                         <p className="text-xs text-blue-400 font-semibold">対象: {currentVehicleName}</p>
                         <p className="text-sm text-gray-400">レシートとメーターを1枚に収めて撮影</p>
+                        <p className="text-xs text-gray-500 pt-1">画像のペースト（Ctrl+V）にも対応</p>
                       </div>
 
                       <button
@@ -383,14 +470,24 @@ export default function Home() {
                         <Camera className="w-10 h-10 text-white fill-blue-500" />
                       </button>
 
-                      <button
-                        onClick={() => galleryInputRef.current?.click()}
-                        disabled={loading}
-                        className="flex items-center gap-2 text-sm text-gray-500 hover:text-blue-400 transition-colors py-2 px-4 rounded-full hover:bg-gray-800"
-                      >
-                        <ImageIcon className="w-4 h-4" />
-                        <span>アルバムから選択</span>
-                      </button>
+                      <div className="flex items-center gap-4">
+                        <button
+                          onClick={() => galleryInputRef.current?.click()}
+                          disabled={loading}
+                          className="flex items-center gap-2 text-sm text-gray-500 hover:text-blue-400 transition-colors py-2 px-4 rounded-full hover:bg-gray-800"
+                        >
+                          <ImageIcon className="w-4 h-4" />
+                          <span>アルバムから選択</span>
+                        </button>
+                        <button
+                          onClick={startManualEntry}
+                          disabled={loading}
+                          className="flex items-center gap-2 text-sm text-gray-500 hover:text-blue-400 transition-colors py-2 px-4 rounded-full hover:bg-gray-800"
+                        >
+                          <Edit2 className="w-4 h-4" />
+                          <span>手動で入力</span>
+                        </button>
+                      </div>
                     </div>
                   )}
                 </div>
@@ -446,7 +543,7 @@ export default function Home() {
               <div className="mb-8 w-full">
                 <div className="flex items-center justify-between px-2 mb-2">
                   <h3 className="text-sm font-bold text-gray-400 uppercase tracking-wider flex items-center gap-2">
-                    <Calculator className="w-4 h-4" /> {displayRecord && activeRecordId === displayRecord.id ? "Scanned Result" : "Latest Record"}
+                    <Calculator className="w-4 h-4" /> {isManualEntry ? "New Record" : (displayRecord && activeRecordId === displayRecord.id ? "Scanned Result" : "Latest Record")}
                   </h3>
                   {displayRecord && !isEditing && (
                     <button 
@@ -458,11 +555,12 @@ export default function Home() {
                   )}
                 </div>
 
-                {displayRecord ? (
+                {(displayRecord || (isEditing && isManualEntry)) ? (
                   <div className={`relative overflow-hidden rounded-3xl border transition-colors duration-300 w-full ${isEditing ? 'bg-gray-800 border-blue-500 ring-1 ring-blue-500' : 'bg-gradient-to-br from-gray-800 to-gray-900 border-gray-700'}`}>
                     {/* 編集モード */}
                     {isEditing && editForm ? (
                       <div className="p-5">
+                        <h3 className="text-sm font-bold text-gray-300 mb-4">{isManualEntry ? "手動で記録を追加" : "給油記録の編集"}</h3>
                         <EditFuelRecordForm 
                           editForm={editForm}
                           handleInputChange={handleInputChange}

@@ -64,7 +64,7 @@ export default function VehicleSelector({
         onClose={() => setIsModalOpen(false)}
         vehicles={vehicles}
         onAdd={async (name, type) => {
-          await onAddVehicle(name, type);
+          return await onAddVehicle(name, type);
         }}
         onDelete={async (id) => {
           await onDeleteVehicle(id);

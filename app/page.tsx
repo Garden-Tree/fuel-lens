@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import Link from "next/link";
 import { SignedIn, SignedOut, SignInButton } from "@clerk/nextjs";
 import { 
@@ -22,9 +22,31 @@ import {
   MapPin,
   RefreshCw,
   ImageIcon,
-  Plus,
-  Bike
+  Plus
 } from "lucide-react";
+
+const faqs = [
+  {
+    q: "本当に無料で使えますか？",
+    a: "はい、AI解析を含めたすべての基本機能を完全無料でご利用いただけます。広告や追加課金の心配なく、燃費管理を始めていただけます。"
+  },
+  {
+    q: "ユーザー登録は必須ですか？",
+    a: "いいえ、ユーザー登録なしでも「ローカル保存モード」としてすぐにご利用いただけます。スマートフォンのブラウザにデータが保存されます。データをクラウドへ保存し、機種変更時やパソコンなどの複数端末で共有したい場合にのみ、ログイン機能をご利用ください。"
+  },
+  {
+    q: "レシートとメーターは別々に撮影する必要がありますか？",
+    a: "いいえ、レシートとメーターが同時に写った写真1枚を撮影（またはアップロード）してください。AIが1枚の写真から、給油情報（給油量・金額・店舗名など）と、総走行距離（メーター）を同時に解析して抽出します。"
+  },
+  {
+    q: "AIの文字認識精度はどのくらいですか？",
+    a: "Googleの最新AI「Gemini」を活用しているため、夜間の暗いガソリンスタンドで撮影された写真や、多少斜めから撮られたレシートでも高い精度で数字を抽出します。万が一、数字の誤認識があった場合でも、ダッシュボード上で簡単に修正・編集できます。"
+  },
+  {
+    q: "どのような車種に対応していますか？",
+    a: "ガソリン車、ディーゼル車、ハイブリッド車など、オドメーター（総走行距離計）と給油量から燃費計算ができるすべての車両に対応しています。また、複数車両の登録機能により、マイカーと会社の車など複数台の管理も1つのアカウントで可能です。"
+  }
+];
 
 export default function LandingPage() {
   // FAQの開閉状態管理
@@ -38,11 +60,18 @@ export default function LandingPage() {
     setOpenFaq(openFaq === index ? null : index);
   };
 
+  const demoTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // クリーンアップ
+  useEffect(() => {
+    return () => {
+      if (demoTimerRef.current) clearTimeout(demoTimerRef.current);
+    };
+  }, []);
+
   const startDemoScan = () => {
     setDemoState("scanning");
-    
-    // スキャンの演出
-    setTimeout(() => {
+    demoTimerRef.current = setTimeout(() => {
       setDemoState("result");
     }, 2000);
   };
@@ -51,28 +80,6 @@ export default function LandingPage() {
     setDemoState("idle");
   };
 
-  const faqs = [
-    {
-      q: "本当に無料で使えますか？",
-      a: "はい、AI解析を含めたすべての基本機能を完全無料でご利用いただけます。広告や追加課金の心配なく、燃費管理を始めていただけます。"
-    },
-    {
-      q: "ユーザー登録は必須ですか？",
-      a: "いいえ、ユーザー登録なしでも「ローカル保存モード」としてすぐにご利用いただけます。スマートフォンのブラウザにデータが保存されます。データをクラウドへ保存し、機種変更時やパソコンなどの複数端末で共有したい場合にのみ、ログイン機能をご利用ください。"
-    },
-    {
-      q: "レシートとメーターは別々に撮影する必要がありますか？",
-      a: "いいえ、レシートとメーターが同時に写った写真1枚を撮影（またはアップロード）してください。AIが1枚の写真から、給油情報（給油量・金額・店舗名など）と、総走行距離（メーター）を同時に解析して抽出します。"
-    },
-    {
-      q: "AIの文字認識精度はどのくらいですか？",
-      a: "Googleの最新AI「Gemini」を活用しているため、夜間の暗いガソリンスタンドで撮影された写真や、多少斜めから撮られたレシートでも高い精度で数字を抽出します。万が一、数字の誤認識があった場合でも、ダッシュボード上で簡単に修正・編集できます。"
-    },
-    {
-      q: "どのような車種に対応していますか？",
-      a: "ガソリン車、ディーゼル車、ハイブリッド車など、オドメーター（総走行距離計）と給油量から燃費計算ができるすべての車両に対応しています。また、複数車両の登録機能により、マイカーと会社の車など複数台の管理も1つのアカウントで可能です。"
-    }
-  ];
 
   return (
     <div className="min-h-screen bg-gray-950 text-gray-100 font-sans selection:bg-blue-600 selection:text-white relative overflow-hidden">

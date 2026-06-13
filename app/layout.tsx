@@ -28,6 +28,7 @@ export default function RootLayout({
     <ClerkProvider>
       <html lang="ja">
         <body
+          suppressHydrationWarning
           className={`${geistSans.variable} ${geistMono.variable} antialiased bg-gray-950 text-white min-h-screen`}
         >
           <UserSync />

@@ -65,7 +65,6 @@ export function useFuelRecords(selectedVehicleId?: string) {
       // ローカル給油データのマイグレーション
       const localData = typeof window !== "undefined" ? localStorage.getItem("fuel_lens_data") : null;
       if (localData) {
-        localStorage.removeItem("fuel_lens_data");
         try {
           const parsedLocal: FuelRecord[] = JSON.parse(localData);
           if (parsedLocal.length > 0) {
@@ -77,12 +76,13 @@ export function useFuelRecords(selectedVehicleId?: string) {
             });
 
             const { error: insertError } = await supabase.from("fuel_records").insert(recordsToInsert);
-            if (insertError) {
-              localStorage.setItem("fuel_lens_data", localData);
+            if (!insertError) {
+              // 成功した場合のみローカルデータを削除
+              localStorage.removeItem("fuel_lens_data");
             }
           }
         } catch {
-          localStorage.setItem("fuel_lens_data", localData);
+          // パースエラーの場合はローカルデータをそのまま保持
         }
       }
 
@@ -147,7 +147,8 @@ export function useFuelRecords(selectedVehicleId?: string) {
     }
 
     const token = await getToken({ template: "supabase" });
-    const supabase = createClerkSupabaseClient(token!);
+    if (!token) throw new Error("認証トークンの取得に失敗しました");
+    const supabase = createClerkSupabaseClient(token);
 
     const insertPayload: Record<string, unknown> = { ...record, user_id: userId };
     if (targetVehicleId) insertPayload.vehicle_id = targetVehicleId;
@@ -173,6 +174,16 @@ export function useFuelRecords(selectedVehicleId?: string) {
 
   const updateRecord = async (id: string, updates: Partial<FuelRecord>) => {
     if (!isSignedIn) {
+      // localStorageの更新（副作用はsetRecords外で実行）
+      const allSaved = typeof window !== "undefined" ? localStorage.getItem("fuel_lens_data") : null;
+      if (allSaved) {
+        try {
+          const all: FuelRecord[] = JSON.parse(allSaved);
+          const mappedAll = all.map(r => r.id === id ? { ...r, ...updates } : r);
+          localStorage.setItem("fuel_lens_data", JSON.stringify(mappedAll));
+        } catch {}
+      }
+
       setRecords(prev => {
         const updated = prev.map(r => r.id === id ? { ...r, ...updates } : r);
         const filtered = updated.filter(r => {
@@ -181,25 +192,14 @@ export function useFuelRecords(selectedVehicleId?: string) {
           }
           return r.vehicle_id === selectedVehicleId;
         });
-        const sorted = sortRecordsByDateDesc(filtered);
-        
-        const allSaved = typeof window !== "undefined" ? localStorage.getItem("fuel_lens_data") : null;
-        if (allSaved) {
-          try {
-            const all: FuelRecord[] = JSON.parse(allSaved);
-            const mappedAll = all.map(r => r.id === id ? { ...r, ...updates } : r);
-            localStorage.setItem("fuel_lens_data", JSON.stringify(mappedAll));
-          } catch {}
-        } else {
-          localStorage.setItem("fuel_lens_data", JSON.stringify(sorted));
-        }
-        return sorted;
+        return sortRecordsByDateDesc(filtered);
       });
       return;
     }
 
     const token = await getToken({ template: "supabase" });
-    const supabase = createClerkSupabaseClient(token!);
+    if (!token) throw new Error("認証トークンの取得に失敗しました");
+    const supabase = createClerkSupabaseClient(token);
     const { error } = await supabase.from("fuel_records").update(updates).eq("id", id);
     if (error) throw error;
 
@@ -233,12 +233,18 @@ export function useFuelRecords(selectedVehicleId?: string) {
     }
 
     const token = await getToken({ template: "supabase" });
-    const supabase = createClerkSupabaseClient(token!);
+    if (!token) throw new Error("認証トークンの取得に失敗しました");
+    const supabase = createClerkSupabaseClient(token);
     const { error } = await supabase.from("fuel_records").delete().eq("id", id);
     if (error) throw error;
 
     setRecords(prev => prev.filter(r => r.id !== id));
   };
+
+  const refresh = useCallback(() => {
+    const currentFetchId = ++fetchCounter.current;
+    return loadData(currentFetchId);
+  }, [loadData]);
 
   return {
     records,
@@ -246,6 +252,6 @@ export function useFuelRecords(selectedVehicleId?: string) {
     addRecord,
     updateRecord,
     deleteRecord,
-    refresh: loadData
+    refresh
   };
 }
