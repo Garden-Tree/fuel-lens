@@ -214,8 +214,9 @@ export default function Home() {
         setActiveRecordId(added.id);
       }
 
-    } catch (err: any) {
-      alert(err.message || "解析に失敗しました。");
+    } catch (err: unknown) {
+      const errorMessage = err instanceof Error ? err.message : "解析に失敗しました。";
+      alert(errorMessage);
       console.error(err);
     } finally {
       setLoading(false);
@@ -268,7 +269,7 @@ export default function Home() {
         fuel_efficiency: metrics.fuel_efficiency 
       };
       
-      const added = await addRecord(newRecordData as any);
+      const added = await addRecord(newRecordData as Omit<FuelRecord, "id" | "vehicle_id">);
       if (added && added.id) {
         setActiveRecordId(added.id);
       }
@@ -295,11 +296,9 @@ export default function Home() {
     const numFields = ["total_distance", "fuel_amount", "price_per_unit", "total_cost"];
     
     if (numFields.includes(field)) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (newForm as any)[field] = val === "" ? null : parseFloat(val);
+      (newForm as Record<string, unknown>)[field] = val === "" ? null : parseFloat(val);
     } else {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (newForm as any)[field] = val;
+      (newForm as Record<string, unknown>)[field] = val;
     }
 
     if (field === "fuel_amount" || field === "total_cost") {

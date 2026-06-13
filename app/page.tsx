@@ -22,8 +22,7 @@ import {
   MapPin,
   RefreshCw,
   ImageIcon,
-  Plus,
-  Bike
+  Plus
 } from "lucide-react";
 
 const faqs = [

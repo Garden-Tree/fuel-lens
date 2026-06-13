@@ -3,7 +3,7 @@
 import { useState, useMemo } from "react";
 import Link from "next/link";
 import { SignedIn, SignedOut, SignInButton, UserButton } from "@clerk/nextjs";
-import { ArrowLeft, Trash2, MapPin, Calendar, BarChart3, Edit2, Download, Car, Loader2 } from "lucide-react";
+import { ArrowLeft, Trash2, MapPin, Calendar, BarChart3, Edit2, Download, Car } from "lucide-react";
 
 import { useFuelRecords, FuelRecord } from "@/lib/useFuelRecords";
 import EditFuelRecordForm from "@/components/EditFuelRecordForm";

@@ -223,7 +223,7 @@ export function useVehicles() {
           try {
             const parsedRecords = JSON.parse(localRecords);
             // 削除された車両に紐づくレコードを除外
-            const filteredRecords = parsedRecords.filter((r: any) => r.vehicle_id !== id);
+            const filteredRecords = parsedRecords.filter((r: Record<string, unknown>) => r.vehicle_id !== id);
             localStorage.setItem("fuel_lens_data", JSON.stringify(filteredRecords));
           } catch (e) {
             console.error("ローカル給油レコードの削除失敗:", e);

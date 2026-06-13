@@ -3,7 +3,7 @@
 import { useMemo } from "react";
 import Link from "next/link";
 import { SignedIn, SignedOut, SignInButton, UserButton } from "@clerk/nextjs";
-import { ArrowLeft, TrendingUp, Loader2 } from "lucide-react";
+import { ArrowLeft, TrendingUp } from "lucide-react";
 import { 
   LineChart, 
   Line, 

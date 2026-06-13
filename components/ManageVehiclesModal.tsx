@@ -6,7 +6,7 @@ interface ManageVehiclesModalProps {
   isOpen: boolean;
   onClose: () => void;
   vehicles: Vehicle[];
-  onAdd: (name: string, type: "car" | "bike") => Promise<any>;
+  onAdd: (name: string, type: "car" | "bike") => Promise<Vehicle>;
   onDelete: (id: string) => Promise<void>;
   onUpdate: (id: string, name: string, type: "car" | "bike") => Promise<void>;
 }
