@@ -50,7 +50,6 @@ export default function Home() {
   useEffect(() => {
     setMounted(true);
   }, []);
-
   // クリップボードからのペースト対応
   useEffect(() => {
     const handlePaste = async (e: ClipboardEvent) => {
@@ -71,12 +70,12 @@ export default function Home() {
       }
       
       e.preventDefault();
-      await processImageFile(file);
+      await processImageFileRef.current(file);
     };
 
     window.addEventListener("paste", handlePaste);
     return () => window.removeEventListener("paste", handlePaste);
-  });
+  }, []);
 
   const isLoading = vehiclesLoading || recordsLoading;
 
@@ -101,6 +100,12 @@ export default function Home() {
         setPreview(base64);
         analyzeImage(base64);
       };
+      reader.onerror = () => {
+        console.error("画像の読み込みに失敗しました");
+        setLoading(false);
+        setLoadingStep(null);
+        alert("画像の読み込みに失敗しました");
+      };
       reader.readAsDataURL(compressedFile);
     } catch (error) {
       console.error(error);
@@ -108,6 +113,12 @@ export default function Home() {
       alert("画像の処理に失敗しました");
     }
   };
+
+  // processImageFile の最新版を参照するための ref
+  const processImageFileRef = useRef(processImageFile);
+  useEffect(() => {
+    processImageFileRef.current = processImageFile;
+  });
 
   // 画像処理
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -166,9 +177,23 @@ export default function Home() {
         method: "POST",
         body: JSON.stringify({ imageBase64: base64 }),
       });
-      const data = await res.json();
 
-      if (data.error) throw new Error(data.error);
+      if (!res.ok) {
+        let errorText = "サーバーエラーが発生しました。";
+        try {
+          const errData = await res.json();
+          if (errData && errData.error) {
+            errorText = errData.error;
+          }
+        } catch {
+          if (res.status === 429) {
+            errorText = "リクエストが多すぎます。しばらくお待ちください。";
+          }
+        }
+        throw new Error(errorText);
+      }
+
+      const data = await res.json();
 
       const metrics = calculateFuelMetrics(data.total_distance, data.fuel_amount, data.total_cost);
 
@@ -188,8 +213,8 @@ export default function Home() {
         setActiveRecordId(added.id);
       }
 
-    } catch (err) {
-      alert("解析に失敗しました。");
+    } catch (err: any) {
+      alert(err.message || "解析に失敗しました。");
       console.error(err);
     } finally {
       setLoading(false);

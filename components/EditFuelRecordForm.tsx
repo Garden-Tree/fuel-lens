@@ -16,7 +16,7 @@ export default function EditFuelRecordForm({ editForm, handleInputChange, cancel
           <label className="text-xs text-gray-500 block mb-1">給油量 (L)</label>
           <input 
             type="number" 
-            value={editForm.fuel_amount || ""} 
+            value={editForm.fuel_amount ?? ""} 
             onChange={(e) => handleInputChange(e, "fuel_amount")}
             className="w-full bg-gray-900 border border-gray-600 rounded-lg p-2 text-white font-mono focus:border-blue-500 outline-none transition"
           />
@@ -25,7 +25,7 @@ export default function EditFuelRecordForm({ editForm, handleInputChange, cancel
           <label className="text-xs text-gray-500 block mb-1">支払総額 (円)</label>
           <input 
             type="number" 
-            value={editForm.total_cost || ""} 
+            value={editForm.total_cost ?? ""} 
             onChange={(e) => handleInputChange(e, "total_cost")}
             className="w-full bg-gray-900 border border-gray-600 rounded-lg p-2 text-white font-mono focus:border-blue-500 outline-none transition"
           />
@@ -34,7 +34,7 @@ export default function EditFuelRecordForm({ editForm, handleInputChange, cancel
           <label className="text-xs text-gray-500 block mb-1">走行距離 (km)</label>
           <input 
             type="number" 
-            value={editForm.total_distance || ""} 
+            value={editForm.total_distance ?? ""} 
             onChange={(e) => handleInputChange(e, "total_distance")}
             className="w-full bg-gray-900 border border-gray-600 rounded-lg p-2 text-white font-mono focus:border-blue-500 outline-none transition"
           />
@@ -45,7 +45,7 @@ export default function EditFuelRecordForm({ editForm, handleInputChange, cancel
           </label>
           <input 
             type="number" 
-            value={editForm.price_per_unit || ""} 
+            value={editForm.price_per_unit ?? ""} 
             readOnly 
             className="w-full bg-gray-950/50 border border-gray-800 rounded-lg p-2 text-gray-500 font-mono focus:outline-none cursor-not-allowed"
           />
@@ -55,7 +55,7 @@ export default function EditFuelRecordForm({ editForm, handleInputChange, cancel
          <label className="text-xs text-gray-500 block mb-1">ガソリンスタンド名</label>
          <input 
             type="text" 
-            value={editForm.gas_station || ""} 
+            value={editForm.gas_station ?? ""} 
             onChange={(e) => handleInputChange(e, "gas_station")}
             className="w-full bg-gray-900 border border-gray-600 rounded-lg p-2 text-white text-sm focus:border-blue-500 outline-none transition"
           />
