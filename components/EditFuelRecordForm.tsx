@@ -11,6 +11,15 @@ interface Props {
 export default function EditFuelRecordForm({ editForm, handleInputChange, cancelEditing, saveEditing }: Props) {
   return (
     <div className="space-y-4">
+      <div>
+        <label className="text-xs text-gray-500 block mb-1">給油日</label>
+        <input 
+          type="date" 
+          value={editForm.date ?? ""} 
+          onChange={(e) => handleInputChange(e, "date")}
+          className="w-full bg-gray-900 border border-gray-600 rounded-lg p-2 text-white font-mono focus:border-blue-500 outline-none transition"
+        />
+      </div>
       <div className="grid grid-cols-2 gap-4">
         <div>
           <label className="text-xs text-gray-500 block mb-1">給油量 (L)</label>

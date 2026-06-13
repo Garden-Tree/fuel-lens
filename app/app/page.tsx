@@ -38,6 +38,7 @@ export default function Home() {
   const [activeRecordId, setActiveRecordId] = useState<string | null>(null);
 
   const [isEditing, setIsEditing] = useState(false);
+  const [isManualEntry, setIsManualEntry] = useState(false);
   const [editForm, setEditForm] = useState<Partial<FuelRecord> | null>(null);
   
   const cameraInputRef = useRef<HTMLInputElement>(null);
@@ -231,22 +232,56 @@ export default function Home() {
     setIsEditing(true);
   };
 
+  const startManualEntry = () => {
+    const d = new Date();
+    const todayStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    
+    setEditForm({ 
+      date: todayStr,
+      total_distance: null,
+      fuel_amount: null,
+      gas_station: "",
+      price_per_unit: null,
+      total_cost: null,
+    });
+    setIsManualEntry(true);
+    setIsEditing(true);
+    setActiveRecordId(null);
+  };
+
   const cancelEditing = () => {
     setIsEditing(false);
+    setIsManualEntry(false);
     setEditForm(null);
   };
 
   const saveEditing = async () => {
-    if (!editForm || !editForm.id) return;
+    if (!editForm) return;
 
     const metrics = calculateFuelMetrics(editForm.total_distance, editForm.fuel_amount, editForm.total_cost);
 
-    const { id, ...updates } = editForm;
-    await updateRecord(id as string, { 
-      ...updates, 
-      price_per_unit: metrics.price_per_unit ?? editForm.price_per_unit,
-      fuel_efficiency: metrics.fuel_efficiency 
-    });
+    if (isManualEntry) {
+      const newRecordData = {
+        ...editForm,
+        date: editForm.date || new Date().toISOString().split("T")[0],
+        price_per_unit: metrics.price_per_unit ?? editForm.price_per_unit,
+        fuel_efficiency: metrics.fuel_efficiency 
+      };
+      
+      const added = await addRecord(newRecordData as any);
+      if (added && added.id) {
+        setActiveRecordId(added.id);
+      }
+      setIsManualEntry(false);
+    } else {
+      if (!editForm.id) return;
+      const { id, ...updates } = editForm;
+      await updateRecord(id as string, { 
+        ...updates, 
+        price_per_unit: metrics.price_per_unit ?? editForm.price_per_unit,
+        fuel_efficiency: metrics.fuel_efficiency 
+      });
+    }
     
     setIsEditing(false);
     setEditForm(null);
@@ -436,14 +471,24 @@ export default function Home() {
                         <Camera className="w-10 h-10 text-white fill-blue-500" />
                       </button>
 
-                      <button
-                        onClick={() => galleryInputRef.current?.click()}
-                        disabled={loading}
-                        className="flex items-center gap-2 text-sm text-gray-500 hover:text-blue-400 transition-colors py-2 px-4 rounded-full hover:bg-gray-800"
-                      >
-                        <ImageIcon className="w-4 h-4" />
-                        <span>アルバムから選択</span>
-                      </button>
+                      <div className="flex items-center gap-4">
+                        <button
+                          onClick={() => galleryInputRef.current?.click()}
+                          disabled={loading}
+                          className="flex items-center gap-2 text-sm text-gray-500 hover:text-blue-400 transition-colors py-2 px-4 rounded-full hover:bg-gray-800"
+                        >
+                          <ImageIcon className="w-4 h-4" />
+                          <span>アルバムから選択</span>
+                        </button>
+                        <button
+                          onClick={startManualEntry}
+                          disabled={loading}
+                          className="flex items-center gap-2 text-sm text-gray-500 hover:text-blue-400 transition-colors py-2 px-4 rounded-full hover:bg-gray-800"
+                        >
+                          <Edit2 className="w-4 h-4" />
+                          <span>手動で入力</span>
+                        </button>
+                      </div>
                     </div>
                   )}
                 </div>
@@ -499,7 +544,7 @@ export default function Home() {
               <div className="mb-8 w-full">
                 <div className="flex items-center justify-between px-2 mb-2">
                   <h3 className="text-sm font-bold text-gray-400 uppercase tracking-wider flex items-center gap-2">
-                    <Calculator className="w-4 h-4" /> {displayRecord && activeRecordId === displayRecord.id ? "Scanned Result" : "Latest Record"}
+                    <Calculator className="w-4 h-4" /> {isManualEntry ? "New Record" : (displayRecord && activeRecordId === displayRecord.id ? "Scanned Result" : "Latest Record")}
                   </h3>
                   {displayRecord && !isEditing && (
                     <button 
@@ -511,11 +556,12 @@ export default function Home() {
                   )}
                 </div>
 
-                {displayRecord ? (
+                {(displayRecord || (isEditing && isManualEntry)) ? (
                   <div className={`relative overflow-hidden rounded-3xl border transition-colors duration-300 w-full ${isEditing ? 'bg-gray-800 border-blue-500 ring-1 ring-blue-500' : 'bg-gradient-to-br from-gray-800 to-gray-900 border-gray-700'}`}>
                     {/* 編集モード */}
                     {isEditing && editForm ? (
                       <div className="p-5">
+                        <h3 className="text-sm font-bold text-gray-300 mb-4">{isManualEntry ? "手動で記録を追加" : "給油記録の編集"}</h3>
                         <EditFuelRecordForm 
                           editForm={editForm}
                           handleInputChange={handleInputChange}
