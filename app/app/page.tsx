@@ -296,7 +296,9 @@ export default function Home() {
     const numFields = ["total_distance", "fuel_amount", "price_per_unit", "total_cost"];
     
     if (numFields.includes(field)) {
-      (newForm as Record<string, unknown>)[field] = val === "" ? null : parseFloat(val);
+      const num = parseFloat(val);
+      // 空欄・非数値・負数は無効としてnull/0に丸め、不正なデータの保存を防ぐ
+      (newForm as Record<string, unknown>)[field] = val === "" || isNaN(num) ? null : Math.max(0, num);
     } else {
       (newForm as Record<string, unknown>)[field] = val;
     }
@@ -458,7 +460,7 @@ export default function Home() {
                         <h2 className="text-lg font-semibold text-white">スキャンして記録</h2>
                         <p className="text-xs text-blue-400 font-semibold">対象: {currentVehicleName}</p>
                         <p className="text-sm text-gray-400">レシートとメーターを1枚に収めて撮影</p>
-                        <p className="text-xs text-gray-500 pt-1">画像のペースト（Ctrl+V）にも対応</p>
+                        <p className="text-xs text-amber-500/80 pt-1">走行距離はトリップメーター（前回給油からの区間距離）を入力してください</p>
                       </div>
 
                       <button
@@ -488,6 +490,8 @@ export default function Home() {
                           <span>手動で入力</span>
                         </button>
                       </div>
+
+                      <p className="text-xs text-gray-500">画像のペースト（Ctrl+V）にも対応</p>
                     </div>
                   )}
                 </div>

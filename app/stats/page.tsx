@@ -172,6 +172,29 @@ export default function StatsPage() {
       .map(([month, cost]) => ({ month, cost }));
   }, [validRecords]);
 
+  // サマリー集計（平均燃費・累計給油額・平均単価・km単価）
+  const summary = useMemo(() => {
+    let costSum = 0;
+    let amountSum = 0;
+    let distanceSum = 0;
+    const effs: number[] = [];
+
+    validRecords.forEach(r => {
+      if (r.total_cost != null) costSum += r.total_cost;
+      if (r.fuel_amount != null) amountSum += r.fuel_amount;
+      if (r.total_distance != null) distanceSum += r.total_distance;
+      if (r.fuel_efficiency != null && r.fuel_efficiency > 0) effs.push(r.fuel_efficiency);
+    });
+
+    return {
+      avgEfficiency: effs.length > 0 ? effs.reduce((a, b) => a + b, 0) / effs.length : null,
+      totalCost: costSum,
+      avgPricePerUnit: amountSum > 0 ? costSum / amountSum : null,
+      costPerKm: distanceSum > 0 ? costSum / distanceSum : null,
+      count: validRecords.length,
+    };
+  }, [validRecords]);
+
   if (vehiclesLoading || recordsLoading) {
     return (
       <main className="min-h-screen bg-black text-white p-4 md:p-8 pb-20 font-sans flex flex-col items-center">
@@ -339,6 +362,39 @@ export default function StatsPage() {
           onDeleteVehicle={deleteVehicle}
           onUpdateVehicle={updateVehicle}
         />
+
+        {/* サマリーカード (記録が1件以上あれば表示) */}
+        {summary.count > 0 && (
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4 mb-8">
+            <div className="bg-gray-900/50 border border-gray-800 rounded-2xl p-4 md:p-5">
+              <p className="text-[10px] md:text-xs text-gray-500 uppercase tracking-wider mb-1">平均燃費</p>
+              <p className="text-xl md:text-2xl font-bold font-mono text-blue-400">
+                {summary.avgEfficiency != null ? summary.avgEfficiency.toFixed(2) : "--"}
+                <span className="text-xs text-gray-500 ml-1">km/L</span>
+              </p>
+            </div>
+            <div className="bg-gray-900/50 border border-gray-800 rounded-2xl p-4 md:p-5">
+              <p className="text-[10px] md:text-xs text-gray-500 uppercase tracking-wider mb-1">累計給油額</p>
+              <p className="text-xl md:text-2xl font-bold font-mono text-green-400">
+                ¥{summary.totalCost.toLocaleString()}
+              </p>
+            </div>
+            <div className="bg-gray-900/50 border border-gray-800 rounded-2xl p-4 md:p-5">
+              <p className="text-[10px] md:text-xs text-gray-500 uppercase tracking-wider mb-1">平均単価</p>
+              <p className="text-xl md:text-2xl font-bold font-mono text-gray-200">
+                {summary.avgPricePerUnit != null ? `¥${summary.avgPricePerUnit.toFixed(1)}` : "--"}
+                <span className="text-xs text-gray-500 ml-1">/L</span>
+              </p>
+            </div>
+            <div className="bg-gray-900/50 border border-gray-800 rounded-2xl p-4 md:p-5">
+              <p className="text-[10px] md:text-xs text-gray-500 uppercase tracking-wider mb-1">走行コスト</p>
+              <p className="text-xl md:text-2xl font-bold font-mono text-gray-200">
+                {summary.costPerKm != null ? `¥${summary.costPerKm.toFixed(1)}` : "--"}
+                <span className="text-xs text-gray-500 ml-1">/km</span>
+              </p>
+            </div>
+          </div>
+        )}
 
         {records.length < 2 ? (
           <div className="text-center py-20 text-gray-600">

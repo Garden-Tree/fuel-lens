@@ -23,27 +23,39 @@ export default function EditFuelRecordForm({ editForm, handleInputChange, cancel
       <div className="grid grid-cols-2 gap-4">
         <div>
           <label className="text-xs text-gray-500 block mb-1">給油量 (L)</label>
-          <input 
-            type="number" 
-            value={editForm.fuel_amount ?? ""} 
+          <input
+            type="number"
+            min="0"
+            step="0.01"
+            inputMode="decimal"
+            value={editForm.fuel_amount ?? ""}
             onChange={(e) => handleInputChange(e, "fuel_amount")}
             className="w-full bg-gray-900 border border-gray-600 rounded-lg p-2 text-white font-mono focus:border-blue-500 outline-none transition"
           />
         </div>
         <div>
           <label className="text-xs text-gray-500 block mb-1">支払総額 (円)</label>
-          <input 
-            type="number" 
-            value={editForm.total_cost ?? ""} 
+          <input
+            type="number"
+            min="0"
+            step="1"
+            inputMode="numeric"
+            value={editForm.total_cost ?? ""}
             onChange={(e) => handleInputChange(e, "total_cost")}
             className="w-full bg-gray-900 border border-gray-600 rounded-lg p-2 text-white font-mono focus:border-blue-500 outline-none transition"
           />
         </div>
         <div>
-          <label className="text-xs text-gray-500 block mb-1">走行距離 (km)</label>
-          <input 
-            type="number" 
-            value={editForm.total_distance ?? ""} 
+          <label className="text-xs text-gray-500 block mb-1">
+            走行距離 (km)
+            <span className="block text-[10px] text-gray-600 font-normal">前回給油からの区間距離（トリップメーター）</span>
+          </label>
+          <input
+            type="number"
+            min="0"
+            step="0.1"
+            inputMode="decimal"
+            value={editForm.total_distance ?? ""}
             onChange={(e) => handleInputChange(e, "total_distance")}
             className="w-full bg-gray-900 border border-gray-600 rounded-lg p-2 text-white font-mono focus:border-blue-500 outline-none transition"
           />

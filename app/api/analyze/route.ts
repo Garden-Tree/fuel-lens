@@ -6,6 +6,9 @@ const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-3.1-flash-lite";
 
 // 簡易的なオンメモリ・レートリミット (IPベース)
+// 注意: このMapはプロセスメモリ上にあるため、サーバーレス環境（Vercel等）では
+// インスタンスごとに別々の状態を持ち、コールドスタートで消える。厳密な制限が必要な場合は
+// Upstash Redis 等の外部ストアへの置き換えが必要（後述の anonymousScans も同様）。
 const RATE_LIMIT_WINDOW_MS = 60 * 1000; // 1分
 const MAX_REQUESTS_PER_WINDOW = 5;      // 1分間に5回まで
 const ipRequests = new Map<string, { count: number; firstRequest: number }>();
@@ -78,7 +81,7 @@ export async function POST(req: Request) {
     // リクエスト処理前に古いエントリをクリーンアップ
     cleanupRateLimitMap();
 
-    // ---- レートリミット検証（認証済みユーザーのみ適用） ----
+    // ---- レートリミット検証（ログイン有無に関わらず、IP単位で全リクエストに適用） ----
     const now = Date.now();
 
     if (ip !== "unknown_ip") {

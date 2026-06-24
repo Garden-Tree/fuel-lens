@@ -89,8 +89,10 @@ export default function HistoryPage() {
     const numFields = ["total_distance", "fuel_amount", "price_per_unit", "total_cost"];
     
     if (numFields.includes(field)) {
+      const num = parseFloat(val);
+      // 空欄・非数値・負数は無効としてnull/0に丸め、不正なデータの保存を防ぐ
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (newForm as any)[field] = val === "" ? null : parseFloat(val);
+      (newForm as any)[field] = val === "" || isNaN(num) ? null : Math.max(0, num);
     } else {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (newForm as any)[field] = val;
@@ -121,7 +123,9 @@ export default function HistoryPage() {
     const rows = sortedRecords.map(rec => {
       const escapeQuotes = (str: string | null | undefined) => {
         if (!str) return '""';
-        return `"${str.replace(/"/g, '""')}"`;
+        // CSVインジェクション対策: =,+,-,@ 等で始まる値はExcel等で数式実行される恐れがあるため、先頭にシングルクォートを付けて無害化する
+        const safe = /^[=+\-@\t\r]/.test(str) ? `'${str}` : str;
+        return `"${safe.replace(/"/g, '""')}"`;
       };
 
       return [
