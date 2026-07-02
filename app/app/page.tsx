@@ -27,8 +27,9 @@ import VehicleSelector from "@/components/VehicleSelector";
 export default function Home() {
   // 車両管理フックの統合
   const { vehicles, selectedVehicleId, setSelectedVehicleId, addVehicle, deleteVehicle, updateVehicle, loading: vehiclesLoading } = useVehicles();
-  // 選択中車両IDを渡してレコード一覧を動的に同期
-  const { records, addRecord, updateRecord, loading: recordsLoading } = useFuelRecords(selectedVehicleId);
+  // 選択中車両IDと既定（先頭）車両IDを渡してレコード一覧を動的に同期。
+  // 既定車両IDは、未分類（vehicle_id=null）の記録をどの車両に含めるか判定するために使う。
+  const { records, addRecord, updateRecord, loading: recordsLoading } = useFuelRecords(selectedVehicleId, vehicles[0]?.id);
 
   const [loading, setLoading] = useState(false);
   const [loadingStep, setLoadingStep] = useState<"compress" | "analyze" | null>(null);

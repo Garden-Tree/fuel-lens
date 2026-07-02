@@ -62,7 +62,9 @@ export async function POST(req: Request) {
   try {
     // ---- Clerk認証チェック ＆ 未ログイン時のお試し制限 ----
     const { userId } = await auth();
-    const ip = req.headers.get("x-forwarded-for") || "unknown_ip";
+    // x-forwarded-for は "client, proxy1, proxy2" と複数IPが列挙されるため先頭（クライアントIP）を使う
+    const forwardedFor = req.headers.get("x-forwarded-for");
+    const ip = forwardedFor?.split(",")[0]?.trim() || "unknown_ip";
 
     if (!userId) {
       const scanCount = anonymousScans.get(ip) || 0;
@@ -125,7 +127,14 @@ export async function POST(req: Request) {
     }
     // ---------------------------
 
-    const base64Data = imageBase64.split(",")[1];
+    // data URL形式（data:image/jpeg;base64,XXX）とプレーンなBase64の両方を受け付ける
+    const base64Data = imageBase64.includes(",") ? imageBase64.split(",")[1] : imageBase64;
+    if (!base64Data) {
+      return NextResponse.json(
+        { error: "画像データが不正です。Base64形式の文字列を送信してください。" },
+        { status: 400 }
+      );
+    }
     const sizeInKB = Math.round((base64Data.length * 0.75) / 1024);
     console.log(`📷 Server received image size: ${sizeInKB} KB`);
 
@@ -166,9 +175,16 @@ export async function POST(req: Request) {
     });
 
     const responseText = response.text;
-    if (!responseText) throw new Error("AIからの応答が空でした");
+    if (!responseText) throw new Error("AIからの応答が空でした（画像が不鮮明か、安全性フィルタでブロックされた可能性があります）");
 
-    const rawData = JSON.parse(responseText);
+    let rawData: Record<string, unknown>;
+    try {
+      rawData = JSON.parse(responseText);
+    } catch {
+      // AIがJSON以外の文言を返した場合。原因調査のため先頭部分を添える。
+      const snippet = responseText.slice(0, 200);
+      throw new Error(`AIの応答をJSONとして解釈できませんでした: ${snippet}`);
+    }
 
     // AI応答のバリデーション：許可フィールドのみ残し、数値フィールドを検証
     const data = sanitizeAIResponse(rawData);
@@ -191,6 +207,39 @@ export async function POST(req: Request) {
 
   } catch (error) {
     console.error("Analysis Error:", error);
-    return NextResponse.json({ error: "解析に失敗しました" }, { status: 500 });
+
+    // 例外の内容をできる限りメッセージに反映して、原因を切り分けやすくする。
+    const detail = extractErrorDetail(error);
+    // Gemini SDK 等がHTTPステータスを持つ場合はそれを尊重する（例: 429/401/503）。
+    const status =
+      typeof (error as { status?: unknown })?.status === "number"
+        ? (error as { status: number }).status
+        : 500;
+
+    return NextResponse.json(
+      { error: `解析に失敗しました: ${detail}`, detail },
+      { status }
+    );
   }
+}
+
+/**
+ * 例外オブジェクトから人間可読なメッセージを抽出する。
+ * Gemini SDK のエラーは message が JSON 文字列（{"error":{"message":...}}）の場合があるため、
+ * その場合は内側の message を取り出す。
+ */
+function extractErrorDetail(error: unknown): string {
+  let message = error instanceof Error ? error.message : String(error);
+
+  try {
+    const parsed = JSON.parse(message);
+    if (parsed?.error?.message) {
+      message = parsed.error.message;
+    }
+  } catch {
+    // messageがJSONでなければそのまま使う
+  }
+
+  // 想定外に長いメッセージ（スタックや巨大な応答）は切り詰める
+  return message.length > 300 ? `${message.slice(0, 300)}…` : message;
 }
