@@ -75,7 +75,7 @@ function CustomCostTooltip({ active, payload, label }: MonthlyCostTooltipProps) 
 
 export default function StatsPage() {
   const { vehicles, selectedVehicleId, setSelectedVehicleId, addVehicle, deleteVehicle, updateVehicle, loading: vehiclesLoading } = useVehicles();
-  const { records, loading: recordsLoading } = useFuelRecords(selectedVehicleId);
+  const { records, loading: recordsLoading } = useFuelRecords(selectedVehicleId, vehicles[0]?.id);
 
   const validRecords = useMemo(() => {
     if (!records || records.length === 0) return [];
@@ -88,24 +88,28 @@ export default function StatsPage() {
   }, [records]);
 
   const { chartData, domainMin, domainMax, averageEfficiency, efficiencyYTicks, efficiencyYDomain } = useMemo(() => {
-    const chartData = validRecords.map((r, i) => {
-      let dateVal = new Date();
-      if (r.date) {
-        const parts = r.date.split('-');
-        if (parts.length === 3) {
-          dateVal = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
-        } else {
-          dateVal = new Date(r.date);
+    // 燃費グラフには「燃費が算出されている記録」のみを使う。
+    // 金額だけ記録した給油（燃費 null）を 0 として描画すると、折れ線が 0 まで急落してしまうため除外する。
+    const chartData = validRecords
+      .filter(r => r.fuel_efficiency != null && r.fuel_efficiency > 0)
+      .map((r, i) => {
+        let dateVal = new Date();
+        if (r.date) {
+          const parts = r.date.split('-');
+          if (parts.length === 3) {
+            dateVal = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
+          } else {
+            dateVal = new Date(r.date);
+          }
         }
-      }
-      return {
-        timestamp: dateVal.getTime(),
-        name: r.date || `Record ${i + 1}`,
-        efficiency: r.fuel_efficiency || 0,
-        cost: r.total_cost || 0,
-        gasStation: r.gas_station || "不明",
-      };
-    });
+        return {
+          timestamp: dateVal.getTime(),
+          name: r.date || `Record ${i + 1}`,
+          efficiency: r.fuel_efficiency as number,
+          cost: r.total_cost || 0,
+          gasStation: r.gas_station || "不明",
+        };
+      });
 
     if (chartData.length === 0) {
       return { chartData, domainMin: 'auto', domainMax: 'auto', averageEfficiency: 0, efficiencyYTicks: undefined, efficiencyYDomain: undefined as [number,number] | undefined };
@@ -170,6 +174,29 @@ export default function StatsPage() {
         return ay !== by ? ay - by : am - bm;
       })
       .map(([month, cost]) => ({ month, cost }));
+  }, [validRecords]);
+
+  // サマリー集計（平均燃費・累計給油額・平均単価・km単価）
+  const summary = useMemo(() => {
+    let costSum = 0;
+    let amountSum = 0;
+    let distanceSum = 0;
+    const effs: number[] = [];
+
+    validRecords.forEach(r => {
+      if (r.total_cost != null) costSum += r.total_cost;
+      if (r.fuel_amount != null) amountSum += r.fuel_amount;
+      if (r.total_distance != null) distanceSum += r.total_distance;
+      if (r.fuel_efficiency != null && r.fuel_efficiency > 0) effs.push(r.fuel_efficiency);
+    });
+
+    return {
+      avgEfficiency: effs.length > 0 ? effs.reduce((a, b) => a + b, 0) / effs.length : null,
+      totalCost: costSum,
+      avgPricePerUnit: amountSum > 0 ? costSum / amountSum : null,
+      costPerKm: distanceSum > 0 ? costSum / distanceSum : null,
+      count: validRecords.length,
+    };
   }, [validRecords]);
 
   if (vehiclesLoading || recordsLoading) {
@@ -339,6 +366,39 @@ export default function StatsPage() {
           onDeleteVehicle={deleteVehicle}
           onUpdateVehicle={updateVehicle}
         />
+
+        {/* サマリーカード (記録が1件以上あれば表示) */}
+        {summary.count > 0 && (
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4 mb-8">
+            <div className="bg-gray-900/50 border border-gray-800 rounded-2xl p-4 md:p-5">
+              <p className="text-[10px] md:text-xs text-gray-500 uppercase tracking-wider mb-1">平均燃費</p>
+              <p className="text-xl md:text-2xl font-bold font-mono text-blue-400">
+                {summary.avgEfficiency != null ? summary.avgEfficiency.toFixed(2) : "--"}
+                <span className="text-xs text-gray-500 ml-1">km/L</span>
+              </p>
+            </div>
+            <div className="bg-gray-900/50 border border-gray-800 rounded-2xl p-4 md:p-5">
+              <p className="text-[10px] md:text-xs text-gray-500 uppercase tracking-wider mb-1">累計給油額</p>
+              <p className="text-xl md:text-2xl font-bold font-mono text-green-400">
+                ¥{summary.totalCost.toLocaleString()}
+              </p>
+            </div>
+            <div className="bg-gray-900/50 border border-gray-800 rounded-2xl p-4 md:p-5">
+              <p className="text-[10px] md:text-xs text-gray-500 uppercase tracking-wider mb-1">平均単価</p>
+              <p className="text-xl md:text-2xl font-bold font-mono text-gray-200">
+                {summary.avgPricePerUnit != null ? `¥${summary.avgPricePerUnit.toFixed(1)}` : "--"}
+                <span className="text-xs text-gray-500 ml-1">/L</span>
+              </p>
+            </div>
+            <div className="bg-gray-900/50 border border-gray-800 rounded-2xl p-4 md:p-5">
+              <p className="text-[10px] md:text-xs text-gray-500 uppercase tracking-wider mb-1">走行コスト</p>
+              <p className="text-xl md:text-2xl font-bold font-mono text-gray-200">
+                {summary.costPerKm != null ? `¥${summary.costPerKm.toFixed(1)}` : "--"}
+                <span className="text-xs text-gray-500 ml-1">/km</span>
+              </p>
+            </div>
+          </div>
+        )}
 
         {records.length < 2 ? (
           <div className="text-center py-20 text-gray-600">
