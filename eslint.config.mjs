@@ -12,6 +12,8 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // 過去データ移行用の単体スクリプト・データ置き場 (アプリコードではない)
+    "csv/**",
   ]),
 ]);
 

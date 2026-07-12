@@ -22,17 +22,41 @@ export default function HistoryPage() {
 
   const [sortType, setSortType] = useState<"date" | "created_at">("date");
 
+  // 年・月フィルタ
+  const [filterYear, setFilterYear] = useState<string>("all");
+  const [filterMonth, setFilterMonth] = useState<string>("all");
+
+  const availableYears = useMemo(() => {
+    const years = new Set<string>();
+    records.forEach(r => {
+      if (r.date) years.add(String(r.date).slice(0, 4));
+    });
+    return Array.from(years).sort((a, b) => b.localeCompare(a));
+  }, [records]);
+
+  const filteredRecords = useMemo(() => {
+    if (filterYear === "all" && filterMonth === "all") return records;
+    return records.filter(r => {
+      if (!r.date) return false;
+      const y = String(r.date).slice(0, 4);
+      const m = String(parseInt(String(r.date).slice(5, 7), 10));
+      if (filterYear !== "all" && y !== filterYear) return false;
+      if (filterMonth !== "all" && m !== filterMonth) return false;
+      return true;
+    });
+  }, [records, filterYear, filterMonth]);
+
   const sortedRecords = useMemo(() => {
     if (sortType === "created_at") {
-      return records;
+      return filteredRecords;
     }
-    return [...records].sort((a, b) => {
+    return [...filteredRecords].sort((a, b) => {
       const dateA = a.date ? new Date(a.date).getTime() : 0;
       const dateB = b.date ? new Date(b.date).getTime() : 0;
       if (dateB !== dateA) return dateB - dateA;
       return b.id > a.id ? 1 : -1;
     });
-  }, [records, sortType]);
+  }, [filteredRecords, sortType]);
 
   const isLoading = vehiclesLoading || recordsLoading;
 
@@ -228,16 +252,16 @@ export default function HistoryPage() {
               </button>
             ) : (
               <button
-                disabled={records.length === 0}
+                disabled={sortedRecords.length === 0}
                 onClick={exportToCsv}
                 className={`flex items-center gap-2 px-3 py-2 text-xs font-bold rounded-xl border transition ${
-                  records.length > 0
+                  sortedRecords.length > 0
                     ? "bg-gray-900 hover:bg-gray-800 text-gray-300 hover:text-white border-gray-800 hover:border-gray-700"
                     : "bg-gray-900/50 text-gray-550/40 border-gray-800/50 cursor-not-allowed"
                 }`}
-                title={records.length > 0 ? "CSV形式でダウンロード" : "給油履歴がないため出力できません"}
+                title={sortedRecords.length > 0 ? "表示中の記録をCSV形式でダウンロード" : "出力できる記録がありません"}
               >
-                <Download className={`w-4 h-4 ${records.length > 0 ? "text-green-500" : "text-green-700/20"}`} />
+                <Download className={`w-4 h-4 ${sortedRecords.length > 0 ? "text-green-500" : "text-green-700/20"}`} />
                 <span>CSV出力</span>
               </button>
             )}
@@ -299,22 +323,49 @@ export default function HistoryPage() {
         ) : (
           <>
             {/* 操作パネル */}
-            <div className="flex items-center justify-end mb-4 w-full">
+            <div className="flex items-center justify-between gap-3 mb-4 w-full flex-wrap">
               {records.length > 0 ? (
-                <div className="flex items-center gap-1 bg-gray-900 rounded-lg p-1 border border-gray-800">
-                  <button
-                    onClick={() => setSortType("date")}
-                    className={`px-3 py-1.5 text-xs font-bold rounded-md transition ${sortType === "date" ? "bg-blue-600 text-white shadow-sm" : "text-gray-400 hover:text-white"}`}
-                  >
-                    給油日順
-                  </button>
-                  <button
-                    onClick={() => setSortType("created_at")}
-                    className={`px-3 py-1.5 text-xs font-bold rounded-md transition ${sortType === "created_at" ? "bg-blue-600 text-white shadow-sm" : "text-gray-400 hover:text-white"}`}
-                  >
-                    登録順
-                  </button>
-                </div>
+                <>
+                  {/* 年・月フィルタ */}
+                  <div className="flex items-center gap-2">
+                    <select
+                      value={filterYear}
+                      onChange={(e) => setFilterYear(e.target.value)}
+                      className="bg-gray-900 border border-gray-800 rounded-lg px-2 py-1.5 text-xs font-bold text-gray-300 outline-none focus:border-blue-500 transition"
+                    >
+                      <option value="all">全ての年</option>
+                      {availableYears.map(y => (
+                        <option key={y} value={y}>{y}年</option>
+                      ))}
+                    </select>
+                    <select
+                      value={filterMonth}
+                      onChange={(e) => setFilterMonth(e.target.value)}
+                      className="bg-gray-900 border border-gray-800 rounded-lg px-2 py-1.5 text-xs font-bold text-gray-300 outline-none focus:border-blue-500 transition"
+                    >
+                      <option value="all">全ての月</option>
+                      {Array.from({ length: 12 }, (_, i) => String(i + 1)).map(m => (
+                        <option key={m} value={m}>{m}月</option>
+                      ))}
+                    </select>
+                    <span className="text-xs text-gray-500">{sortedRecords.length}件</span>
+                  </div>
+
+                  <div className="flex items-center gap-1 bg-gray-900 rounded-lg p-1 border border-gray-800">
+                    <button
+                      onClick={() => setSortType("date")}
+                      className={`px-3 py-1.5 text-xs font-bold rounded-md transition ${sortType === "date" ? "bg-blue-600 text-white shadow-sm" : "text-gray-400 hover:text-white"}`}
+                    >
+                      給油日順
+                    </button>
+                    <button
+                      onClick={() => setSortType("created_at")}
+                      className={`px-3 py-1.5 text-xs font-bold rounded-md transition ${sortType === "created_at" ? "bg-blue-600 text-white shadow-sm" : "text-gray-400 hover:text-white"}`}
+                    >
+                      登録順
+                    </button>
+                  </div>
+                </>
               ) : (
                 <div className="flex items-center gap-1 bg-gray-950/20 rounded-lg p-1 border border-gray-900/50 opacity-40">
                   <button
@@ -337,7 +388,11 @@ export default function HistoryPage() {
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6 w-full">
               {sortedRecords.length === 0 ? (
                 <div className="text-center py-20 text-gray-600 col-span-full">
-                  <p>この車両の履歴はありません</p>
+                  <p>
+                    {filterYear !== "all" || filterMonth !== "all"
+                      ? "条件に一致する記録がありません"
+                      : "この車両の履歴はありません"}
+                  </p>
                 </div>
               ) : (
                 sortedRecords.map((rec) => (

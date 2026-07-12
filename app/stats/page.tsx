@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
 import { SignedIn, SignedOut, SignInButton, UserButton } from "@clerk/nextjs";
 import { ArrowLeft, TrendingUp } from "lucide-react";
@@ -77,15 +77,32 @@ export default function StatsPage() {
   const { vehicles, selectedVehicleId, setSelectedVehicleId, addVehicle, deleteVehicle, updateVehicle, loading: vehiclesLoading } = useVehicles();
   const { records, loading: recordsLoading } = useFuelRecords(selectedVehicleId);
 
+  // 期間フィルタ (全期間 / 1年 / 6ヶ月 / 3ヶ月)
+  const [period, setPeriod] = useState<"all" | "1y" | "6m" | "3m">("all");
+  const PERIOD_OPTIONS = [
+    { value: "all", label: "全期間" },
+    { value: "1y", label: "1年" },
+    { value: "6m", label: "6ヶ月" },
+    { value: "3m", label: "3ヶ月" },
+  ] as const;
+
+  const filteredRecords = useMemo(() => {
+    if (period === "all") return records;
+    const months = period === "1y" ? 12 : period === "6m" ? 6 : 3;
+    const cutoff = new Date();
+    cutoff.setMonth(cutoff.getMonth() - months);
+    return records.filter(r => r.date && new Date(r.date) >= cutoff);
+  }, [records, period]);
+
   const validRecords = useMemo(() => {
-    if (!records || records.length === 0) return [];
-    const sorted = [...records].sort((a, b) => {
+    if (!filteredRecords || filteredRecords.length === 0) return [];
+    const sorted = [...filteredRecords].sort((a, b) => {
       const timeA = a.date ? new Date(a.date).getTime() : 0;
       const timeB = b.date ? new Date(b.date).getTime() : 0;
       return timeA - timeB;
     });
     return sorted.filter(r => r.fuel_efficiency !== null || r.total_cost !== null);
-  }, [records]);
+  }, [filteredRecords]);
 
   const { chartData, domainMin, domainMax, averageEfficiency, efficiencyYTicks, efficiencyYDomain } = useMemo(() => {
     const chartData = validRecords.map((r, i) => {
@@ -354,14 +371,31 @@ export default function StatsPage() {
         </header>
 
         {/* ★追加: 車両セレクタータブ */}
-        <VehicleSelector 
-          vehicles={vehicles} 
-          selectedVehicleId={selectedVehicleId} 
-          onSelect={setSelectedVehicleId} 
-          onAddVehicle={addVehicle} 
+        <VehicleSelector
+          vehicles={vehicles}
+          selectedVehicleId={selectedVehicleId}
+          onSelect={setSelectedVehicleId}
+          onAddVehicle={addVehicle}
           onDeleteVehicle={deleteVehicle}
           onUpdateVehicle={updateVehicle}
         />
+
+        {/* 期間フィルタ */}
+        <div className="flex items-center justify-end mb-4 w-full">
+          <div className="flex items-center gap-1 bg-gray-900 rounded-lg p-1 border border-gray-800">
+            {PERIOD_OPTIONS.map(opt => (
+              <button
+                key={opt.value}
+                onClick={() => setPeriod(opt.value)}
+                className={`px-3 py-1.5 text-xs font-bold rounded-md transition ${
+                  period === opt.value ? "bg-blue-600 text-white shadow-sm" : "text-gray-400 hover:text-white"
+                }`}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+        </div>
 
         {/* サマリーカード (記録が1件以上あれば表示) */}
         {summary.count > 0 && (
@@ -396,10 +430,14 @@ export default function StatsPage() {
           </div>
         )}
 
-        {records.length < 2 ? (
+        {filteredRecords.length < 2 ? (
           <div className="text-center py-20 text-gray-600">
             <TrendingUp className="w-12 h-12 text-gray-800 mx-auto mb-4" />
-            <p>グラフを表示するには、この車両に少なくとも2件以上の記録が必要です。</p>
+            <p>
+              {period === "all"
+                ? "グラフを表示するには、この車両に少なくとも2件以上の記録が必要です。"
+                : "この期間の記録が2件未満です。期間を広げてみてください。"}
+            </p>
           </div>
         ) : (
           <div className="space-y-8 animate-in fade-in duration-700">
@@ -412,7 +450,8 @@ export default function StatsPage() {
               </h2>
               <div className="h-64 md:h-80 w-full relative">
                 <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={data} margin={{ top: 10, right: 10, left: 30, bottom: 0 }}>
+                  {/* key={period}: 期間切替時にデータ点数が大きく変わると線が不自然に変形するため、再マウントして新規描画させる */}
+                  <LineChart key={period} data={data} margin={{ top: 10, right: 10, left: 30, bottom: 0 }}>
                     <defs>
                       <linearGradient id="colorEfficiency" x1="0" y1="0" x2="0" y2="1">
                         <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.4}/>
@@ -466,13 +505,14 @@ export default function StatsPage() {
                         strokeWidth={1.5}
                       />
                     )}
-                    <Line 
-                      type="monotone" 
-                      dataKey="efficiency" 
-                      stroke="#3b82f6" 
-                      strokeWidth={4} 
-                      dot={{ r: 5, fill: '#1e3a8a', stroke: '#3b82f6', strokeWidth: 2 }} 
+                    <Line
+                      type="monotone"
+                      dataKey="efficiency"
+                      stroke="#3b82f6"
+                      strokeWidth={4}
+                      dot={{ r: 5, fill: '#1e3a8a', stroke: '#3b82f6', strokeWidth: 2 }}
                       activeDot={{ r: 7, fill: '#60a5fa', stroke: '#fff', strokeWidth: 2 }}
+                      animationDuration={500}
                     />
                   </LineChart>
                 </ResponsiveContainer>
@@ -487,7 +527,8 @@ export default function StatsPage() {
               </h2>
               <div className="h-64 w-full relative">
                 <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={monthlyCostData} margin={{ top: 10, right: 10, left: 10, bottom: 0 }}>
+                  {/* key={period}: 期間切替時は再マウントして新規描画 (LineChartと同じ理由) */}
+                  <BarChart key={period} data={monthlyCostData} margin={{ top: 10, right: 10, left: 10, bottom: 0 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#2d3748" vertical={false} />
                     <XAxis 
                       dataKey="month" 
@@ -502,11 +543,12 @@ export default function StatsPage() {
                       tickFormatter={(val) => `¥${val.toLocaleString()}`}
                     />
                     <Tooltip content={<CustomCostTooltip />} cursor={{ fill: '#1f2937' }} />
-                    <Bar 
-                      dataKey="cost" 
-                      fill="#22c55e" 
-                      radius={[4, 4, 0, 0]} 
+                    <Bar
+                      dataKey="cost"
+                      fill="#22c55e"
+                      radius={[4, 4, 0, 0]}
                       barSize={40}
+                      animationDuration={500}
                     />
                   </BarChart>
                 </ResponsiveContainer>
