@@ -13,7 +13,7 @@ import VehicleSelector from "@/components/VehicleSelector";
 
 export default function HistoryPage() {
   const { vehicles, selectedVehicleId, setSelectedVehicleId, addVehicle, deleteVehicle, updateVehicle, loading: vehiclesLoading } = useVehicles();
-  const { records, deleteRecord, updateRecord, loading: recordsLoading } = useFuelRecords(selectedVehicleId);
+  const { records, deleteRecord, updateRecord, loading: recordsLoading } = useFuelRecords(selectedVehicleId, vehicles[0]?.id);
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editForm, setEditForm] = useState<Partial<FuelRecord> | null>(null);
@@ -48,7 +48,15 @@ export default function HistoryPage() {
 
   const sortedRecords = useMemo(() => {
     if (sortType === "created_at") {
-      return filteredRecords;
+      // 登録（作成）順の新しい順。クラウドは created_at、ローカルの旧データは
+      // created_at を持たないため id（Date.now 由来）でフォールバックする。
+      // 年・月フィルタ適用済みの filteredRecords を対象にする。
+      return [...filteredRecords].sort((a, b) => {
+        const createdA = a.created_at ? new Date(a.created_at).getTime() : 0;
+        const createdB = b.created_at ? new Date(b.created_at).getTime() : 0;
+        if (createdB !== createdA) return createdB - createdA;
+        return b.id > a.id ? 1 : -1;
+      });
     }
     return [...filteredRecords].sort((a, b) => {
       const dateA = a.date ? new Date(a.date).getTime() : 0;

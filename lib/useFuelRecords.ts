@@ -12,6 +12,7 @@ export type FuelRecord = {
   total_cost: number | null;
   fuel_efficiency: number | null;
   vehicle_id?: string | null;
+  created_at?: string | null;
 };
 
 function sortRecordsByDateDesc(list: FuelRecord[]): FuelRecord[] {
@@ -23,7 +24,7 @@ function sortRecordsByDateDesc(list: FuelRecord[]): FuelRecord[] {
   });
 }
 
-export function useFuelRecords(selectedVehicleId?: string) {
+export function useFuelRecords(selectedVehicleId?: string, defaultVehicleId?: string) {
   const { getToken, userId, isSignedIn, isLoaded } = useAuth();
   const [records, setRecords] = useState<FuelRecord[]>([]);
   const [loading, setLoading] = useState(true);
@@ -86,13 +87,26 @@ export function useFuelRecords(selectedVehicleId?: string) {
         }
       }
 
-      // クエリ構築: 選択中の車両UUIDに一致するもの、および移行直後の過去データ (null) を両方取得
+      // クエリ構築: 選択中の車両UUIDに一致するものを取得。
+      // vehicle_id が null の記録（ローカルからの移行データなど未分類のもの）は
+      // 「既定（先頭）車両」を選択している場合のみ含める。これを常に含めると、
+      // 車両が複数あるとき全車両に同じ記録が重複表示・重複集計されてしまう。
       let query = supabase.from("fuel_records").select("*").order("date", { ascending: false });
 
+      const isDefaultSelected =
+        !selectedVehicleId ||
+        selectedVehicleId.startsWith("default-") ||
+        (defaultVehicleId != null && selectedVehicleId === defaultVehicleId);
+
       if (selectedVehicleId && !selectedVehicleId.startsWith("default-")) {
-        query = query.or(`vehicle_id.eq.${selectedVehicleId},vehicle_id.is.null`);
+        if (isDefaultSelected) {
+          query = query.or(`vehicle_id.eq.${selectedVehicleId},vehicle_id.is.null`);
+        } else {
+          query = query.eq("vehicle_id", selectedVehicleId);
+        }
       } else {
-        query = query.or("vehicle_id.is.null,vehicle_id.eq.default-car");
+        // 署名済みだが車両IDがまだ確定していない過渡状態。未分類の記録のみ取得する。
+        query = query.is("vehicle_id", null);
       }
 
       const { data, error } = await query;
@@ -114,7 +128,7 @@ export function useFuelRecords(selectedVehicleId?: string) {
         setLoading(false);
       }
     }
-  }, [isSignedIn, isLoaded, userId, getToken, selectedVehicleId]);
+  }, [isSignedIn, isLoaded, userId, getToken, selectedVehicleId, defaultVehicleId]);
 
   useEffect(() => {
     const currentFetchId = ++fetchCounter.current;
@@ -125,10 +139,11 @@ export function useFuelRecords(selectedVehicleId?: string) {
     const targetVehicleId = selectedVehicleId && !selectedVehicleId.startsWith("default-") ? selectedVehicleId : null;
 
     if (!isSignedIn) {
-      const newRecord: FuelRecord = { 
-        ...record, 
+      const newRecord: FuelRecord = {
+        ...record,
         id: Date.now().toString(),
-        vehicle_id: targetVehicleId || "default-car" 
+        vehicle_id: targetVehicleId || "default-car",
+        created_at: new Date().toISOString(),
       };
       
       const allSaved = typeof window !== "undefined" ? localStorage.getItem("fuel_lens_data") : null;
@@ -160,7 +175,14 @@ export function useFuelRecords(selectedVehicleId?: string) {
       .single();
 
     if (error) {
-      // カラム未設定環境用のフォールバックインサート
+      // vehicle_id カラムが存在しない環境でのみ、vehicle_id を外して再挿入する。
+      // ネットワークエラーやRLS違反など他の原因でフォールバックすると、
+      // 記録が意図しない「未分類（vehicle_id=null）」として保存されてしまうため限定する。
+      const isMissingVehicleColumn =
+        targetVehicleId != null &&
+        (error.code === "42703" || /vehicle_id/i.test(error.message ?? ""));
+      if (!isMissingVehicleColumn) throw error;
+
       const fallbackPayload = { ...record, user_id: userId };
       const fallbackRes = await supabase.from("fuel_records").insert(fallbackPayload).select().single();
       if (fallbackRes.error) throw fallbackRes.error;

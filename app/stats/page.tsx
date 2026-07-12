@@ -75,7 +75,7 @@ function CustomCostTooltip({ active, payload, label }: MonthlyCostTooltipProps) 
 
 export default function StatsPage() {
   const { vehicles, selectedVehicleId, setSelectedVehicleId, addVehicle, deleteVehicle, updateVehicle, loading: vehiclesLoading } = useVehicles();
-  const { records, loading: recordsLoading } = useFuelRecords(selectedVehicleId);
+  const { records, loading: recordsLoading } = useFuelRecords(selectedVehicleId, vehicles[0]?.id);
 
   // 期間フィルタ (全期間 / 1年 / 6ヶ月 / 3ヶ月)
   const [period, setPeriod] = useState<"all" | "1y" | "6m" | "3m">("all");
@@ -105,24 +105,28 @@ export default function StatsPage() {
   }, [filteredRecords]);
 
   const { chartData, domainMin, domainMax, averageEfficiency, efficiencyYTicks, efficiencyYDomain } = useMemo(() => {
-    const chartData = validRecords.map((r, i) => {
-      let dateVal = new Date();
-      if (r.date) {
-        const parts = r.date.split('-');
-        if (parts.length === 3) {
-          dateVal = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
-        } else {
-          dateVal = new Date(r.date);
+    // 燃費グラフには「燃費が算出されている記録」のみを使う。
+    // 金額だけ記録した給油（燃費 null）を 0 として描画すると、折れ線が 0 まで急落してしまうため除外する。
+    const chartData = validRecords
+      .filter(r => r.fuel_efficiency != null && r.fuel_efficiency > 0)
+      .map((r, i) => {
+        let dateVal = new Date();
+        if (r.date) {
+          const parts = r.date.split('-');
+          if (parts.length === 3) {
+            dateVal = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
+          } else {
+            dateVal = new Date(r.date);
+          }
         }
-      }
-      return {
-        timestamp: dateVal.getTime(),
-        name: r.date || `Record ${i + 1}`,
-        efficiency: r.fuel_efficiency || 0,
-        cost: r.total_cost || 0,
-        gasStation: r.gas_station || "不明",
-      };
-    });
+        return {
+          timestamp: dateVal.getTime(),
+          name: r.date || `Record ${i + 1}`,
+          efficiency: r.fuel_efficiency as number,
+          cost: r.total_cost || 0,
+          gasStation: r.gas_station || "不明",
+        };
+      });
 
     if (chartData.length === 0) {
       return { chartData, domainMin: 'auto', domainMax: 'auto', averageEfficiency: 0, efficiencyYTicks: undefined, efficiencyYDomain: undefined as [number,number] | undefined };
