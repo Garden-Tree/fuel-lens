@@ -43,3 +43,6 @@ next-env.d.ts
 
 # clerk configuration (can include secrets)
 /.clerk/
+
+# 過去アプリからのデータ移行用 (個人の給油記録・DBバックアップを含むためコミットしない)
+/csv/
