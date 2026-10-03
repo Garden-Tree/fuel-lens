@@ -20,6 +20,9 @@ function createdAtMs(createdAt: string | null | undefined): number {
   return Number.isFinite(t) ? t : 0;
 }
 
+/** 月フィルタの選択肢（"1"〜"12"） */
+const MONTH_OPTIONS: readonly string[] = Array.from({ length: 12 }, (_, i) => String(i + 1));
+
 export default function HistoryPage() {
   const { toast, confirm } = useToast();
   const {
@@ -53,7 +56,11 @@ export default function HistoryPage() {
 
   const [sortType, setSortType] = useState<"date" | "created_at">("date");
 
-  // 車両を切り替えたら、開いている編集フォームと「移動先の選択」を閉じる。
+  // 年・月フィルタ
+  const [filterYear, setFilterYear] = useState<string>("all");
+  const [filterMonth, setFilterMonth] = useState<string>("all");
+
+  // 車両を切り替えたら、開いている編集フォームと「移動先の選択」を閉じ、年・月フィルタも解除する。
   // 開いたままだと、切り替え前の車両の記録を更新してしまうため。
   // （エフェクトではなく「前回の値を state に保持してレンダー中に調整する」React 推奨パターン）
   const [formVehicleId, setFormVehicleId] = useState(selectedVehicleId);
@@ -61,11 +68,9 @@ export default function HistoryPage() {
     setFormVehicleId(selectedVehicleId);
     setEditingId(null);
     setMovingId(null);
+    setFilterYear("all");
+    setFilterMonth("all");
   }
-
-  // 年・月フィルタ
-  const [filterYear, setFilterYear] = useState<string>("all");
-  const [filterMonth, setFilterMonth] = useState<string>("all");
 
   const availableYears = useMemo(() => {
     const years = new Set<string>();
@@ -75,17 +80,22 @@ export default function HistoryPage() {
     return Array.from(years).sort((a, b) => b.localeCompare(a));
   }, [records]);
 
+  // 選択中の年が記録から消えた（最後の1件を削除した等）場合は「全ての年」として扱う。
+  // そのままだと select は「全ての年」と表示されるのに絞り込みが残り、解除できなくなるため。
+  const effectiveYear = availableYears.includes(filterYear) ? filterYear : "all";
+  const effectiveMonth = MONTH_OPTIONS.includes(filterMonth) ? filterMonth : "all";
+
   const filteredRecords = useMemo(() => {
-    if (filterYear === "all" && filterMonth === "all") return records;
+    if (effectiveYear === "all" && effectiveMonth === "all") return records;
     return records.filter(r => {
       if (!r.date) return false;
       const y = String(r.date).slice(0, 4);
       const m = String(parseInt(String(r.date).slice(5, 7), 10));
-      if (filterYear !== "all" && y !== filterYear) return false;
-      if (filterMonth !== "all" && m !== filterMonth) return false;
+      if (effectiveYear !== "all" && y !== effectiveYear) return false;
+      if (effectiveMonth !== "all" && m !== effectiveMonth) return false;
       return true;
     });
-  }, [records, filterYear, filterMonth]);
+  }, [records, effectiveYear, effectiveMonth]);
 
   const sortedRecords = useMemo(() => {
     if (sortType === "created_at") {
@@ -389,7 +399,7 @@ export default function HistoryPage() {
                   {/* 年・月フィルタ */}
                   <div className="flex items-center gap-2">
                     <select
-                      value={filterYear}
+                      value={effectiveYear}
                       aria-label="年で絞り込み"
                       onChange={(e) => setFilterYear(e.target.value)}
                       className="bg-gray-900 border border-gray-800 rounded-lg px-2 py-1.5 text-xs font-bold text-gray-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus:border-blue-500 transition"
@@ -400,13 +410,13 @@ export default function HistoryPage() {
                       ))}
                     </select>
                     <select
-                      value={filterMonth}
+                      value={effectiveMonth}
                       aria-label="月で絞り込み"
                       onChange={(e) => setFilterMonth(e.target.value)}
                       className="bg-gray-900 border border-gray-800 rounded-lg px-2 py-1.5 text-xs font-bold text-gray-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus:border-blue-500 transition"
                     >
                       <option value="all">全ての月</option>
-                      {Array.from({ length: 12 }, (_, i) => String(i + 1)).map(m => (
+                      {MONTH_OPTIONS.map(m => (
                         <option key={m} value={m}>{m}月</option>
                       ))}
                     </select>
@@ -451,7 +461,7 @@ export default function HistoryPage() {
               {sortedRecords.length === 0 ? (
                 <div className="text-center py-20 text-gray-600 col-span-full">
                   <p>
-                    {filterYear !== "all" || filterMonth !== "all"
+                    {effectiveYear !== "all" || effectiveMonth !== "all"
                       ? "条件に一致する記録がありません"
                       : "この車両の履歴はありません"}
                   </p>

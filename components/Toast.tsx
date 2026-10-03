@@ -139,10 +139,14 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     <ToastContext.Provider value={value}>
       {children}
 
-      {/* トースト */}
+      {/*
+        トースト。
+        スマホ幅（< sm）では画面上部に出す。下部だとボトムシート（スキャン確認シート等）の
+        保存/破棄ボタンを最大 8 秒覆ってしまうため。sm 以上は従来どおり画面下部。
+      */}
       <div
         aria-live="polite"
-        className="pointer-events-none fixed inset-x-0 bottom-4 z-[100] flex flex-col items-center gap-2 px-4 sm:bottom-6"
+        className="pointer-events-none fixed inset-x-0 top-4 z-[100] flex flex-col items-center gap-2 px-4 sm:top-auto sm:bottom-6"
       >
         {toasts.map((t) => (
           <div

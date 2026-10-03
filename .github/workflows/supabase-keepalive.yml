@@ -51,7 +51,9 @@ jobs:
             -H "apikey: ${SUPABASE_ANON_KEY}" \
             -H "Authorization: Bearer ${SUPABASE_ANON_KEY}" \
             -H "Content-Type: application/json" \
-            -d '{"p_source":"github-actions"}' || echo "000")"
+            -d '{"p_source":"github-actions"}' || true)"
+          # 接続失敗時も curl は -w により "000" を出力する（`|| echo` を足すと "000000" になる）
+          status="${status:-000}"
 
           echo "HTTP ${status}"
           echo "Response: $(head -c 500 "$body_file")"

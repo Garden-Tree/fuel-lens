@@ -8,6 +8,7 @@ import {
 } from "./supabaseClient";
 import {
   migrateLocalData,
+  migrationErrorMessage,
   ensureDefaultVehicle,
   withStatus,
   LOCAL_RECORDS_KEY,
@@ -141,7 +142,10 @@ export function useVehicles() {
       } catch (e) {
         const kind = classify((e as { status?: number })?.status, e);
         if (kind) throw e; // 障害なら以降の読み込みも失敗するので下の catch へ
-        // 障害以外（RLS 等）の移行失敗はログのみ。ローカルデータは復元済みで次回再試行される。
+        // 障害以外（RLS 等）の移行失敗。ローカルデータは復元済みで次回再試行される。
+        // アップロードされていないことが利用者に伝わるよう error に表示する
+        // （認証トークン欠落は直後の読み込みでも失敗し、再ログイン案内が表示される）。
+        if (!isAuthTokenError(e) && fetchId === fetchCounter.current) setError(migrationErrorMessage(e));
       }
 
       if (fetchId !== fetchCounter.current) return;

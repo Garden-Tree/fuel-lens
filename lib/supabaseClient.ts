@@ -60,6 +60,14 @@ export function isAuthTokenError(error: unknown): boolean {
   return typeof e.message === "string" && e.message.includes(AUTH_TOKEN_ERROR_NAME);
 }
 
+/** getToken の例外がオフライン / ネットワーク障害によるものか（認証エラーと区別する） */
+function isNetworkLikeError(e: unknown): boolean {
+  if (typeof navigator !== "undefined" && navigator.onLine === false) return true;
+  if (e instanceof TypeError) return true;
+  const message = e && typeof e === "object" ? (e as { message?: unknown }).message : undefined;
+  return typeof message === "string" && /fetch|network|Failed to/i.test(message);
+}
+
 type CacheEntry = {
   client: SupabaseClient;
   /** 最新の getToken を保持する。Clerk が getToken の参照を更新しても同じクライアントを使い回せる。 */
@@ -86,9 +94,18 @@ function buildClient(tokenRef: { current: GetToken | null }, withAccessToken: bo
               token = await getToken({ template: SUPABASE_JWT_TEMPLATE });
             } catch (e) {
               console.error("Clerk トークンの取得に失敗しました:", e);
+              // オフライン / ネットワーク障害による失敗は認証エラーではない。元の例外をそのまま投げ、
+              // postgrest-js に status 0 として包ませる（→ "unreachable" に分類され閲覧専用になる）。
+              if (isNetworkLikeError(e)) throw e;
               throw new SupabaseAuthTokenError();
             }
-            if (!token) throw new SupabaseAuthTokenError();
+            if (!token) {
+              // Clerk はオフライン時に例外ではなく null を返すことがある。その場合も障害として扱う。
+              if (typeof navigator !== "undefined" && navigator.onLine === false) {
+                throw new TypeError("Failed to fetch: offline (Clerk token unavailable)");
+              }
+              throw new SupabaseAuthTokenError();
+            }
             return token;
           },
         }

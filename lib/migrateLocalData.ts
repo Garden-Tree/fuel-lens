@@ -109,6 +109,70 @@ function stringOrNull(v: unknown): string | null {
   return typeof v === "string" ? v : null;
 }
 
+const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+
+/** YYYY-MM-DD 形式かつ実在する日付か（lib/analyze.ts の isValidCalendarDate と同じ規則） */
+function isValidCalendarDate(value: unknown): value is string {
+  if (typeof value !== "string" || !DATE_PATTERN.test(value)) return false;
+  const [y, mo, d] = value.split("-").map(Number);
+  if (mo < 1 || mo > 12 || d < 1 || d > 31) return false;
+  const dt = new Date(Date.UTC(y, mo - 1, d));
+  return dt.getUTCFullYear() === y && dt.getUTCMonth() === mo - 1 && dt.getUTCDate() === d;
+}
+
+/** Date をローカルタイムゾーンの YYYY-MM-DD に変換する */
+function toLocalDateString(d: Date): string {
+  const y = String(d.getFullYear()).padStart(4, "0");
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+/**
+ * 解析可能な日時文字列なら Date を返す。Postgres が受け付けられる範囲（4 桁の年）に限る。
+ * JS の Date.parse は Postgres が拒否する書式も受け付けるため、送信時は toISOString() に正規化する。
+ */
+function parseTimestamp(v: unknown): Date | null {
+  if (typeof v !== "string" || !v.trim()) return null;
+  const ms = Date.parse(v);
+  if (Number.isNaN(ms)) return null;
+  const d = new Date(ms);
+  const year = d.getUTCFullYear();
+  return year >= 1000 && year <= 9999 ? d : null;
+}
+
+/**
+ * ローカル記録の date / created_at を Postgres が必ず受け付ける値へ正規化する。
+ * - date: 有効な YYYY-MM-DD → そのまま / 無効なら created_at の（ローカル）日付 / それも無ければ今日
+ * - created_at: 有効な日時 → ISO 文字列 / 無効なら date のローカル 0:00 / それも無ければ現在時刻
+ *
+ * created_at は常に送る。supabase-js の insert(配列) は全行のキーの和集合を列として送り、
+ * キーを持たない行には null を入れるため、一部の行だけ created_at を省くと NOT NULL 違反で
+ * チャンク全体が失敗する。
+ */
+function normalizeRecordDates(rawDate: unknown, rawCreatedAt: unknown): { date: string; created_at: string } {
+  const createdAt = parseTimestamp(rawCreatedAt);
+  const validDate = isValidCalendarDate(rawDate) ? rawDate : null;
+  const now = new Date();
+
+  const date = validDate ?? toLocalDateString(createdAt ?? now);
+
+  let created: Date;
+  if (createdAt) {
+    created = createdAt;
+  } else if (validDate) {
+    const [y, mo, d] = validDate.split("-").map(Number);
+    const local = new Date(y, mo - 1, d, 0, 0, 0, 0);
+    // 年 0〜99 は Date コンストラクタが 1900 年代へ解釈するので補正する
+    local.setFullYear(y);
+    created = parseTimestamp(local.toISOString()) ?? now;
+  } else {
+    created = now;
+  }
+
+  return { date, created_at: created.toISOString() };
+}
+
 function sleep(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
@@ -223,20 +287,56 @@ function withCrossTabLock<T>(userId: string, fn: () => Promise<T>): Promise<T> {
 // 既定車両の確保（useVehicles と移行処理で共有）
 // ------------------------------------------------------------------
 
-/** ロックを取らない内部実装。runMigration（ロック保持中）から呼ぶ。 */
+const userRowInflight = new Map<string, Promise<void>>();
+
+/**
+ * users テーブルに userId の行があることを保証する（冪等）。
+ *
+ * vehicles.user_id / fuel_records.user_id は users(id) への外部キーを持つため、新規ユーザーの
+ * 初回ログインで UserSync の upsert より先に車両・記録を挿入すると 23503（FK 違反）で失敗する。
+ * id だけを ON CONFLICT DO NOTHING で挿入する（email などは UserSync が管理するので送らない）。
+ * 成功した Promise はタブ内で userId ごとに使い回し、失敗時は破棄して次回再試行する。
+ *
+ * @throws Supabase エラー（status 付き）
+ */
+export function ensureUserRow(supabase: SupabaseClient, userId: string): Promise<void> {
+  const existing = userRowInflight.get(userId);
+  if (existing) return existing;
+
+  const run = (async () => {
+    const { error, status } = await supabase
+      .from("users")
+      .upsert({ id: userId }, { onConflict: "id", ignoreDuplicates: true });
+    if (error) throw withStatus(error, status);
+  })();
+  userRowInflight.set(userId, run);
+  run.catch(() => {
+    if (userRowInflight.get(userId) === run) userRowInflight.delete(userId);
+  });
+  return run;
+}
+
+/**
+ * ロックを取らない内部実装。runMigration（ロック保持中）から呼ぶ。
+ * `created` は既定車両をこの呼び出しで新規作成したかどうか。
+ */
 async function ensureDefaultVehicleUnlocked(
   supabase: SupabaseClient,
   userId: string,
   seed?: { name: string; type: VehicleType }
-): Promise<Vehicle[]> {
+): Promise<{ vehicles: Vehicle[]; created: boolean }> {
   const { data, error, status } = await supabase
     .from("vehicles")
     .select("*")
-    .order("created_at", { ascending: true });
+    .order("created_at", { ascending: true })
+    .order("id", { ascending: true });
   if (error) throw withStatus(error, status);
 
   const list = (data ?? []) as Vehicle[];
-  if (list.length > 0) return list;
+  if (list.length > 0) return { vehicles: list, created: false };
+
+  // 車両が 1 台でもあれば users 行は FK により必ず存在する。挿入する場合だけ保証すればよい。
+  await ensureUserRow(supabase, userId);
 
   const { data: inserted, error: insertErr, status: insertStatus } = await supabase
     .from("vehicles")
@@ -244,7 +344,7 @@ async function ensureDefaultVehicleUnlocked(
     .select()
     .single();
   if (insertErr) throw withStatus(insertErr, insertStatus);
-  return [inserted as Vehicle];
+  return { vehicles: [inserted as Vehicle], created: true };
 }
 
 const ensureInflight = new Map<string, Promise<Vehicle[]>>();
@@ -263,7 +363,7 @@ export function ensureDefaultVehicle(
   const existing = ensureInflight.get(userId);
   if (existing) return existing;
 
-  const run = withCrossTabLock(userId, () => ensureDefaultVehicleUnlocked(supabase, userId, seed));
+  const run = withCrossTabLock(userId, async () => (await ensureDefaultVehicleUnlocked(supabase, userId, seed)).vehicles);
   ensureInflight.set(userId, run);
   run.finally(() => {
     if (ensureInflight.get(userId) === run) ensureInflight.delete(userId);
@@ -289,6 +389,18 @@ const FAILURE_MEMO_MS = 30 * 1000;
 export function migrationFailedRecently(userId: string, withinMs: number = FAILURE_MEMO_MS): boolean {
   const at = migrationLastFailureAt.get(userId);
   return at != null && Date.now() - at < withinMs;
+}
+
+/**
+ * 障害以外の理由（RLS 違反・制約違反など）で移行に失敗したときに画面へ出すメッセージ。
+ * ローカルデータは復元済みで、次回の読み込み時に再試行される。
+ */
+export function migrationErrorMessage(e: unknown): string {
+  const detail =
+    e && typeof e === "object" && typeof (e as { message?: unknown }).message === "string"
+      ? (e as { message: string }).message
+      : String(e);
+  return `ローカルの記録をクラウドへ移行できませんでした（データはブラウザに保持されています）: ${detail}`;
 }
 
 export function migrateLocalData(supabase: SupabaseClient, userId: string): Promise<MigrationResult> {
@@ -392,14 +504,21 @@ async function runMigration(supabase: SupabaseClient, userId: string): Promise<M
   }
 
   try {
-    // --- 2. 既定車両の確保 ---
+    // --- 2a. users 行の確保（車両・記録の FK 先。UserSync の upsert より先に走っても失敗しないように） ---
+    await ensureUserRow(supabase, userId);
+
+    // --- 2b. 既定車両の確保 ---
     // クラウドに車両が 1 台もなければ、ローカルの default-car の名前/種別で作成する
     // （ローカルで既定車両を改名していた場合も引き継がれる）。ロック保持中なので unlocked 版を使う。
+    // ローカルで default-car を削除していた（車両が 2 台以上なら可能）場合は、ローカルの先頭車両を
+    // 既定車両の種にする。そうしないと幻の「メインカー」が作られ、それがクラウドの先頭（未分類記録の
+    // 置き場）になってしまう。種にした車両は下のループで二重に挿入しないよう対応表へ登録する。
     const localDefault = localVehicles.find(v => v.id === LOCAL_DEFAULT_VEHICLE_ID);
-    const cloudVehicles = await ensureDefaultVehicleUnlocked(
+    const seedVehicle = localDefault ?? localVehicles[0];
+    const { vehicles: cloudVehicles, created: createdDefault } = await ensureDefaultVehicleUnlocked(
       supabase,
       userId,
-      localDefault ? { name: localDefault.name, type: localDefault.type } : undefined
+      seedVehicle ? { name: seedVehicle.name, type: seedVehicle.type } : undefined
     );
     const defaultCloudId = cloudVehicles[0].id;
     const cloudIds = new Set(cloudVehicles.map(v => v.id));
@@ -409,6 +528,12 @@ async function runMigration(supabase: SupabaseClient, userId: string): Promise<M
     idMap[LOCAL_DEFAULT_VEHICLE_ID] = defaultCloudId;
 
     let migratedVehicles = 0;
+    if (createdDefault && !localDefault && seedVehicle) {
+      idMap[seedVehicle.id] = defaultCloudId;
+      migratedVehicles += 1;
+      writeVehicleMap(userId, idMap); // 途中失敗時の再試行で同じ車両を二重登録しない
+    }
+
     for (const v of localVehicles) {
       if (v.id === LOCAL_DEFAULT_VEHICLE_ID) continue;
       if (isUuid(idMap[v.id]) && cloudIds.has(idMap[v.id])) continue; // 前回の試行で挿入済み
@@ -438,18 +563,20 @@ async function runMigration(supabase: SupabaseClient, userId: string): Promise<M
       } else {
         vehicleId = defaultCloudId; // default-car / 不明な id / 未設定 → 既定車両
       }
-      const createdAt = stringOrNull(r.created_at);
+      // date / created_at は必ず有効な値で送る（無効な値が 1 行でもあるとチャンク全体が拒否され、
+      // 退避⇄復元を毎回繰り返してしまう）
+      const { date, created_at } = normalizeRecordDates(r.date, r.created_at);
       return {
         user_id: userId,
         vehicle_id: vehicleId,
-        date: stringOrNull(r.date) ?? new Date().toISOString().slice(0, 10),
+        date,
         total_distance: numberOrNull(r.total_distance),
         fuel_amount: numberOrNull(r.fuel_amount),
         gas_station: stringOrNull(r.gas_station),
         price_per_unit: numberOrNull(r.price_per_unit),
         total_cost: numberOrNull(r.total_cost),
         fuel_efficiency: numberOrNull(r.fuel_efficiency),
-        ...(createdAt && !Number.isNaN(Date.parse(createdAt)) ? { created_at: createdAt } : {}),
+        created_at,
       };
     });
 
@@ -457,7 +584,8 @@ async function runMigration(supabase: SupabaseClient, userId: string): Promise<M
     const CHUNK = 100;
     for (let i = 0; i < payload.length; i += CHUNK) {
       const chunk = payload.slice(i, i + CHUNK);
-      const { error, status } = await supabase.from("fuel_records").insert(chunk);
+      // defaultToNull: false — 万一キーが欠けた行があっても null ではなく列の DEFAULT を使わせる
+      const { error, status } = await supabase.from("fuel_records").insert(chunk, { defaultToNull: false });
       if (error) throw withStatus(error, status);
       migratedRecords += chunk.length;
       // 挿入済みチャンクを退避データから取り除き、途中失敗時の再試行で二重登録しない

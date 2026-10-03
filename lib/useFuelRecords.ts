@@ -9,6 +9,7 @@ import {
 import {
   migrateLocalData,
   migrationFailedRecently,
+  migrationErrorMessage,
   withStatus,
   LOCAL_RECORDS_KEY,
   LOCAL_DEFAULT_VEHICLE_ID,
@@ -170,7 +171,8 @@ export function useFuelRecords(
         } catch (e) {
           const kind = classify((e as { status?: number })?.status, e);
           if (kind) throw e;
-          // 障害以外の移行失敗はログのみ（ローカルデータは復元済み）
+          // 障害以外の移行失敗（ローカルデータは復元済み）。未アップロードであることを error で知らせる。
+          if (!isAuthTokenError(e) && fetchId === fetchCounter.current) setError(migrationErrorMessage(e));
         }
       }
       if (fetchId !== fetchCounter.current) return;

@@ -47,6 +47,14 @@ export default function ManageVehiclesModal({
 
   const busy = addLoading || updateLoading || deletingId !== null;
 
+  // 閉じる経路（× ボタン・背景クリック・Escape）はすべてここを通す。
+  // 行の編集状態を残すと、次に開いたときに古い編集行が表示されてしまうため破棄してから閉じる。
+  const handleClose = () => {
+    setEditingId(null);
+    setEditName("");
+    onClose();
+  };
+
   // Escape: 行の編集中ならまず編集だけを取り消し（下書きを失わない）、次の Escape でモーダルを閉じる。
   // 処理中は無視する。開いたら閉じるボタンにフォーカスを移す
   useEffect(() => {
@@ -69,7 +77,7 @@ export default function ManageVehiclesModal({
   }, [isOpen]);
 
   // 背景クリックで閉じる（パネル内から背景へドラッグして離した場合は閉じない）
-  const backdropHandlers = useBackdropClose(onClose, !busy);
+  const backdropHandlers = useBackdropClose(handleClose, !busy);
 
   if (!isOpen) return null;
 
@@ -174,7 +182,7 @@ export default function ManageVehiclesModal({
           <button
             ref={closeButtonRef}
             type="button"
-            onClick={onClose}
+            onClick={handleClose}
             disabled={busy}
             aria-label="閉じる"
             className="p-1.5 rounded-full text-gray-500 hover:text-white hover:bg-gray-800 transition disabled:opacity-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-400"

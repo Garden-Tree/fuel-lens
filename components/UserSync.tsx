@@ -2,7 +2,7 @@
 
 import { useEffect, useRef } from 'react';
 import { useAuth, useUser } from '@clerk/nextjs';
-import { getSupabaseClient } from '@/lib/supabaseClient';
+import { AUTH_TOKEN_ERROR_MESSAGE, getSupabaseClient, isAuthTokenError } from '@/lib/supabaseClient';
 import { reportSupabaseFailure } from '@/lib/supabaseHealth';
 
 /**
@@ -39,14 +39,18 @@ export default function UserSync() {
         if (cancelled) return;
         if (error) {
           console.error('Supabaseへのユーザー同期に失敗しました:', error);
-          reportSupabaseFailure(status, error);
+          // 認証トークン欠落は障害ではない（再ログイン案内は各データフックが表示する）。
+          // 障害として報告するとアプリ全体が閲覧専用になり、本当の原因が隠れてしまう。
+          if (isAuthTokenError(error)) console.error(AUTH_TOKEN_ERROR_MESSAGE);
+          else reportSupabaseFailure(status, error);
         } else {
           syncedUserIdRef.current = userId;
         }
       } catch (err) {
         if (cancelled) return;
         console.error('ユーザー同期中にエラーが発生しました:', err);
-        reportSupabaseFailure(undefined, err);
+        if (isAuthTokenError(err)) console.error(AUTH_TOKEN_ERROR_MESSAGE);
+        else reportSupabaseFailure(undefined, err);
       }
     };
 

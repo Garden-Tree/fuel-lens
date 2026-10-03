@@ -55,8 +55,9 @@ export async function GET(request: Request) {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   // service_role キーがあれば RLS を迂回して件数取得も行える。
   // 無ければ anon キーにフォールバック (この場合 rpc のみ成功し、件数取得は権限エラーになる)。
-  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  const supabaseKey = serviceRoleKey ?? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  // 空文字の環境変数もフォールバックさせるため `??` ではなく `||` を使う
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY || undefined;
+  const supabaseKey = serviceRoleKey || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
   if (!supabaseUrl || !supabaseKey) {
     console.error("[keepalive] Supabase の環境変数が不足しています");
