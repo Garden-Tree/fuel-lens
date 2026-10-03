@@ -1,22 +1,16 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
+/*
+ * アプリはダークテーマ固定（layout.tsx の body に bg-gray-950 text-white を指定）。
+ * ライトテーマ用の --background / --foreground は使っていないため定義しない。
+ */
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
-}
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+  /* Tailwind 既定のグレースケールの中間色（gray-800 #1f2937 と gray-900 #111827 の間など） */
+  --color-gray-550: #5b6472;
+  --color-gray-850: #172033;
 }
 
 html {
@@ -24,15 +18,42 @@ html {
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: #030712; /* gray-950 */
+  color: #ffffff;
+  font-family: var(--font-geist-sans), system-ui, sans-serif;
 }
 
-.scrollbar-hide {
+/* スクロールバーを非表示にする（横スクロールのタブ列など） */
+@utility scrollbar-hide {
   -ms-overflow-style: none; /* IE and Edge */
   scrollbar-width: none; /* Firefox */
+  &::-webkit-scrollbar {
+    display: none; /* Chrome, Safari and Opera */
+  }
 }
-.scrollbar-hide::-webkit-scrollbar {
-  display: none; /* Chrome, Safari and Opera */
+
+/* scrollbar-hide のエイリアス */
+@utility scrollbar-none {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+/* 細いスクロールバー（ManageVehiclesModal の一覧など） */
+@utility scrollbar-thin {
+  scrollbar-width: thin;
+  scrollbar-color: #374151 transparent; /* gray-700 / 透明 */
+  &::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  &::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  &::-webkit-scrollbar-thumb {
+    background-color: #374151;
+    border-radius: 9999px;
+  }
 }

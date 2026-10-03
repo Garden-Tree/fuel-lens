@@ -7,20 +7,61 @@ import { ArrowLeft, Trash2, MapPin, Calendar, BarChart3, Edit2, Download, Car } 
 
 import { useFuelRecords, FuelRecord } from "@/lib/useFuelRecords";
 import EditFuelRecordForm from "@/components/EditFuelRecordForm";
-import { calculateFuelMetrics } from "@/lib/calculations";
 import { useVehicles } from "@/lib/useVehicles";
 import VehicleSelector from "@/components/VehicleSelector";
+import { useToast } from "@/components/Toast";
+import { useRecordForm } from "@/lib/useRecordForm";
+import { normalizeDateString } from "@/lib/stats";
+
+/** created_at（ISO 日時）をミリ秒に変換する。欠落・解析不能なら 0（最も古い扱い） */
+function createdAtMs(createdAt: string | null | undefined): number {
+  if (!createdAt) return 0;
+  const t = new Date(createdAt).getTime();
+  return Number.isFinite(t) ? t : 0;
+}
 
 export default function HistoryPage() {
-  const { vehicles, selectedVehicleId, setSelectedVehicleId, addVehicle, deleteVehicle, updateVehicle, loading: vehiclesLoading } = useVehicles();
-  const { records, deleteRecord, updateRecord, loading: recordsLoading } = useFuelRecords(selectedVehicleId, vehicles[0]?.id);
+  const { toast, confirm } = useToast();
+  const {
+    vehicles,
+    selectedVehicleId,
+    setSelectedVehicleId,
+    addVehicle,
+    deleteVehicle,
+    updateVehicle,
+    loading: vehiclesLoading,
+    error: vehiclesError,
+    readOnly: vehiclesReadOnly,
+  } = useVehicles();
+  // 車両一覧の読み込みが終わるまでレコードの読み込みは保留する
+  const {
+    records,
+    deleteRecord,
+    updateRecord,
+    loading: recordsLoading,
+    error: recordsError,
+    readOnly,
+  } = useFuelRecords(selectedVehicleId, vehicles[0]?.id, { enabled: !vehiclesLoading });
 
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [editForm, setEditForm] = useState<Partial<FuelRecord> | null>(null);
+  const form = useRecordForm();
+  const [saving, setSaving] = useState(false);
 
   const [movingId, setMovingId] = useState<string | null>(null);
+  // 進行中の操作（削除・移動）の対象レコードID。二重クリック防止用
+  const [busyId, setBusyId] = useState<string | null>(null);
 
   const [sortType, setSortType] = useState<"date" | "created_at">("date");
+
+  // 車両を切り替えたら、開いている編集フォームと「移動先の選択」を閉じる。
+  // 開いたままだと、切り替え前の車両の記録を更新してしまうため。
+  // （エフェクトではなく「前回の値を state に保持してレンダー中に調整する」React 推奨パターン）
+  const [formVehicleId, setFormVehicleId] = useState(selectedVehicleId);
+  if (formVehicleId !== selectedVehicleId) {
+    setFormVehicleId(selectedVehicleId);
+    setEditingId(null);
+    setMovingId(null);
+  }
 
   // 年・月フィルタ
   const [filterYear, setFilterYear] = useState<string>("all");
@@ -52,94 +93,96 @@ export default function HistoryPage() {
       // created_at を持たないため id（Date.now 由来）でフォールバックする。
       // 年・月フィルタ適用済みの filteredRecords を対象にする。
       return [...filteredRecords].sort((a, b) => {
-        const createdA = a.created_at ? new Date(a.created_at).getTime() : 0;
-        const createdB = b.created_at ? new Date(b.created_at).getTime() : 0;
+        const createdA = createdAtMs(a.created_at);
+        const createdB = createdAtMs(b.created_at);
         if (createdB !== createdA) return createdB - createdA;
-        return b.id > a.id ? 1 : -1;
+        return b.id > a.id ? 1 : b.id < a.id ? -1 : 0;
       });
     }
+    // 給油日の新しい順。日付が欠落・不正な記録は最も古い扱い（末尾）にする。
+    // "YYYY-MM-DD" 同士の辞書順比較なので NaN が出ず、比較関数の契約を満たす。
+    // 同じ給油日なら登録（作成）の新しい順 → id の順で安定化する。
     return [...filteredRecords].sort((a, b) => {
-      const dateA = a.date ? new Date(a.date).getTime() : 0;
-      const dateB = b.date ? new Date(b.date).getTime() : 0;
-      if (dateB !== dateA) return dateB - dateA;
-      return b.id > a.id ? 1 : -1;
+      const dateA = normalizeDateString(a.date);
+      const dateB = normalizeDateString(b.date);
+      if (dateA !== dateB) {
+        if (dateA === null) return 1;
+        if (dateB === null) return -1;
+        return dateA < dateB ? 1 : -1;
+      }
+      const createdA = createdAtMs(a.created_at);
+      const createdB = createdAtMs(b.created_at);
+      if (createdB !== createdA) return createdB - createdA;
+      return b.id > a.id ? 1 : b.id < a.id ? -1 : 0;
     });
   }, [filteredRecords, sortType]);
 
   const isLoading = vehiclesLoading || recordsLoading;
 
   const handleDelete = async (id: string) => {
-    if (!confirm("この記録を削除しますか？")) return;
+    if (busyId || readOnly) return;
+    // 確認ダイアログ表示中も busy 扱いにして、同じカードの編集・移動を無効化する
+    setBusyId(id);
     try {
+      const ok = await confirm("この記録を削除しますか？", { danger: true, confirmLabel: "削除する" });
+      if (!ok) return;
       await deleteRecord(id);
-    } catch {
-      alert("削除に失敗しました");
+      toast("記録を削除しました", { type: "success" });
+    } catch (err) {
+      console.error(err);
+      toast(err instanceof Error ? err.message : "削除に失敗しました", { type: "error" });
+    } finally {
+      setBusyId(null);
     }
   };
 
   const handleMoveVehicle = async (recordId: string, targetVehicleId: string) => {
+    if (busyId || readOnly) return;
+    const targetName = vehicles.find(v => v.id === targetVehicleId)?.name ?? "別の車両";
+    // 確認ダイアログ表示中も busy 扱いにして、同じカードの編集・移動を無効化する
+    setBusyId(recordId);
     try {
+      const ok = await confirm(`この記録を「${targetName}」へ移動しますか？`, { confirmLabel: "移動する" });
+      if (!ok) {
+        // キャンセルしたら「どの車両に移動しますか？」の選択も閉じる
+        setMovingId(null);
+        return;
+      }
       await updateRecord(recordId, { vehicle_id: targetVehicleId });
       setMovingId(null);
+      toast(`「${targetName}」へ移動しました`, { type: "success" });
     } catch (e) {
       console.error(e);
-      alert("車両の移動に失敗しました");
+      toast(e instanceof Error ? e.message : "車両の移動に失敗しました", { type: "error" });
+    } finally {
+      setBusyId(null);
     }
   };
 
   const startEditing = (record: FuelRecord) => {
+    if (readOnly) return;
+    form.reset(record);
     setEditingId(record.id);
-    setEditForm({ ...record });
+    setMovingId(null);
   };
 
   const cancelEditing = () => {
     setEditingId(null);
-    setEditForm(null);
   };
 
   const saveEditing = async () => {
-    if (!editForm || !editForm.id) return;
-    
-    const metrics = calculateFuelMetrics(editForm.total_distance, editForm.fuel_amount, editForm.total_cost);
-
-    const { id, ...updates } = editForm;
-    await updateRecord(id as string, { 
-      ...updates, 
-      price_per_unit: metrics.price_per_unit ?? editForm.price_per_unit,
-      fuel_efficiency: metrics.fuel_efficiency 
-    });
-    
-    setEditingId(null);
-    setEditForm(null);
-  };
-
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>, field: keyof FuelRecord) => {
-    if (!editForm) return;
-    const val = e.target.value;
-    
-    const newForm: Partial<FuelRecord> = { ...editForm };
-    const numFields = ["total_distance", "fuel_amount", "price_per_unit", "total_cost"];
-    
-    if (numFields.includes(field)) {
-      const num = parseFloat(val);
-      // 空欄・非数値・負数は無効としてnull/0に丸め、不正なデータの保存を防ぐ
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (newForm as any)[field] = val === "" || isNaN(num) ? null : Math.max(0, num);
-    } else {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (newForm as any)[field] = val;
+    if (!editingId || saving || !form.isValid) return;
+    setSaving(true);
+    try {
+      await updateRecord(editingId, form.toRecord());
+      setEditingId(null);
+      toast("記録を更新しました", { type: "success" });
+    } catch (err) {
+      console.error(err);
+      toast(err instanceof Error ? err.message : "保存に失敗しました", { type: "error" });
+    } finally {
+      setSaving(false);
     }
-
-    if (field === "fuel_amount" || field === "total_cost") {
-      const amount = newForm.fuel_amount;
-      const cost = newForm.total_cost;
-      if (amount != null && cost != null && amount > 0) {
-        newForm.price_per_unit = Math.round(cost / amount);
-      } else {
-        newForm.price_per_unit = null;
-      }
-    }
-    setEditForm(newForm);
   };
 
   const exportToCsv = () => {
@@ -177,7 +220,7 @@ export default function HistoryPage() {
     
     const currentVehicleName = vehicles.find(v => v.id === selectedVehicleId)?.name || "vehicle";
     // ファイル名に安全な文字列を使用
-    const safeVehicleName = currentVehicleName.replace(/[^a-zA-Z0-9ぁ-んァ-ヶ亜-熙]/g, "_");
+    const safeVehicleName = currentVehicleName.replace(/[^a-zA-Z0-9\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}ー]/gu, "_");
     const filename = `fuellens_${safeVehicleName}_${new Date().toISOString().slice(0,10)}.csv`;
 
     const link = document.createElement("a");
@@ -196,16 +239,16 @@ export default function HistoryPage() {
         {/* ヘッダー */}
         <header className="flex items-center justify-between py-4 mb-2 sticky top-0 bg-black/80 backdrop-blur-md z-10 w-full">
           <div className="flex items-center gap-4">
-            <Link href="/app" className="p-2 bg-gray-900 rounded-full hover:bg-gray-800 transition">
-              <ArrowLeft className="w-5 h-5 text-gray-300" />
+            <Link href="/app" aria-label="ホームに戻る" className="p-2 bg-gray-900 rounded-full hover:bg-gray-800 transition">
+              <ArrowLeft className="w-5 h-5 text-gray-300" aria-hidden="true" />
             </Link>
             <h1 className="text-xl md:text-2xl font-bold">給油履歴</h1>
           </div>
           
           <div className="flex items-center gap-3">
-            <Link href="/stats" className="p-2 bg-gray-900 rounded-full hover:bg-gray-800 transition text-gray-300 group flex items-center gap-2">
+            <Link href="/stats" aria-label="グラフを見る" className="p-2 bg-gray-900 rounded-full hover:bg-gray-800 transition text-gray-300 group flex items-center gap-2">
               <span className="hidden sm:inline text-sm font-bold pr-1">グラフを見る</span>
-              <BarChart3 className="w-5 h-5 text-blue-400" />
+              <BarChart3 className="w-5 h-5 text-blue-400" aria-hidden="true" />
             </Link>
 
             <SignedOut>
@@ -220,6 +263,14 @@ export default function HistoryPage() {
             </SignedIn>
           </div>
         </header>
+
+        {/* データ取得エラー / 閲覧専用の表示 */}
+        {(vehiclesError || recordsError) && (
+          <p role="alert" className="text-xs text-red-400 mb-2 px-1">{vehiclesError || recordsError}</p>
+        )}
+        {readOnly && (
+          <p role="status" className="text-[11px] text-amber-400/90 mb-2 px-1">閲覧専用（クラウド接続待ち）</p>
+        )}
 
         {/* 車両セレクター & CSV出力ボタン */}
         <div className="flex items-center justify-between gap-4 mb-6 w-full">
@@ -243,6 +294,7 @@ export default function HistoryPage() {
                 onAddVehicle={addVehicle} 
                 onDeleteVehicle={deleteVehicle}
                 onUpdateVehicle={updateVehicle}
+                readOnly={vehiclesReadOnly}
                 className="w-full"
               />
             )}
@@ -338,8 +390,9 @@ export default function HistoryPage() {
                   <div className="flex items-center gap-2">
                     <select
                       value={filterYear}
+                      aria-label="年で絞り込み"
                       onChange={(e) => setFilterYear(e.target.value)}
-                      className="bg-gray-900 border border-gray-800 rounded-lg px-2 py-1.5 text-xs font-bold text-gray-300 outline-none focus:border-blue-500 transition"
+                      className="bg-gray-900 border border-gray-800 rounded-lg px-2 py-1.5 text-xs font-bold text-gray-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus:border-blue-500 transition"
                     >
                       <option value="all">全ての年</option>
                       {availableYears.map(y => (
@@ -348,8 +401,9 @@ export default function HistoryPage() {
                     </select>
                     <select
                       value={filterMonth}
+                      aria-label="月で絞り込み"
                       onChange={(e) => setFilterMonth(e.target.value)}
-                      className="bg-gray-900 border border-gray-800 rounded-lg px-2 py-1.5 text-xs font-bold text-gray-300 outline-none focus:border-blue-500 transition"
+                      className="bg-gray-900 border border-gray-800 rounded-lg px-2 py-1.5 text-xs font-bold text-gray-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus:border-blue-500 transition"
                     >
                       <option value="all">全ての月</option>
                       {Array.from({ length: 12 }, (_, i) => String(i + 1)).map(m => (
@@ -404,33 +458,46 @@ export default function HistoryPage() {
                 </div>
               ) : (
                 sortedRecords.map((rec) => (
-                  editingId === rec.id && editForm ? (
+                  editingId === rec.id ? (
                     <div key={`edit-${rec.id}`} className="bg-gray-800 border border-blue-500 ring-1 ring-blue-500 rounded-2xl p-5 relative">
-                      <EditFuelRecordForm 
-                        editForm={editForm}
-                        handleInputChange={handleInputChange}
-                        cancelEditing={cancelEditing}
-                        saveEditing={saveEditing}
+                      <EditFuelRecordForm
+                        form={form}
+                        onCancel={cancelEditing}
+                        onSave={saveEditing}
+                        saving={saving}
+                        disabled={readOnly}
                       />
                     </div>
                   ) : (
                     <div key={rec.id} className="bg-gray-900 border border-gray-800 rounded-2xl p-5 relative group overflow-hidden">
                       {movingId === rec.id && (
-                        <div className="absolute inset-0 bg-black/95 z-10 p-4 flex flex-col justify-center items-center gap-3 animate-in fade-in duration-200">
+                        <div
+                          role="group"
+                          aria-label="移動先の車両を選択"
+                          className="absolute inset-0 bg-black/95 z-10 p-4 flex flex-col justify-center items-center gap-3 animate-in fade-in duration-200"
+                          onKeyDown={(e) => {
+                            if (e.key === "Escape") setMovingId(null);
+                          }}
+                        >
                           <p className="text-xs text-gray-300 font-bold">どの車両に移動しますか？</p>
                           <div className="flex flex-wrap gap-2 justify-center w-full max-h-[140px] overflow-y-auto">
                             {vehicles.filter(v => v.id !== selectedVehicleId).map(v => (
                               <button
                                 key={v.id}
+                                type="button"
                                 onClick={() => handleMoveVehicle(rec.id, v.id)}
-                                className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold rounded-lg transition"
+                                disabled={busyId === rec.id}
+                                className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold rounded-lg transition disabled:opacity-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-300"
                               >
                                 {v.name}
                               </button>
                             ))}
                             <button
+                              type="button"
+                              autoFocus
                               onClick={() => setMovingId(null)}
-                              className="px-3 py-1.5 bg-gray-800 hover:bg-gray-700 text-gray-400 hover:text-white text-xs font-bold rounded-lg transition"
+                              disabled={busyId === rec.id}
+                              className="px-3 py-1.5 bg-gray-800 hover:bg-gray-700 text-gray-400 hover:text-white text-xs font-bold rounded-lg transition focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-400"
                             >
                               キャンセル
                             </button>
@@ -474,36 +541,43 @@ export default function HistoryPage() {
                       <div className="mt-3 flex items-center gap-2 text-xs text-gray-500 pr-24">
                         <MapPin className="w-3 h-3 flex-shrink-0" />
                         <span className="truncate" title={rec.gas_station || undefined}>
-                          {rec.gas_station 
-                            ? (rec.gas_station.length > 12 ? rec.gas_station.slice(0, 12) + "..." : rec.gas_station)
-                            : "SS不明"}
+                          {rec.gas_station || "SS不明"}
                         </span>
                       </div>
 
                       {/* 操作ボタン群 */}
                       <div className="absolute bottom-4 right-4 flex items-center opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition duration-200">
                         {vehicles.length > 1 && (
-                          <button 
+                          <button
+                            type="button"
                             onClick={() => setMovingId(rec.id)}
-                            className="p-1.5 text-gray-500 hover:text-blue-400 transition"
+                            disabled={readOnly || busyId === rec.id}
+                            className="p-1.5 text-gray-500 hover:text-blue-400 transition disabled:opacity-40 disabled:cursor-not-allowed focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 rounded"
                             title="他の車両へ移動"
+                            aria-label="他の車両へ移動"
                           >
-                            <Car className="w-4 h-4" />
+                            <Car className="w-4 h-4" aria-hidden="true" />
                           </button>
                         )}
-                        <button 
+                        <button
+                          type="button"
                           onClick={() => startEditing(rec)}
-                          className="p-1.5 text-gray-500 hover:text-blue-400 transition"
+                          disabled={readOnly || busyId === rec.id}
+                          className="p-1.5 text-gray-500 hover:text-blue-400 transition disabled:opacity-40 disabled:cursor-not-allowed focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 rounded"
                           title="編集"
+                          aria-label="この記録を編集"
                         >
-                          <Edit2 className="w-4 h-4" />
+                          <Edit2 className="w-4 h-4" aria-hidden="true" />
                         </button>
-                        <button 
+                        <button
+                          type="button"
                           onClick={() => handleDelete(rec.id)}
-                          className="p-1.5 text-gray-500 hover:text-red-500 transition"
+                          disabled={readOnly || busyId === rec.id}
+                          className="p-1.5 text-gray-500 hover:text-red-500 transition disabled:opacity-40 disabled:cursor-not-allowed focus:outline-none focus-visible:ring-2 focus-visible:ring-red-400 rounded"
                           title="削除"
+                          aria-label="この記録を削除"
                         >
-                          <Trash2 className="w-4 h-4" />
+                          <Trash2 className="w-4 h-4" aria-hidden="true" />
                         </button>
                       </div>
                     </div>

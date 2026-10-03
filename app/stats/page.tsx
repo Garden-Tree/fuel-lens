@@ -4,13 +4,13 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import { SignedIn, SignedOut, SignInButton, UserButton } from "@clerk/nextjs";
 import { ArrowLeft, TrendingUp } from "lucide-react";
-import { 
-  LineChart, 
-  Line, 
-  XAxis, 
-  YAxis, 
-  CartesianGrid, 
-  Tooltip, 
+import {
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
   ResponsiveContainer,
   BarChart,
   Bar,
@@ -19,6 +19,18 @@ import {
 
 import { useFuelRecords } from "@/lib/useFuelRecords";
 import { useVehicles } from "@/lib/useVehicles";
+import {
+  type Period,
+  buildEfficiencyAxis,
+  buildEfficiencySeries,
+  buildMonthlyCostSeries,
+  buildTimeDomain,
+  countUnknownDate,
+  filterByPeriod,
+  hasStatsData,
+  sortByDateAsc,
+  summarize,
+} from "@/lib/stats";
 import VehicleSelector from "@/components/VehicleSelector";
 
 interface TooltipProps {
@@ -73,179 +85,109 @@ function CustomCostTooltip({ active, payload, label }: MonthlyCostTooltipProps) 
   return null;
 }
 
+/** グラフカード内の「データ不足」表示 */
+function ChartEmpty({ message }: { message: string }) {
+  return (
+    <div className="h-full w-full flex flex-col items-center justify-center text-center text-gray-600 text-sm px-4">
+      <TrendingUp className="w-8 h-8 text-gray-800 mb-3" />
+      <p>{message}</p>
+    </div>
+  );
+}
+
+const PERIOD_OPTIONS: ReadonlyArray<{ value: Period; label: string }> = [
+  { value: "all", label: "全期間" },
+  { value: "1y", label: "1年" },
+  { value: "6m", label: "6ヶ月" },
+  { value: "3m", label: "3ヶ月" },
+];
+
 export default function StatsPage() {
-  const { vehicles, selectedVehicleId, setSelectedVehicleId, addVehicle, deleteVehicle, updateVehicle, loading: vehiclesLoading } = useVehicles();
-  const { records, loading: recordsLoading } = useFuelRecords(selectedVehicleId, vehicles[0]?.id);
+  const {
+    vehicles,
+    selectedVehicleId,
+    setSelectedVehicleId,
+    addVehicle,
+    deleteVehicle,
+    updateVehicle,
+    loading: vehiclesLoading,
+    error: vehiclesError,
+  } = useVehicles();
+  const { records, loading: recordsLoading, error: recordsError } = useFuelRecords(
+    selectedVehicleId,
+    vehicles[0]?.id,
+    { enabled: !vehiclesLoading }
+  );
 
   // 期間フィルタ (全期間 / 1年 / 6ヶ月 / 3ヶ月)
-  const [period, setPeriod] = useState<"all" | "1y" | "6m" | "3m">("all");
-  const PERIOD_OPTIONS = [
-    { value: "all", label: "全期間" },
-    { value: "1y", label: "1年" },
-    { value: "6m", label: "6ヶ月" },
-    { value: "3m", label: "3ヶ月" },
-  ] as const;
+  const [period, setPeriod] = useState<Period>("all");
 
-  const filteredRecords = useMemo(() => {
-    if (period === "all") return records;
-    const months = period === "1y" ? 12 : period === "6m" ? 6 : 3;
-    const cutoff = new Date();
-    cutoff.setMonth(cutoff.getMonth() - months);
-    return records.filter(r => r.date && new Date(r.date) >= cutoff);
-  }, [records, period]);
+  // 日付が不明（欠落・不正）な記録は期間フィルタ・グラフの対象外。件数だけ注記する。
+  const unknownDateCount = useMemo(() => countUnknownDate(records), [records]);
 
-  const validRecords = useMemo(() => {
-    if (!filteredRecords || filteredRecords.length === 0) return [];
-    const sorted = [...filteredRecords].sort((a, b) => {
-      const timeA = a.date ? new Date(a.date).getTime() : 0;
-      const timeB = b.date ? new Date(b.date).getTime() : 0;
-      return timeA - timeB;
-    });
-    return sorted.filter(r => r.fuel_efficiency !== null || r.total_cost !== null);
-  }, [filteredRecords]);
+  const filteredRecords = useMemo(
+    () => filterByPeriod(records, period, new Date()),
+    [records, period]
+  );
 
-  const { chartData, domainMin, domainMax, averageEfficiency, efficiencyYTicks, efficiencyYDomain } = useMemo(() => {
-    // 燃費グラフには「燃費が算出されている記録」のみを使う。
-    // 金額だけ記録した給油（燃費 null）を 0 として描画すると、折れ線が 0 まで急落してしまうため除外する。
-    const chartData = validRecords
-      .filter(r => r.fuel_efficiency != null && r.fuel_efficiency > 0)
-      .map((r, i) => {
-        let dateVal = new Date();
-        if (r.date) {
-          const parts = r.date.split('-');
-          if (parts.length === 3) {
-            dateVal = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
-          } else {
-            dateVal = new Date(r.date);
-          }
-        }
-        return {
-          timestamp: dateVal.getTime(),
-          name: r.date || `Record ${i + 1}`,
-          efficiency: r.fuel_efficiency as number,
-          cost: r.total_cost || 0,
-          gasStation: r.gas_station || "不明",
-        };
-      });
+  // 統計に使える値（燃費 or 支払総額）を持つ記録を日付昇順で
+  const validRecords = useMemo(
+    () => sortByDateAsc(filteredRecords.filter(hasStatsData)),
+    [filteredRecords]
+  );
 
-    if (chartData.length === 0) {
-      return { chartData, domainMin: 'auto', domainMax: 'auto', averageEfficiency: 0, efficiencyYTicks: undefined, efficiencyYDomain: undefined as [number,number] | undefined };
-    }
+  // サマリー集計（平均燃費 Σkm/ΣL・累計給油額・平均単価・km単価）
+  const summary = useMemo(() => summarize(validRecords), [validRecords]);
 
-    const times = chartData.map(d => d.timestamp);
-    const min = Math.min(...times);
-    const max = Math.max(...times);
-    const range = max - min;
-    const padding = range > 0 ? range * 0.05 : 86400000;
-    const actualPadding = Math.max(padding, 86400000); // minimum 1 day padding
-
-    // Calculate average efficiency (only for records with valid fuel efficiency)
-    const validEfficiencies = chartData
-      .map(d => d.efficiency)
-      .filter(eff => eff > 0);
-    const effSum = validEfficiencies.reduce((acc, val) => acc + val, 0);
-    const averageEfficiency = validEfficiencies.length > 0 ? effSum / validEfficiencies.length : 0;
-
-    // Build Y-axis ticks: 5 evenly spaced ticks spanning the data range + the average value
-    const effMin = validEfficiencies.length > 0 ? Math.min(...validEfficiencies) : 0;
-    const effMax = validEfficiencies.length > 0 ? Math.max(...validEfficiencies) : 0;
-    const effPad = (effMax - effMin) * 0.15 || 1;
-    const yMin = Math.max(0, effMin - effPad);
-    const yMax = effMax + effPad;
-    const step = (yMax - yMin) / 4;
-    const baseTicks = [0, 1, 2, 3, 4].map(i => parseFloat((yMin + step * i).toFixed(2)));
-    // Merge average into ticks and deduplicate (keep average if close to existing tick, else add it)
-    const efficiencyYTicks = averageEfficiency > 0
-      ? Array.from(new Set([...baseTicks, parseFloat(averageEfficiency.toFixed(2))])).sort((a, b) => a - b)
-      : baseTicks;
-    const efficiencyYDomain: [number, number] = [yMin, yMax];
-
+  const { chartData, timeDomain, averageEfficiency, efficiencyAxis } = useMemo(() => {
+    const chartData = buildEfficiencySeries(validRecords);
+    // 参照線はサマリーカードと同じ Σkm/ΣL を使い、表示上の数値を一致させる
+    const averageEfficiency = summary.avgEfficiency;
     return {
       chartData,
-      domainMin: min - actualPadding,
-      domainMax: max + actualPadding,
+      timeDomain: buildTimeDomain(chartData),
       averageEfficiency,
-      efficiencyYTicks,
-      efficiencyYDomain,
+      efficiencyAxis: buildEfficiencyAxis(chartData, averageEfficiency),
     };
-  }, [validRecords]);
+  }, [validRecords, summary.avgEfficiency]);
 
-  const data = chartData;
+  const monthlyCostData = useMemo(() => buildMonthlyCostSeries(validRecords), [validRecords]);
 
-  // Monthly aggregated cost data
-  const monthlyCostData = useMemo(() => {
-    const map = new Map<string, number>();
-    validRecords.forEach(r => {
-      if (!r.date || !r.total_cost) return;
-      const parts = r.date.split('-');
-      if (parts.length < 2) return;
-      const key = `${parts[0]}/${parseInt(parts[1])}月`;
-      map.set(key, (map.get(key) ?? 0) + r.total_cost);
-    });
-    // Sort by year-month
-    return Array.from(map.entries())
-      .sort((a, b) => {
-        // key format: YYYY/M月
-        const [ay, am] = a[0].replace('月','').split('/').map(Number);
-        const [by, bm] = b[0].replace('月','').split('/').map(Number);
-        return ay !== by ? ay - by : am - bm;
-      })
-      .map(([month, cost]) => ({ month, cost }));
-  }, [validRecords]);
+  const loadError = vehiclesError ?? recordsError;
 
-  // サマリー集計（平均燃費・累計給油額・平均単価・km単価）
-  const summary = useMemo(() => {
-    let costSum = 0;
-    let amountSum = 0;
-    let distanceSum = 0;
-    const effs: number[] = [];
+  const header = (
+    <header className="flex items-center justify-between py-4 mb-2 sticky top-0 bg-black/80 backdrop-blur-md z-10 w-full">
+      <div className="flex items-center gap-4">
+        <Link href="/app" className="p-2 bg-gray-900 rounded-full hover:bg-gray-800 transition">
+          <ArrowLeft className="w-5 h-5 text-gray-300" />
+        </Link>
+        <h1 className="text-xl md:text-2xl font-bold flex items-center gap-2">
+          <TrendingUp className="w-6 h-6 text-blue-500" /> 統計・推移
+        </h1>
+      </div>
 
-    validRecords.forEach(r => {
-      if (r.total_cost != null) costSum += r.total_cost;
-      if (r.fuel_amount != null) amountSum += r.fuel_amount;
-      if (r.total_distance != null) distanceSum += r.total_distance;
-      if (r.fuel_efficiency != null && r.fuel_efficiency > 0) effs.push(r.fuel_efficiency);
-    });
-
-    return {
-      avgEfficiency: effs.length > 0 ? effs.reduce((a, b) => a + b, 0) / effs.length : null,
-      totalCost: costSum,
-      avgPricePerUnit: amountSum > 0 ? costSum / amountSum : null,
-      costPerKm: distanceSum > 0 ? costSum / distanceSum : null,
-      count: validRecords.length,
-    };
-  }, [validRecords]);
+      <div className="flex items-center gap-3">
+        <SignedOut>
+          <SignInButton forceRedirectUrl="/stats">
+            <button className="bg-blue-600 hover:bg-blue-500 text-white text-sm font-bold py-1.5 px-4 rounded-full transition shadow-lg">
+              ログイン
+            </button>
+          </SignInButton>
+        </SignedOut>
+        <SignedIn>
+          <UserButton />
+        </SignedIn>
+      </div>
+    </header>
+  );
 
   if (vehiclesLoading || recordsLoading) {
     return (
       <main className="min-h-screen bg-black text-white p-4 md:p-8 pb-20 font-sans flex flex-col items-center">
         <div className="w-full max-w-5xl">
-          {/* ヘッダー (ソリッド表示) */}
-          <header className="flex items-center justify-between py-4 mb-2 sticky top-0 bg-black/80 backdrop-blur-md z-10">
-            <div className="flex items-center gap-4">
-              <Link href="/app" className="p-2 bg-gray-900 rounded-full hover:bg-gray-800 transition">
-                <ArrowLeft className="w-5 h-5 text-gray-300" />
-              </Link>
-              <h1 className="text-xl md:text-2xl font-bold flex items-center gap-2">
-                <TrendingUp className="w-6 h-6 text-blue-500" /> 統計・推移
-              </h1>
-            </div>
-            
-            <div className="flex items-center gap-3">
-              <SignedOut>
-                <SignInButton forceRedirectUrl="/stats">
-                  <button className="bg-blue-600 hover:bg-blue-500 text-white text-sm font-bold py-1.5 px-4 rounded-full transition shadow-lg">
-                    ログイン
-                  </button>
-                </SignInButton>
-              </SignedOut>
-              <SignedIn>
-                <UserButton />
-              </SignedIn>
-            </div>
-          </header>
+          {header}
 
-          {/* 車両セレクター (すでに読み込み済みの場合は実コンポーネントを表示、初期ロード中のみスケルトンを表示) */}
+          {/* 車両セレクター (初期ロード中のみスケルトン) */}
           {vehiclesLoading ? (
             <div className="w-full mb-6">
               <div className="flex items-center gap-2 overflow-x-auto pb-2 scrollbar-none">
@@ -257,87 +199,33 @@ export default function StatsPage() {
               </div>
             </div>
           ) : (
-            <VehicleSelector 
-              vehicles={vehicles} 
-              selectedVehicleId={selectedVehicleId} 
-              onSelect={setSelectedVehicleId} 
-              onAddVehicle={addVehicle} 
+            <VehicleSelector
+              vehicles={vehicles}
+              selectedVehicleId={selectedVehicleId}
+              onSelect={setSelectedVehicleId}
+              onAddVehicle={addVehicle}
               onDeleteVehicle={deleteVehicle}
               onUpdateVehicle={updateVehicle}
             />
           )}
 
-          {/* グラフエリアスケルトン (実カードと100%同じ bg/border/内部余白/mb-6の見出し) */}
+          {/* コンパクトなスケルトン（期間フィルタ・サマリー・グラフ2枚） */}
+          <div className="flex justify-end mb-4">
+            <div className="w-56 h-9 bg-gray-900 border border-gray-800 rounded-lg animate-pulse" />
+          </div>
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4 mb-8">
+            {[0, 1, 2, 3].map(i => (
+              <div key={i} className="h-20 md:h-24 bg-gray-900/50 border border-gray-800 rounded-2xl animate-pulse" />
+            ))}
+          </div>
           <div className="space-y-8">
             <div className="bg-gray-900/50 border border-gray-800 rounded-3xl p-5 md:p-8">
-              {/* グラフタイトル (ソリッド表示・実画面と全く同じ mb-6) */}
-              <h2 className="text-lg font-bold text-gray-300 mb-6 flex items-center gap-2">
-                <span className="w-3 h-3 rounded-full bg-blue-500 shadow-[0_0_10px_#3b82f6]"></span>
-                燃費の推移 (km/L)
-              </h2>
-              {/* グラフコンテナ (実画面と100%同じ相対高さ定義) */}
-              <div className="h-64 md:h-80 w-full relative">
-                <div className="absolute inset-0 bg-gray-950/40 rounded-2xl border border-gray-800/50 p-6 flex flex-col justify-between">
-                  <div className="flex-1 flex items-end gap-4 px-4 pb-2 border-b border-gray-800/80">
-                    {/* Mock line chart points */}
-                    <div className="flex-1 flex flex-col items-center justify-end h-full relative">
-                      <div className="absolute w-2.5 h-2.5 rounded-full bg-blue-500/40 bottom-[20%] animate-pulse" />
-                      <div className="w-px h-full bg-gray-850/60 border-dashed" />
-                    </div>
-                    <div className="flex-1 flex flex-col items-center justify-end h-full relative">
-                      <div className="absolute w-2.5 h-2.5 rounded-full bg-blue-500/40 bottom-[50%] animate-pulse" />
-                      <div className="w-px h-full bg-gray-850/60 border-dashed" />
-                    </div>
-                    <div className="flex-1 flex flex-col items-center justify-end h-full relative">
-                      <div className="absolute w-2.5 h-2.5 rounded-full bg-blue-500/40 bottom-[35%] animate-pulse" />
-                      <div className="w-px h-full bg-gray-850/60 border-dashed" />
-                    </div>
-                    <div className="flex-1 flex flex-col items-center justify-end h-full relative">
-                      <div className="absolute w-2.5 h-2.5 rounded-full bg-blue-500/40 bottom-[70%] animate-pulse" />
-                      <div className="w-px h-full bg-gray-850/60 border-dashed" />
-                    </div>
-                    <div className="flex-1 flex flex-col items-center justify-end h-full relative">
-                      <div className="absolute w-2.5 h-2.5 rounded-full bg-blue-500/40 bottom-[60%] animate-pulse" />
-                      <div className="w-px h-full bg-gray-850/60 border-dashed" />
-                    </div>
-                  </div>
-                  <div className="flex justify-between text-[10px] text-gray-600 mt-2 px-2">
-                    <div className="w-8 h-3 bg-gray-800 rounded animate-pulse" />
-                    <div className="w-8 h-3 bg-gray-800 rounded animate-pulse" />
-                    <div className="w-8 h-3 bg-gray-800 rounded animate-pulse" />
-                    <div className="w-8 h-3 bg-gray-800 rounded animate-pulse" />
-                    <div className="w-8 h-3 bg-gray-800 rounded animate-pulse" />
-                  </div>
-                </div>
-              </div>
+              <div className="w-40 h-5 bg-gray-800 rounded mb-6 animate-pulse" />
+              <div className="h-64 md:h-80 w-full bg-gray-950/40 rounded-2xl border border-gray-800/50 animate-pulse" />
             </div>
-
             <div className="bg-gray-900/50 border border-gray-800 rounded-3xl p-5 md:p-8">
-              {/* グラフタイトル (ソリッド表示・実画面と全く同じ mb-6) */}
-              <h2 className="text-lg font-bold text-gray-300 mb-6 flex items-center gap-2">
-                <span className="w-3 h-3 rounded-full bg-green-500 shadow-[0_0_10px_#22c55e]"></span>
-                支払総額の推移 (円)
-              </h2>
-              {/* グラフコンテナ (実画面と100%同じ相対高さ定義) */}
-              <div className="h-64 w-full relative">
-                <div className="absolute inset-0 bg-gray-950/40 rounded-2xl border border-gray-800/50 p-6 flex flex-col justify-between">
-                  <div className="flex-1 flex items-end gap-6 px-4 pb-2 border-b border-gray-800/80">
-                    {/* Mock bar chart columns */}
-                    <div className="flex-1 bg-green-500/20 rounded-t h-[30%] animate-pulse" />
-                    <div className="flex-1 bg-green-500/20 rounded-t h-[65%] animate-pulse" />
-                    <div className="flex-1 bg-green-500/20 rounded-t h-[45%] animate-pulse" />
-                    <div className="flex-1 bg-green-500/20 rounded-t h-[80%] animate-pulse" />
-                    <div className="flex-1 bg-green-500/20 rounded-t h-[55%] animate-pulse" />
-                  </div>
-                  <div className="flex justify-between text-[10px] text-gray-600 mt-2 px-2">
-                    <div className="w-8 h-3 bg-gray-800 rounded animate-pulse" />
-                    <div className="w-8 h-3 bg-gray-800 rounded animate-pulse" />
-                    <div className="w-8 h-3 bg-gray-800 rounded animate-pulse" />
-                    <div className="w-8 h-3 bg-gray-800 rounded animate-pulse" />
-                    <div className="w-8 h-3 bg-gray-800 rounded animate-pulse" />
-                  </div>
-                </div>
-              </div>
+              <div className="w-40 h-5 bg-gray-800 rounded mb-6 animate-pulse" />
+              <div className="h-64 w-full bg-gray-950/40 rounded-2xl border border-gray-800/50 animate-pulse" />
             </div>
           </div>
         </div>
@@ -348,33 +236,16 @@ export default function StatsPage() {
   return (
     <main className="min-h-screen bg-black text-white p-4 md:p-8 pb-20 font-sans flex flex-col items-center">
       <div className="w-full max-w-5xl">
-      
-        {/* ヘッダー */}
-        <header className="flex items-center justify-between py-4 mb-2 sticky top-0 bg-black/80 backdrop-blur-md z-10 w-full">
-          <div className="flex items-center gap-4">
-            <Link href="/app" className="p-2 bg-gray-900 rounded-full hover:bg-gray-800 transition">
-              <ArrowLeft className="w-5 h-5 text-gray-300" />
-            </Link>
-            <h1 className="text-xl md:text-2xl font-bold flex items-center gap-2">
-              <TrendingUp className="w-6 h-6 text-blue-500" /> 統計・推移
-            </h1>
-          </div>
-          
-          <div className="flex items-center gap-3">
-            <SignedOut>
-              <SignInButton forceRedirectUrl="/stats">
-                <button className="bg-blue-600 hover:bg-blue-500 text-white text-sm font-bold py-1.5 px-4 rounded-full transition shadow-lg">
-                  ログイン
-                </button>
-              </SignInButton>
-            </SignedOut>
-            <SignedIn>
-              <UserButton />
-            </SignedIn>
-          </div>
-        </header>
 
-        {/* ★追加: 車両セレクタータブ */}
+        {header}
+
+        {loadError && (
+          <p role="alert" className="text-xs text-red-400 mb-3 break-words">
+            {loadError}
+          </p>
+        )}
+
+        {/* 車両セレクタータブ */}
         <VehicleSelector
           vehicles={vehicles}
           selectedVehicleId={selectedVehicleId}
@@ -385,8 +256,11 @@ export default function StatsPage() {
         />
 
         {/* 期間フィルタ */}
-        <div className="flex items-center justify-end mb-4 w-full">
-          <div className="flex items-center gap-1 bg-gray-900 rounded-lg p-1 border border-gray-800">
+        <div className="flex items-center justify-between gap-3 mb-4 w-full">
+          <p className="text-[11px] text-gray-500">
+            {unknownDateCount > 0 && `日付不明 ${unknownDateCount}件（期間フィルタ・グラフには含まれません）`}
+          </p>
+          <div className="flex items-center gap-1 bg-gray-900 rounded-lg p-1 border border-gray-800 shrink-0">
             {PERIOD_OPTIONS.map(opt => (
               <button
                 key={opt.value}
@@ -404,12 +278,24 @@ export default function StatsPage() {
         {/* サマリーカード (記録が1件以上あれば表示) */}
         {summary.count > 0 && (
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4 mb-8">
-            <div className="bg-gray-900/50 border border-gray-800 rounded-2xl p-4 md:p-5">
+            <div
+              className="bg-gray-900/50 border border-gray-800 rounded-2xl p-4 md:p-5"
+              title={
+                summary.meanEfficiency != null
+                  ? `総走行距離 ÷ 総給油量（満タン法）。各給油の単純平均: ${summary.meanEfficiency.toFixed(2)} km/L`
+                  : "総走行距離 ÷ 総給油量（満タン法）"
+              }
+            >
               <p className="text-[10px] md:text-xs text-gray-500 uppercase tracking-wider mb-1">平均燃費</p>
               <p className="text-xl md:text-2xl font-bold font-mono text-blue-400">
                 {summary.avgEfficiency != null ? summary.avgEfficiency.toFixed(2) : "--"}
                 <span className="text-xs text-gray-500 ml-1">km/L</span>
               </p>
+              {summary.meanEfficiency != null && summary.avgEfficiency != null && (
+                <p className="text-[10px] text-gray-600 mt-1 font-mono">
+                  単純平均 {summary.meanEfficiency.toFixed(2)}
+                </p>
+              )}
             </div>
             <div className="bg-gray-900/50 border border-gray-800 rounded-2xl p-4 md:p-5">
               <p className="text-[10px] md:text-xs text-gray-500 uppercase tracking-wider mb-1">累計給油額</p>
@@ -434,18 +320,18 @@ export default function StatsPage() {
           </div>
         )}
 
-        {filteredRecords.length < 2 ? (
+        {validRecords.length === 0 ? (
           <div className="text-center py-20 text-gray-600">
             <TrendingUp className="w-12 h-12 text-gray-800 mx-auto mb-4" />
             <p>
               {period === "all"
-                ? "グラフを表示するには、この車両に少なくとも2件以上の記録が必要です。"
-                : "この期間の記録が2件未満です。期間を広げてみてください。"}
+                ? "この車両にはまだ統計に使える記録がありません。"
+                : "この期間の記録がありません。期間を広げてみてください。"}
             </p>
           </div>
         ) : (
           <div className="space-y-8 animate-in fade-in duration-700">
-            
+
             {/* 燃費グラフ */}
             <div className="bg-gray-900/50 border border-gray-800 rounded-3xl p-5 md:p-8">
               <h2 className="text-lg font-bold text-gray-300 mb-6 flex items-center gap-2">
@@ -453,9 +339,18 @@ export default function StatsPage() {
                 燃費の推移 (km/L)
               </h2>
               <div className="h-64 md:h-80 w-full relative">
+                {chartData.length < 2 ? (
+                  <ChartEmpty
+                    message={
+                      period === "all"
+                        ? "燃費の推移を表示するには、燃費が算出された記録が2件以上必要です。"
+                        : "この期間の燃費記録が2件未満です。期間を広げてみてください。"
+                    }
+                  />
+                ) : (
                 <ResponsiveContainer width="100%" height="100%">
                   {/* key={period}: 期間切替時にデータ点数が大きく変わると線が不自然に変形するため、再マウントして新規描画させる */}
-                  <LineChart key={period} data={data} margin={{ top: 10, right: 10, left: 30, bottom: 0 }}>
+                  <LineChart key={period} data={chartData} margin={{ top: 10, right: 10, left: 30, bottom: 0 }}>
                     <defs>
                       <linearGradient id="colorEfficiency" x1="0" y1="0" x2="0" y2="1">
                         <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.4}/>
@@ -463,28 +358,30 @@ export default function StatsPage() {
                       </linearGradient>
                     </defs>
                     <CartesianGrid strokeDasharray="3 3" stroke="#2d3748" vertical={false} />
-                    <XAxis 
+                    <XAxis
                       type="number"
                       scale="time"
-                      dataKey="timestamp" 
-                      stroke="#4a5568" 
-                      fontSize={11} 
-                      tickMargin={10} 
-                      domain={[domainMin, domainMax]}
+                      dataKey="timestamp"
+                      stroke="#4a5568"
+                      fontSize={11}
+                      tickMargin={10}
+                      domain={timeDomain ?? ['auto', 'auto']}
                       tickFormatter={(val) => {
                         const date = new Date(val);
                         return `${date.getMonth() + 1}/${date.getDate()}`;
                       }}
                     />
-                    <YAxis 
-                      stroke="#4a5568" 
-                      fontSize={10} 
-                      tickMargin={6} 
-                      domain={efficiencyYDomain ?? ['auto', 'auto']}
-                      ticks={efficiencyYTicks}
+                    <YAxis
+                      stroke="#4a5568"
+                      fontSize={10}
+                      tickMargin={6}
+                      domain={efficiencyAxis.domain ?? ['auto', 'auto']}
+                      ticks={efficiencyAxis.ticks}
                       tick={(props) => {
                         const { x, y, payload } = props as { x: number; y: number; payload: { value: number } };
-                        const isAvg = averageEfficiency > 0 && Math.abs(payload.value - averageEfficiency) < 0.001;
+                        // 目盛り値は toFixed(2) で丸めた値なので、同じく丸めた averageTick と比較する
+                        const avgTick = efficiencyAxis.averageTick;
+                        const isAvg = avgTick != null && Math.abs(payload.value - avgTick) < 1e-6;
                         return (
                           <text
                             x={x}
@@ -495,16 +392,16 @@ export default function StatsPage() {
                             fontSize={isAvg ? 10 : 11}
                             fontWeight={isAvg ? 'bold' : 'normal'}
                           >
-                            {isAvg ? `平均 ${averageEfficiency.toFixed(2)}` : payload.value.toFixed(1)}
+                            {isAvg ? `平均 ${avgTick.toFixed(2)}` : payload.value.toFixed(1)}
                           </text>
                         );
                       }}
                     />
                     <Tooltip content={<CustomEfficiencyTooltip />} cursor={{ stroke: '#4a5568', strokeWidth: 1, strokeDasharray: '3 3' }} />
-                    {averageEfficiency > 0 && (
-                      <ReferenceLine 
-                        y={averageEfficiency} 
-                        stroke="#f87171" 
+                    {efficiencyAxis.averageTick != null && averageEfficiency != null && (
+                      <ReferenceLine
+                        y={efficiencyAxis.averageTick}
+                        stroke="#f87171"
                         strokeDasharray="4 3"
                         strokeWidth={1.5}
                       />
@@ -520,6 +417,7 @@ export default function StatsPage() {
                     />
                   </LineChart>
                 </ResponsiveContainer>
+                )}
               </div>
             </div>
 
@@ -530,20 +428,23 @@ export default function StatsPage() {
                 支払総額の推移 (円)
               </h2>
               <div className="h-64 w-full relative">
+                {monthlyCostData.length === 0 ? (
+                  <ChartEmpty message="支払総額が記録された給油がありません。" />
+                ) : (
                 <ResponsiveContainer width="100%" height="100%">
                   {/* key={period}: 期間切替時は再マウントして新規描画 (LineChartと同じ理由) */}
                   <BarChart key={period} data={monthlyCostData} margin={{ top: 10, right: 10, left: 10, bottom: 0 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#2d3748" vertical={false} />
-                    <XAxis 
-                      dataKey="month" 
-                      stroke="#4a5568" 
-                      fontSize={11} 
+                    <XAxis
+                      dataKey="month"
+                      stroke="#4a5568"
+                      fontSize={11}
                       tickMargin={10}
                     />
-                    <YAxis 
-                      stroke="#4a5568" 
-                      fontSize={11} 
-                      tickMargin={10} 
+                    <YAxis
+                      stroke="#4a5568"
+                      fontSize={11}
+                      tickMargin={10}
                       tickFormatter={(val) => `¥${val.toLocaleString()}`}
                     />
                     <Tooltip content={<CustomCostTooltip />} cursor={{ fill: '#1f2937' }} />
@@ -556,6 +457,7 @@ export default function StatsPage() {
                     />
                   </BarChart>
                 </ResponsiveContainer>
+                )}
               </div>
             </div>
 
