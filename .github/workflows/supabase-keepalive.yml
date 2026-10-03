@@ -1,0 +1,69 @@
+# Supabase Free プランの自動停止 (約 7 日間無操作) 対策。
+# PostgREST の RPC keepalive_ping() を直接呼び出して DB に書き込みを発生させる。
+# Vercel Cron (vercel.json) と二重化しており、どちらか一方が動けば停止しない。
+#
+# 注意:
+#   * schedule はベストエフォート (数分〜数十分遅れることがある)
+#   * 公開リポジトリでは 60 日間コミット等が無いと schedule が自動で無効化される。
+#     その場合は Actions タブから有効化し直すか、workflow_dispatch で手動実行する。
+#   * 必要なリポジトリ Secrets: SUPABASE_URL, SUPABASE_ANON_KEY
+name: Supabase keepalive
+
+on:
+  schedule:
+    # UTC 03:23 / 15:23 = JST 12:23 / 00:23 (毎時 0 分は混雑するため避ける)
+    - cron: "23 3,15 * * *"
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: supabase-keepalive
+  cancel-in-progress: false
+
+jobs:
+  ping:
+    name: Ping keepalive_ping RPC
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Call keepalive_ping
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${SUPABASE_URL:-}" ] || [ -z "${SUPABASE_ANON_KEY:-}" ]; then
+            echo "::error::Secrets SUPABASE_URL / SUPABASE_ANON_KEY が設定されていません"
+            exit 1
+          fi
+
+          endpoint="${SUPABASE_URL%/}/rest/v1/rpc/keepalive_ping"
+          body_file="$(mktemp)"
+
+          # 一時的なネットワークエラーには 2 回までリトライ
+          status="$(curl -sS \
+            --retry 2 --retry-delay 5 --retry-connrefused \
+            --max-time 30 \
+            -o "$body_file" -w '%{http_code}' \
+            -X POST "$endpoint" \
+            -H "apikey: ${SUPABASE_ANON_KEY}" \
+            -H "Authorization: Bearer ${SUPABASE_ANON_KEY}" \
+            -H "Content-Type: application/json" \
+            -d '{"p_source":"github-actions"}' || echo "000")"
+
+          echo "HTTP ${status}"
+          echo "Response: $(head -c 500 "$body_file")"
+
+          if [ "$status" = "540" ]; then
+            echo "::error::Supabase プロジェクトが一時停止 (paused) されています。Dashboard から Restore してください。"
+            exit 1
+          fi
+
+          if [ "$status" != "200" ]; then
+            echo "::error::keepalive_ping が失敗しました (HTTP ${status})"
+            exit 1
+          fi
+
+          echo "::notice::keepalive OK (last_ping=$(cat "$body_file"))"

@@ -1,15 +1,10 @@
-/* eslint-disable @typescript-eslint/no-unused-vars */
-import { clerkMiddleware, createRouteMatcher } from '@clerk/nextjs/server';
+import { clerkMiddleware } from '@clerk/nextjs/server';
 
-const _isPublicRoute = createRouteMatcher(['/', '/api/analyze']);
-
-export default clerkMiddleware(async (_auth, _req) => {
-  // すべてのルートをパブリックにしつつ、必要な画面で個別対応する場合は protect() をスキップ
-  // ここでは基本的に、公開してよいトップページ等以外を保護します
-  // if (!isPublicRoute(req)) {
-  //   await auth.protect();
-  // }
-});
+// すべてのルートをパブリックのままにする（未ログインでもトップ／アプリ画面は閲覧でき、
+// クライアント側の SignedIn/SignedOut やローカルストレージ保存がこれに依存している）。
+// /api/analyze はルートハンドラ内で auth() を呼び、未ログインなら 401 を返す（route.ts 参照）。
+// 画面単位で保護したくなった場合は createRouteMatcher + auth.protect() をここに追加する。
+export default clerkMiddleware();
 
 export const config = {
   matcher: [
