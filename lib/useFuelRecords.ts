@@ -35,6 +35,7 @@ import {
   useSupabaseOutage,
   writeCache,
 } from "./supabaseHealth";
+import { normalizeTimestamp } from "./backup";
 
 export type FuelRecord = {
   id: string;
@@ -329,6 +330,147 @@ export function useFuelRecords(
     setRecords(prev => prev.filter(r => r.id !== id));
   };
 
+  /** 給油記録が別経路で変わったことを全フックインスタンスへ知らせる（自分も含めて再読み込みされる） */
+  const notifyRecordsChanged = () => {
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent(FUEL_RECORDS_CHANGED_EVENT, { detail: { bulk: true } }));
+    }
+  };
+
+  /**
+   * 給油記録をまとめて追加する（バックアップの復元用）。
+   * 各記録は自分の vehicle_id を持ち、選択中の車両では絞り込まない。
+   * ログイン中は 100 件ずつ挿入し、vehicle_id は自分の車両の UUID でなければならない（未分類 null は不可）。
+   * 追加後に FUEL_RECORDS_CHANGED_EVENT を発火し、表示中の一覧を再読み込みさせる。
+   *
+   * @returns 追加した件数
+   * @throws 日本語メッセージの Error。途中で失敗した場合は、それまでに追加した件数をメッセージに含める
+   */
+  const addRecords = async (
+    items: Omit<FuelRecord, "id">[],
+    options: { onProgress?: (done: number, total: number) => void } = {}
+  ): Promise<number> => {
+    const { onProgress } = options;
+    if (items.length === 0) return 0;
+
+    if (!isSignedIn) {
+      const base = Date.now().toString(36);
+      const nowIso = new Date().toISOString();
+      const added: FuelRecord[] = items.map((item, i) => ({
+        id: `restored-${base}-${i}`,
+        date: item.date,
+        total_distance: item.total_distance,
+        fuel_amount: item.fuel_amount,
+        gas_station: item.gas_station,
+        price_per_unit: item.price_per_unit,
+        total_cost: item.total_cost,
+        fuel_efficiency: item.fuel_efficiency,
+        vehicle_id: item.vehicle_id ?? null,
+        created_at: normalizeTimestamp(item.created_at) ?? nowIso,
+      }));
+      try {
+        writeLocalRecords([...readLocalRecords(), ...added]);
+      } catch (e) {
+        console.error("ローカル給油記録の保存失敗:", e);
+        throw new Error("ブラウザの保存容量が不足しているため、記録を追加できませんでした。");
+      }
+      onProgress?.(added.length, added.length);
+      notifyRecordsChanged();
+      return added.length;
+    }
+
+    requireWritable();
+    if (!userId) throw new Error("ログイン情報を確認できませんでした。再読み込みしてください。");
+    if (items.some(item => !isUuid(item.vehicle_id))) {
+      // ログイン中に vehicle_id=null（未分類）で保存しない
+      throw new Error("車両が決まっていない記録があるため追加できません。画面を再読み込みしてから再度お試しください。");
+    }
+
+    const supabase = getSupabaseClient(userId, getToken);
+    const nowIso = new Date().toISOString();
+    const payload = items.map(item => ({
+      user_id: userId,
+      vehicle_id: item.vehicle_id,
+      date: item.date,
+      total_distance: item.total_distance,
+      fuel_amount: item.fuel_amount,
+      gas_station: item.gas_station,
+      price_per_unit: item.price_per_unit,
+      total_cost: item.total_cost,
+      fuel_efficiency: item.fuel_efficiency,
+      // insert(配列) は全行のキーの和集合を送るため、created_at は全行に必ず入れる。
+      // Postgres が拒否・誤読しない ISO 文字列に正規化し、無効なら現在時刻にする
+      created_at: normalizeTimestamp(item.created_at) ?? nowIso,
+    }));
+
+    const CHUNK = 100;
+    let inserted = 0;
+    try {
+      for (let i = 0; i < payload.length; i += CHUNK) {
+        const chunk = payload.slice(i, i + CHUNK);
+        const { error: insertError, status } = await supabase
+          .from("fuel_records")
+          .insert(chunk, { defaultToNull: false });
+        if (insertError) throw withStatus(insertError, status);
+        inserted += chunk.length;
+        onProgress?.(inserted, payload.length);
+      }
+    } catch (e) {
+      const kind = classify((e as { status?: number })?.status, e);
+      if (kind) setOutage(kind);
+      const base = normalizeError(e);
+      if (inserted > 0) {
+        notifyRecordsChanged();
+        throw new Error(`${inserted} 件を追加したところで中断しました。${base.message}`, { cause: e });
+      }
+      throw base;
+    }
+
+    notifyRecordsChanged();
+    return inserted;
+  };
+
+  /**
+   * 全車両の給油記録を取得する（バックアップ・全車両 CSV・復元の重複判定用）。
+   * 選択中の車両では絞り込まない。日付の新しい順。
+   * ログイン中は 1,000 件ずつページングして全件を読む（PostgREST の既定上限を超えても欠けないように）。
+   */
+  const fetchAllRecords = useCallback(async (): Promise<FuelRecord[]> => {
+    if (!isLoaded) throw new Error("読み込み中です。しばらく待ってから再度お試しください。");
+    if (!isSignedIn) return sortRecordsByDateDesc(readLocalRecords());
+    if (!userId) throw new Error("ログイン情報を確認できませんでした。再読み込みしてください。");
+
+    const supabase = getSupabaseClient(userId, getToken);
+    const PAGE = 1000;
+    const all: FuelRecord[] = [];
+    try {
+      let from = 0;
+      for (;;) {
+        const { data, error: queryError, status } = await supabase
+          .from("fuel_records")
+          .select("*")
+          .eq("user_id", userId)
+          .order("date", { ascending: false })
+          .order("id", { ascending: true })
+          .range(from, from + PAGE - 1);
+        if (queryError) throw withStatus(queryError, status);
+        const page = (data ?? []) as FuelRecord[];
+        // 空のページが返るまで読む。Supabase の max-rows が PAGE より小さく設定されていても、
+        // 「PAGE 件未満 = 最終ページ」と誤認してバックアップが黙って欠けないように、
+        // 実際に返った件数だけ読み進める
+        if (page.length === 0) break;
+        all.push(...page);
+        from += page.length;
+      }
+    } catch (e) {
+      console.error("全給油データの取得失敗:", e);
+      const kind = classify((e as { status?: number })?.status, e);
+      if (kind) setOutage(kind);
+      throw new Error(errorMessage(e), { cause: e });
+    }
+    return sortRecordsByDateDesc(all);
+  }, [isLoaded, isSignedIn, userId, getToken]);
+
   const refresh = useCallback(() => {
     const currentFetchId = ++fetchCounter.current;
     return loadData(currentFetchId);
@@ -356,6 +498,10 @@ export function useFuelRecords(
     addRecord,
     updateRecord,
     deleteRecord,
+    /** 記録をまとめて追加する（復元用。各記録の vehicle_id をそのまま使う） */
+    addRecords,
+    /** 全車両の記録を取得する（選択中の車両で絞り込まない） */
+    fetchAllRecords,
     refresh,
   };
 }

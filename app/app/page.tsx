@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, Suspense } from "react";
 import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
 import { SignedIn, SignedOut, SignInButton, UserButton, useAuth } from "@clerk/nextjs";
 import {
   Camera,
@@ -15,7 +16,8 @@ import {
   X,
   Calculator,
   ChevronRight,
-  BarChart3
+  BarChart3,
+  Settings
 } from "lucide-react";
 import imageCompression from "browser-image-compression";
 import { useFuelRecords, FuelRecord } from "@/lib/useFuelRecords";
@@ -31,6 +33,46 @@ import type { AnalyzeErrorResponse, AnalyzeSuccessResponse } from "@/lib/analyze
 const ANALYZE_TIMEOUT_MS = 45_000;
 
 const DUPLICATE_CONFIRM_MESSAGE = "同じ日付・給油量・金額の記録が既にあります。重複して保存しますか？";
+
+/**
+ * PWA ショートカット（manifest の `/app?action=scan` / `/app?action=manual`）を処理する。
+ * useSearchParams を使うため、呼び出し側で <Suspense> で囲み /app の静的プリレンダーを保つ。
+ * アクションは 1 ページロードにつき最大 1 回だけ実行し、実行後に `action` パラメータを URL から消す。
+ */
+function ShortcutActionHandler({
+  scanReady,
+  manualReady,
+  onScan,
+  onManual,
+}: {
+  scanReady: boolean;
+  manualReady: boolean;
+  onScan: () => void;
+  onManual: () => void;
+}) {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const action = searchParams.get("action");
+  const handled = useRef(false);
+
+  useEffect(() => {
+    if (handled.current) return;
+    if (action === "scan") {
+      if (!scanReady) return;
+      handled.current = true;
+      onScan();
+    } else if (action === "manual") {
+      if (!manualReady) return;
+      handled.current = true;
+      onManual();
+    } else {
+      return;
+    }
+    router.replace("/app");
+  }, [action, scanReady, manualReady, onScan, onManual, router]);
+
+  return null;
+}
 
 export default function Home() {
   const { toast, confirm } = useToast();
@@ -84,6 +126,7 @@ export default function Home() {
 
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const galleryInputRef = useRef<HTMLInputElement>(null);
+  const cameraButtonRef = useRef<HTMLButtonElement>(null);
 
   const [isDragging, setIsDragging] = useState(false);
   const dragCounter = useRef(0);
@@ -370,6 +413,17 @@ export default function Home() {
     setActiveRecordId(null);
   };
 
+  // PWA ショートカット「スキャン」: カメラ/ファイル選択を開く。
+  // ユーザー操作なしの呼び出しはブラウザにブロックされうるため、カメラボタンへフォーカスして押しやすくする
+  const handleShortcutScan = useCallback(() => {
+    const button = cameraButtonRef.current;
+    if (button) {
+      button.scrollIntoView({ block: "center" });
+      button.focus({ preventScroll: true });
+    }
+    cameraInputRef.current?.click();
+  }, []);
+
   const cancelEditing = () => {
     setIsEditing(false);
     setIsManualEntry(false);
@@ -425,8 +479,20 @@ export default function Home() {
 
   const hookError = vehiclesError || recordsError;
 
+  // ショートカット実行条件: スキャンは読み込み完了かつ解析中・確認中でないこと、手動入力はさらに閲覧専用でないこと
+  const shortcutScanReady = mounted && !isLoading && !loading && !scanResult;
+  const shortcutManualReady = mounted && !isLoading && !readOnly;
+
   return (
     <main className="min-h-screen bg-gradient-to-b from-gray-900 to-black text-white p-4 md:p-8 pb-32 font-sans flex flex-col items-center">
+      <Suspense fallback={null}>
+        <ShortcutActionHandler
+          scanReady={shortcutScanReady}
+          manualReady={shortcutManualReady}
+          onScan={handleShortcutScan}
+          onManual={startManualEntry}
+        />
+      </Suspense>
       <div className="w-full max-w-5xl">
 
         {/* ヘッダー */}
@@ -446,6 +512,9 @@ export default function Home() {
             <Link href="/history" aria-label="給油履歴" className="p-2 bg-gray-800/50 rounded-full border border-gray-700/50 text-gray-400 hover:text-white transition group flex items-center gap-2">
               <span className="hidden md:inline text-sm font-semibold pr-1">給油履歴</span>
               <History className="w-5 h-5" aria-hidden="true" />
+            </Link>
+            <Link href="/settings" aria-label="設定" className="p-2 bg-gray-800/50 rounded-full border border-gray-700/50 text-gray-400 hover:text-white transition group flex items-center gap-2">
+              <Settings className="w-5 h-5" aria-hidden="true" />
             </Link>
 
             <SignedOut>
@@ -578,6 +647,7 @@ export default function Home() {
 
                       <button
                         type="button"
+                        ref={cameraButtonRef}
                         onClick={() => cameraInputRef.current?.click()}
                         disabled={loading}
                         aria-label="カメラで撮影してスキャン"

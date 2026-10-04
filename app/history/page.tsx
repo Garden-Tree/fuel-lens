@@ -12,6 +12,7 @@ import VehicleSelector from "@/components/VehicleSelector";
 import { useToast } from "@/components/Toast";
 import { useRecordForm } from "@/lib/useRecordForm";
 import { normalizeDateString } from "@/lib/stats";
+import { buildCsv, downloadTextFile, escapeCsvField, formatCsvNumber, toSafeFilenamePart } from "@/lib/csv";
 
 /** created_at（ISO 日時）をミリ秒に変換する。欠落・解析不能なら 0（最も古い扱い） */
 function createdAtMs(createdAt: string | null | undefined): number {
@@ -198,48 +199,20 @@ export default function HistoryPage() {
   const exportToCsv = () => {
     if (sortedRecords.length === 0) return;
 
-    // BOMを追加してExcelでの文字化けを防ぐ
-    const bom = new Uint8Array([0xef, 0xbb, 0xbf]);
-    
-    // ヘッダー行
     const headers = ["給油日", "走行距離(km)", "給油量(L)", "単価(円/L)", "支払総額(円)", "燃費(km/L)", "ガソリンスタンド名"];
-    
-    // データ行の作成
-    const rows = sortedRecords.map(rec => {
-      const escapeQuotes = (str: string | null | undefined) => {
-        if (!str) return '""';
-        // CSVインジェクション対策: =,+,-,@ 等で始まる値はExcel等で数式実行される恐れがあるため、先頭にシングルクォートを付けて無害化する
-        const safe = /^[=+\-@\t\r]/.test(str) ? `'${str}` : str;
-        return `"${safe.replace(/"/g, '""')}"`;
-      };
+    const rows = sortedRecords.map(rec => [
+      escapeCsvField(rec.date),
+      formatCsvNumber(rec.total_distance),
+      formatCsvNumber(rec.fuel_amount),
+      formatCsvNumber(rec.price_per_unit),
+      formatCsvNumber(rec.total_cost),
+      formatCsvNumber(rec.fuel_efficiency),
+      escapeCsvField(rec.gas_station),
+    ]);
 
-      return [
-        escapeQuotes(rec.date),
-        rec.total_distance ?? "",
-        rec.fuel_amount ?? "",
-        rec.price_per_unit ?? "",
-        rec.total_cost ?? "",
-        rec.fuel_efficiency ?? "",
-        escapeQuotes(rec.gas_station)
-      ].join(",");
-    });
-
-    const csvContent = [headers.join(","), ...rows].join("\n");
-    const blob = new Blob([bom, csvContent], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    
     const currentVehicleName = vehicles.find(v => v.id === selectedVehicleId)?.name || "vehicle";
-    // ファイル名に安全な文字列を使用
-    const safeVehicleName = currentVehicleName.replace(/[^a-zA-Z0-9\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}ー]/gu, "_");
-    const filename = `fuellens_${safeVehicleName}_${new Date().toISOString().slice(0,10)}.csv`;
-
-    const link = document.createElement("a");
-    link.href = url;
-    link.setAttribute("download", filename);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
+    const filename = `fuellens_${toSafeFilenamePart(currentVehicleName)}_${new Date().toISOString().slice(0,10)}.csv`;
+    downloadTextFile(filename, buildCsv(headers, rows), "text/csv;charset=utf-8;");
   };
 
   return (

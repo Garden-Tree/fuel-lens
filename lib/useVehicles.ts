@@ -255,6 +255,61 @@ export function useVehicles() {
     return added;
   };
 
+  /**
+   * 車両をまとめて追加する（バックアップの復元用）。選択中の車両は変更しない。
+   * 戻り値は items と同じ順序の作成済み車両。
+   */
+  const addVehicles = async (items: { name: string; type: "car" | "bike" }[]): Promise<Vehicle[]> => {
+    if (items.length === 0) return [];
+
+    if (!isSignedIn) {
+      const base = Date.now();
+      const created: Vehicle[] = items.map((item, i) => ({
+        id: `local-vehicle-${base}-${i}`,
+        user_id: "local",
+        name: item.name,
+        type: item.type,
+      }));
+      const updated = [...vehicles, ...created];
+      if (typeof window !== "undefined") {
+        try {
+          localStorage.setItem(LOCAL_VEHICLES_KEY, JSON.stringify(updated));
+        } catch (e) {
+          console.error("ローカル車両の保存失敗:", e);
+          throw new Error("ブラウザの保存容量が不足しているため、車両を追加できませんでした。");
+        }
+      }
+      setVehicles(updated);
+      return created;
+    }
+
+    requireWritable();
+    const supabase = getSupabaseClient(userId, getToken);
+    // 1 台ずつ入力順に挿入する。1 文でまとめて挿入すると created_at が同じになり、
+    // 再読み込み後の並び（created_at → id 順）がバックアップの順序とずれるため。
+    const created: Vehicle[] = [];
+    try {
+      for (const item of items) {
+        const { data, error: insertError, status } = await supabase
+          .from("vehicles")
+          .insert({ user_id: userId, name: item.name, type: item.type })
+          .select()
+          .single();
+        if (insertError) throw withStatus(insertError, status);
+        created.push(data as Vehicle);
+      }
+    } catch (e) {
+      const kind = classify((e as { status?: number })?.status, e);
+      if (kind) setOutage(kind);
+      // 途中まで作成できた車両は一覧に反映しておく
+      if (created.length > 0) setVehicles(prev => [...prev, ...created]);
+      throw normalizeError(e);
+    }
+
+    setVehicles(prev => [...prev, ...created]);
+    return created;
+  };
+
   const deleteVehicle = async (id: string) => {
     if (vehicles.length <= 1) {
       // データフック内では UI（alert/toast）を出さず、呼び出し元に判断を委ねる
@@ -369,6 +424,8 @@ export function useVehicles() {
     readOnly,
     setSelectedVehicleId,
     addVehicle,
+    /** 車両をまとめて追加する（復元用。選択中の車両は変えない） */
+    addVehicles,
     deleteVehicle,
     updateVehicle,
     refreshVehicles,
