@@ -156,7 +156,6 @@ export default function Home() {
 
     try {
       const compressedFile = await imageCompression(file, options);
-      console.log(`圧縮成功: ${(compressedFile.size / 1024 / 1024).toFixed(2)} MB`);
 
       const reader = new FileReader();
       reader.onload = async (event) => {

@@ -25,8 +25,6 @@ export type RecordFormErrors = Partial<Record<DraftField, string>>;
 /** 保存時に addRecord / updateRecord へ渡す形 */
 export type RecordInput = Omit<FuelRecord, "id" | "vehicle_id" | "created_at">;
 
-export const NUMERIC_DRAFT_FIELDS: readonly NumericDraftField[] = ["fuel_amount", "total_cost", "total_distance"];
-
 /** 今日の日付（ローカル）を YYYY-MM-DD で返す */
 export function todayLocalISO(): string {
   const d = new Date();

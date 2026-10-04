@@ -1,6 +1,7 @@
-# CI: lint / 型チェック / ビルドの検証。
+# CI: lint / 型チェック / テスト / ビルドの検証 (Node 22)。
 #
-# ビルドにはプレースホルダの環境変数を使う。実際の API には接続しない。
+# ビルドにはプレースホルダの環境変数を使う。Clerk / Supabase / Gemini の実 API には接続しない
+# (ただし next/font/google がビルド時に Google Fonts を取得する)。
 # NOTE: Clerk の公開キー (pk_test_...) は `pk_test_` + base64("<frontend-api>$") という
 #       形式で検証される。単純な "pk_test_placeholder" ではビルド時の "/" プリレンダリングで
 #       「@clerk/nextjs: The publishableKey passed to Clerk is invalid」となりビルドが失敗する
@@ -25,7 +26,7 @@ concurrency:
 
 jobs:
   check:
-    name: Lint / Typecheck / Build
+    name: Lint / Typecheck / Test / Build
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
@@ -43,7 +44,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
 
       - name: Install dependencies

@@ -138,7 +138,12 @@ export default function ManageVehiclesModal({
 
     // 確認ダイアログ表示中も busy 扱いにして、Escape でモーダルごと閉じないようにする
     setDeletingId(v.id);
-    const ok = await confirm(`「${v.name}」を削除しますか？\n（関連する給油記録も削除されます）`, {
+    // 既定車両（先頭）には未分類の記録も表示されており、useVehicles.deleteVehicle はそれらも削除する
+    const isDefault = vehicles[0]?.id === v.id;
+    const detail = isDefault
+      ? "（関連する給油記録と、この車両に表示されている未分類の記録も削除されます）"
+      : "（関連する給油記録も削除されます）";
+    const ok = await confirm(`「${v.name}」を削除しますか？\n${detail}`, {
       title: "車両の削除",
       danger: true,
       confirmLabel: "削除する",

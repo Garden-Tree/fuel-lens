@@ -11,17 +11,25 @@ import {
   migrationErrorMessage,
   ensureDefaultVehicle,
   withStatus,
+  CrossTabLockError,
   LOCAL_RECORDS_KEY,
   LOCAL_VEHICLES_KEY,
   LOCAL_DEFAULT_VEHICLE_ID,
   DEFAULT_VEHICLE_NAME,
 } from "./migrateLocalData";
+import { FUEL_RECORDS_CHANGED_EVENT, isUnclassifiedRecord, isUuid } from "./recordFilters";
 import {
+  CLOUD_LOAD_ERROR_MESSAGE,
+  PERMISSION_DENIED_MESSAGE,
+  SUPABASE_RETRY_EVENT,
   classifySupabaseFailure,
   clearOutage,
+  isPermissionDeniedError,
   readCache,
   readOnlyError,
   setOutage,
+  syncCacheOwner,
+  toUserFacingWriteError,
   useSupabaseOutage,
   writeCache,
 } from "./supabaseHealth";
@@ -42,8 +50,6 @@ const DEFAULT_VEHICLE: Vehicle = {
 };
 
 const SELECTED_VEHICLE_KEY = "fuel_lens_selected_vehicle_id";
-/** 給油記録が別経路（車両削除など）で変更されたことを useFuelRecords へ知らせるイベント */
-export const FUEL_RECORDS_CHANGED_EVENT = "fuel_records_changed";
 
 const vehiclesCacheKey = (userId: string) => `fuel_lens_cache_vehicles_${userId}`;
 
@@ -66,12 +72,12 @@ function pickSelected(list: Vehicle[], cachedId: string | null): string {
   return list[0]?.id ?? DEFAULT_VEHICLE.id;
 }
 
+/** 読み込み失敗時に画面へ出す日本語メッセージ（英語の生エラーは console.error のみに出す） */
 function errorMessage(e: unknown): string {
   if (isAuthTokenError(e)) return AUTH_TOKEN_ERROR_MESSAGE;
-  if (e && typeof e === "object" && typeof (e as { message?: unknown }).message === "string") {
-    return (e as { message: string }).message;
-  }
-  return "車両データの読み込みに失敗しました";
+  if (isPermissionDeniedError(e)) return PERMISSION_DENIED_MESSAGE;
+  if (e instanceof CrossTabLockError) return e.message;
+  return CLOUD_LOAD_ERROR_MESSAGE;
 }
 
 /** 認証トークン欠落は障害（outage）ではなくアプリエラーとして扱う */
@@ -80,9 +86,10 @@ function classify(status: number | null | undefined, e: unknown) {
 }
 
 /** 呼び出し元（alert 等）に見せるエラーへ正規化する。認証トークン欠落は日本語メッセージに置き換える。 */
-function normalizeError(e: unknown, status?: number): unknown {
+function normalizeError(e: unknown, status?: number): Error {
   if (isAuthTokenError(e)) return new SupabaseAuthTokenError();
-  return e && typeof e === "object" ? withStatus(e, status) : e;
+  // 生エラーのログと日本語メッセージへの変換は toUserFacingWriteError に集約する
+  return toUserFacingWriteError(e, status);
 }
 
 export function useVehicles() {
@@ -102,6 +109,13 @@ export function useVehicles() {
   useEffect(() => {
     if (cacheOwnerRef.current) writeCache(vehiclesCacheKey(cacheOwnerRef.current), vehicles);
   }, [vehicles]);
+
+  // ログアウト・ユーザー切り替え時に前のユーザーのキャッシュと障害フラグを消す
+  // （SupabaseStatusBanner からも呼ばれる。処理は冪等）
+  useEffect(() => {
+    if (!isLoaded) return;
+    syncCacheOwner(isSignedIn ? userId ?? null : null);
+  }, [isLoaded, isSignedIn, userId]);
 
   const setSelectedVehicleId = useCallback((id: string) => {
     setSelectedVehicleIdState(id);
@@ -190,6 +204,16 @@ export function useVehicles() {
     return loadVehicles(currentFetchId);
   }, [loadVehicles]);
 
+  // 障害バナーの「再試行」・自動再試行で再読み込みする
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const handler = () => {
+      void refreshVehicles();
+    };
+    window.addEventListener(SUPABASE_RETRY_EVENT, handler);
+    return () => window.removeEventListener(SUPABASE_RETRY_EVENT, handler);
+  }, [refreshVehicles]);
+
   const requireWritable = () => {
     if (readOnly) throw readOnlyError(outage);
   };
@@ -237,6 +261,10 @@ export function useVehicles() {
       throw new Error("最低1台の車両は残す必要があります。");
     }
 
+    // 既定車両（vehicles[0]）には未分類の記録（vehicle_id が null など）も表示されているため、
+    // 確認ダイアログの文言どおり、既定車両を削除するときはそれらも一緒に削除する
+    const isDefault = vehicles[0]?.id === id;
+
     if (!isSignedIn) {
       const updated = vehicles.filter(v => v.id !== id);
       setVehicles(updated);
@@ -246,15 +274,19 @@ export function useVehicles() {
       if (typeof window !== "undefined") {
         localStorage.setItem(LOCAL_VEHICLES_KEY, JSON.stringify(updated));
 
-        // 関連するローカルの給油レコードも削除
+        // 関連するローカルの給油レコードも削除（既定車両なら未分類の記録も。判定は useFuelRecords の表示と同じ）
         const localRecords = localStorage.getItem(LOCAL_RECORDS_KEY);
         if (localRecords) {
           try {
             const parsedRecords: unknown = JSON.parse(localRecords);
             if (Array.isArray(parsedRecords)) {
-              const filteredRecords = parsedRecords.filter(
-                (r: { vehicle_id?: unknown }) => r?.vehicle_id !== id
-              );
+              const filteredRecords = parsedRecords.filter((r: { vehicle_id?: unknown } | null) => {
+                if (!r || typeof r !== "object") return true;
+                const vid = r.vehicle_id;
+                if (vid === id) return false;
+                const unclassified = isUnclassifiedRecord({ vehicle_id: typeof vid === "string" ? vid : null });
+                return !(isDefault && unclassified);
+              });
               localStorage.setItem(LOCAL_RECORDS_KEY, JSON.stringify(filteredRecords));
             }
           } catch (e) {
@@ -270,8 +302,13 @@ export function useVehicles() {
     try {
       const supabase = getSupabaseClient(userId, getToken);
 
-      // 確認ダイアログの文言どおり、関連する給油記録を先に削除してから車両を削除する
-      const recRes = await supabase.from("fuel_records").delete().eq("vehicle_id", id);
+      // 確認ダイアログの文言どおり、関連する給油記録を先に削除してから車両を削除する。
+      // 既定車両なら、そこに表示されている未分類（vehicle_id が null）の記録も削除する。
+      // id は UUID 形式を検証してからフィルタ式に埋め込む。
+      const recDelete = supabase.from("fuel_records").delete().eq("user_id", userId);
+      const recRes = await (isDefault && isUuid(id)
+        ? recDelete.or(`vehicle_id.eq.${id},vehicle_id.is.null`)
+        : recDelete.eq("vehicle_id", id));
       if (recRes.error) throw withStatus(recRes.error, recRes.status);
 
       const vehRes = await supabase.from("vehicles").delete().eq("id", id);
@@ -286,7 +323,6 @@ export function useVehicles() {
         window.dispatchEvent(new CustomEvent(FUEL_RECORDS_CHANGED_EVENT, { detail: { vehicleId: id } }));
       }
     } catch (e) {
-      console.error("車両の削除失敗:", e);
       const kind = classify((e as { status?: number })?.status, e);
       if (kind) setOutage(kind);
       throw normalizeError(e);
@@ -315,7 +351,6 @@ export function useVehicles() {
 
       setVehicles(prev => prev.map(v => v.id === id ? { ...v, name, type } : v));
     } catch (e) {
-      console.error("車両の更新失敗:", e);
       const kind = classify((e as { status?: number })?.status, e);
       if (kind) setOutage(kind);
       throw normalizeError(e);
@@ -325,7 +360,6 @@ export function useVehicles() {
   return {
     vehicles,
     selectedVehicleId,
-    selectedVehicle: vehicles.find(v => v.id === selectedVehicleId) || vehicles[0],
     loading,
     /** 障害以外の読み込みエラー（RLS 違反など）。障害は `outage` で通知する。 */
     error,
