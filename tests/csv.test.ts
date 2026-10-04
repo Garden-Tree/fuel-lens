@@ -1,0 +1,149 @@
+import { describe, expect, it } from "vitest";
+import {
+  CSV_BOM,
+  RECORDS_CSV_HEADERS,
+  buildCsv,
+  buildRecordsCsv,
+  escapeCsvField,
+  formatCsvNumber,
+  toSafeFilenamePart,
+} from "@/lib/csv";
+import type { FuelRecord } from "@/lib/useFuelRecords";
+
+const record = (overrides: Partial<FuelRecord> = {}): FuelRecord => ({
+  id: "r1",
+  date: "2026-01-15",
+  total_distance: 512.3,
+  fuel_amount: 30.12,
+  gas_station: "ENEOS 渋谷店",
+  price_per_unit: 172,
+  total_cost: 5181,
+  fuel_efficiency: 17.01,
+  vehicle_id: "v1",
+  ...overrides,
+});
+
+describe("escapeCsvField", () => {
+  it("quotes plain values", () => {
+    expect(escapeCsvField("ENEOS")).toBe('"ENEOS"');
+    expect(escapeCsvField("2026-01-15")).toBe('"2026-01-15"');
+  });
+
+  it("returns an empty quoted field for null / undefined / empty", () => {
+    expect(escapeCsvField(null)).toBe('""');
+    expect(escapeCsvField(undefined)).toBe('""');
+    expect(escapeCsvField("")).toBe('""');
+  });
+
+  it("doubles embedded quotes", () => {
+    expect(escapeCsvField('He said "hi"')).toBe('"He said ""hi"""');
+  });
+
+  it("keeps commas and newlines inside the quoted field", () => {
+    expect(escapeCsvField("a,b")).toBe('"a,b"');
+    expect(escapeCsvField("line1\nline2")).toBe('"line1\nline2"');
+  });
+
+  it.each(["=SUM(A1)", "+1", "-1", "@cmd", "\tx", "\rx"])("neutralizes formula-like value %j", value => {
+    expect(escapeCsvField(value)).toBe(`"'${value}"`);
+  });
+
+  it("neutralizes and escapes quotes at the same time", () => {
+    expect(escapeCsvField('=HYPERLINK("x")')).toBe('"\'=HYPERLINK(""x"")"');
+  });
+
+  it("does not prefix values that only contain those characters later", () => {
+    expect(escapeCsvField("a=b")).toBe('"a=b"');
+    expect(escapeCsvField("2026-01-15")).toBe('"2026-01-15"');
+  });
+});
+
+describe("formatCsvNumber", () => {
+  it("formats finite numbers and leaves null / non-finite empty", () => {
+    expect(formatCsvNumber(12.5)).toBe("12.5");
+    expect(formatCsvNumber(0)).toBe("0");
+    expect(formatCsvNumber(null)).toBe("");
+    expect(formatCsvNumber(undefined)).toBe("");
+    expect(formatCsvNumber(Number.NaN)).toBe("");
+    expect(formatCsvNumber(Number.POSITIVE_INFINITY)).toBe("");
+  });
+});
+
+describe("buildCsv", () => {
+  it("prefixes a BOM and joins with LF", () => {
+    const csv = buildCsv(["a", "b"], [["1", "2"], ["3", "4"]]);
+    expect(csv.startsWith(CSV_BOM)).toBe(true);
+    expect(csv.charCodeAt(0)).toBe(0xfeff);
+    expect(csv.slice(1)).toBe("a,b\n1,2\n3,4");
+  });
+
+  it("encodes the BOM as EF BB BF in UTF-8", () => {
+    const bytes = new TextEncoder().encode(buildCsv(["a"], []));
+    expect(Array.from(bytes.slice(0, 3))).toEqual([0xef, 0xbb, 0xbf]);
+  });
+});
+
+describe("buildRecordsCsv", () => {
+  it("outputs the documented columns in order", () => {
+    const csv = buildRecordsCsv([], new Map());
+    expect(csv.slice(1)).toBe(RECORDS_CSV_HEADERS.join(","));
+    expect(RECORDS_CSV_HEADERS).toEqual([
+      "車両",
+      "日付",
+      "給油量(L)",
+      "支払総額(円)",
+      "単価(円/L)",
+      "走行距離(km)",
+      "燃費(km/L)",
+      "店舗名",
+    ]);
+  });
+
+  it("writes one row per record with the vehicle name", () => {
+    const csv = buildRecordsCsv([record()], new Map([["v1", { name: "マイカー" }]]));
+    const lines = csv.slice(1).split("\n");
+    expect(lines).toHaveLength(2);
+    expect(lines[1]).toBe('"マイカー","2026-01-15",30.12,5181,172,512.3,17.01,"ENEOS 渋谷店"');
+  });
+
+  it("leaves null numbers empty and uses the fallback name for unknown vehicles", () => {
+    const csv = buildRecordsCsv(
+      [
+        record({
+          vehicle_id: null,
+          total_distance: null,
+          fuel_amount: null,
+          price_per_unit: null,
+          total_cost: null,
+          fuel_efficiency: null,
+          gas_station: null,
+        }),
+      ],
+      { v1: { name: "マイカー" } },
+      "メインカー"
+    );
+    expect(csv.slice(1).split("\n")[1]).toBe('"メインカー","2026-01-15",,,,,,""');
+  });
+
+  it("does not resolve prototype keys as vehicle names", () => {
+    const csv = buildRecordsCsv([record({ vehicle_id: "constructor" })], {});
+    expect(csv.slice(1).split("\n")[1].startsWith('"未分類",')).toBe(true);
+  });
+
+  it("escapes injection in vehicle and station names", () => {
+    const csv = buildRecordsCsv(
+      [record({ gas_station: "=cmd|' /C calc'!A0" })],
+      new Map([["v1", { name: '@evil "car"' }]])
+    );
+    const row = csv.slice(1).split("\n")[1];
+    expect(row.startsWith('"\'@evil ""car""",')).toBe(true);
+    expect(row.endsWith('"\'=cmd|\' /C calc\'!A0"')).toBe(true);
+  });
+});
+
+describe("toSafeFilenamePart", () => {
+  it("keeps Japanese and alphanumerics and replaces the rest", () => {
+    expect(toSafeFilenamePart("マイカー 1/2")).toBe("マイカー_1_2");
+    expect(toSafeFilenamePart("軽トラ")).toBe("軽トラ");
+  });
+});
