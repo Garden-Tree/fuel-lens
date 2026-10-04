@@ -1,0 +1,62 @@
+# CI: lint / 型チェック / ビルドの検証。
+#
+# ビルドにはプレースホルダの環境変数を使う。実際の API には接続しない。
+# NOTE: Clerk の公開キー (pk_test_...) は `pk_test_` + base64("<frontend-api>$") という
+#       形式で検証される。単純な "pk_test_placeholder" ではビルド時の "/" プリレンダリングで
+#       「@clerk/nextjs: The publishableKey passed to Clerk is invalid」となりビルドが失敗する
+#       (ローカルで確認済み)。そのため形式を満たすダミー値を使う。
+#       (pk_test_Y2xlcmsuZXhhbXBsZS5jb20k = base64("clerk.example.com$"))
+#       それでもビルドが失敗する場合は、Clerk の開発インスタンスの実キーを
+#       リポジトリ Secrets (NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY / CLERK_SECRET_KEY) に
+#       登録し、下記 env をそれに差し替えること。
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: Lint / Typecheck / Build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      # ビルド専用のダミー値 (実際のサービスには接続しない)
+      NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: pk_test_Y2xlcmsuZXhhbXBsZS5jb20k
+      CLERK_SECRET_KEY: sk_test_placeholder
+      NEXT_PUBLIC_SUPABASE_URL: https://placeholder.supabase.co
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: placeholder
+      GEMINI_API_KEY: placeholder
+      NEXT_TELEMETRY_DISABLED: "1"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Typecheck
+        run: npx tsc --noEmit
+
+      - name: Test
+        run: npm test
+
+      - name: Build
+        run: npm run build

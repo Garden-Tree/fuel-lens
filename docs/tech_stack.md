@@ -33,3 +33,11 @@
 
 ### recharts
 - **選定理由**: 給油履歴や燃費の遷移をグラフ化するため。React向けに作られており、コンポーネントベースで柔軟なチャートを直感的に組むことができるため採用しています。
+
+## 運用 / インフラ
+
+### Vercel Cron + GitHub Actions (Supabase keepalive)
+- **選定理由**: Supabase Free プランは約 7 日間アクセスが無いとプロジェクトが一時停止されるため、定期的に DB へ軽い書き込みを行う必要があります。Vercel Hobby の Cron（1 日 1 回、本番デプロイのみ）を主経路とし、公開リポジトリでは 60 日無操作で schedule が止まる GitHub Actions を予備経路として二重化しました。どちらも DB 側の `security definer` 関数 `keepalive_ping()`（10 分スロットル付き）を呼ぶだけなので、anon キーが公開情報であっても悪用による負荷増加を抑えられます。詳細は `supabase/README.md` を参照してください。
+
+### SQL マイグレーション (schema-as-code)
+- **選定理由**: Dashboard 上で手作業したスキーマ・RLS ポリシーはプロジェクトを作り直すと失われるため、`supabase/migrations/*.sql` として冪等な SQL をリポジトリに保持しています。Supabase CLI (`supabase db push`) と SQL Editor のどちらからでも適用できます。

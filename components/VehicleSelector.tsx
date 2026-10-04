@@ -1,3 +1,5 @@
+"use client";
+
 import { useState } from "react";
 import { Car, Bike, Settings } from "lucide-react";
 import { Vehicle } from "@/lib/useVehicles";
@@ -10,16 +12,19 @@ interface VehicleSelectorProps {
   onAddVehicle: (name: string, type: "car" | "bike") => Promise<Vehicle>;
   onDeleteVehicle: (id: string) => Promise<void>;
   onUpdateVehicle: (id: string, name: string, type: "car" | "bike") => Promise<void>;
+  /** 閲覧専用（クラウド障害中）。車両の追加・編集・削除を無効化する（切り替えは可能） */
+  readOnly?: boolean;
   className?: string;
 }
 
-export default function VehicleSelector({ 
-  vehicles, 
-  selectedVehicleId, 
-  onSelect, 
-  onAddVehicle, 
+export default function VehicleSelector({
+  vehicles,
+  selectedVehicleId,
+  onSelect,
+  onAddVehicle,
   onDeleteVehicle,
   onUpdateVehicle,
+  readOnly = false,
   className = "w-full mb-6"
 }: VehicleSelectorProps) {
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -28,20 +33,27 @@ export default function VehicleSelector({
     <div className={className}>
       <div className="flex items-center gap-2 overflow-x-auto pb-2 scrollbar-none">
         {/* 車両タブグループ */}
-        <div className="flex items-center gap-2 p-1.5 bg-gray-950/40 backdrop-blur-xl border border-gray-800/80 rounded-2xl shadow-inner">
+        <div
+          role="tablist"
+          aria-label="車両の切り替え"
+          className="flex items-center gap-2 p-1.5 bg-gray-950/40 backdrop-blur-xl border border-gray-800/80 rounded-2xl shadow-inner"
+        >
           {vehicles.map(v => {
             const isSelected = v.id === selectedVehicleId;
             return (
               <button
                 key={v.id}
+                type="button"
+                role="tab"
+                aria-selected={isSelected}
                 onClick={() => onSelect(v.id)}
-                className={`flex items-center gap-2 py-2 px-4 rounded-xl font-bold text-xs md:text-sm transition-all duration-300 flex-shrink-0 ${
-                  isSelected 
-                    ? "bg-gradient-to-r from-blue-600 to-cyan-500 text-white shadow-lg shadow-blue-950 scale-[1.02]" 
+                className={`flex items-center gap-2 py-2 px-4 rounded-xl font-bold text-xs md:text-sm transition-all duration-300 flex-shrink-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 ${
+                  isSelected
+                    ? "bg-gradient-to-r from-blue-600 to-cyan-500 text-white shadow-lg shadow-blue-950 scale-[1.02]"
                     : "text-gray-400 hover:text-white hover:bg-gray-900/50"
                 }`}
               >
-                {v.type === "bike" ? <Bike className="w-4 h-4 flex-shrink-0" /> : <Car className="w-4 h-4 flex-shrink-0" />}
+                {v.type === "bike" ? <Bike className="w-4 h-4 flex-shrink-0" aria-hidden="true" /> : <Car className="w-4 h-4 flex-shrink-0" aria-hidden="true" />}
                 <span className="truncate max-w-[120px] md:max-w-[180px]">{v.name}</span>
               </button>
             );
@@ -49,11 +61,15 @@ export default function VehicleSelector({
 
           {/* 車両管理ボタン */}
           <button
+            type="button"
             onClick={() => setIsModalOpen(true)}
-            className="flex items-center justify-center p-2 rounded-xl text-gray-500 hover:text-blue-400 hover:bg-gray-900/50 transition border border-dashed border-gray-800 hover:border-blue-500/50 flex-shrink-0"
+            className="flex items-center justify-center p-2 rounded-xl text-gray-500 hover:text-blue-400 hover:bg-gray-900/50 transition border border-dashed border-gray-800 hover:border-blue-500/50 flex-shrink-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
             title="車両を管理"
+            aria-label="車両を管理"
+            aria-haspopup="dialog"
+            aria-expanded={isModalOpen}
           >
-            <Settings className="w-4 h-4" />
+            <Settings className="w-4 h-4" aria-hidden="true" />
           </button>
         </div>
       </div>
@@ -70,6 +86,7 @@ export default function VehicleSelector({
           await onDeleteVehicle(id);
         }}
         onUpdate={onUpdateVehicle}
+        readOnly={readOnly}
       />
     </div>
   );

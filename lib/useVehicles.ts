@@ -1,6 +1,30 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useAuth } from "@clerk/nextjs";
-import { createClerkSupabaseClient } from "./supabaseClient";
+import {
+  getSupabaseClient,
+  isAuthTokenError,
+  SupabaseAuthTokenError,
+  AUTH_TOKEN_ERROR_MESSAGE,
+} from "./supabaseClient";
+import {
+  migrateLocalData,
+  migrationErrorMessage,
+  ensureDefaultVehicle,
+  withStatus,
+  LOCAL_RECORDS_KEY,
+  LOCAL_VEHICLES_KEY,
+  LOCAL_DEFAULT_VEHICLE_ID,
+  DEFAULT_VEHICLE_NAME,
+} from "./migrateLocalData";
+import {
+  classifySupabaseFailure,
+  clearOutage,
+  readCache,
+  readOnlyError,
+  setOutage,
+  useSupabaseOutage,
+  writeCache,
+} from "./supabaseHealth";
 
 export type Vehicle = {
   id: string;
@@ -11,130 +35,144 @@ export type Vehicle = {
 };
 
 const DEFAULT_VEHICLE: Vehicle = {
-  id: "default-car",
+  id: LOCAL_DEFAULT_VEHICLE_ID,
   user_id: "local",
-  name: "メインカー",
+  name: DEFAULT_VEHICLE_NAME,
   type: "car",
 };
 
 const SELECTED_VEHICLE_KEY = "fuel_lens_selected_vehicle_id";
-const LOCAL_VEHICLES_KEY = "fuel_lens_vehicles";
+/** 給油記録が別経路（車両削除など）で変更されたことを useFuelRecords へ知らせるイベント */
+export const FUEL_RECORDS_CHANGED_EVENT = "fuel_records_changed";
+
+const vehiclesCacheKey = (userId: string) => `fuel_lens_cache_vehicles_${userId}`;
+
+function parseLocalVehicles(raw: string | null): Vehicle[] {
+  if (!raw) return [];
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter(
+      (v): v is Vehicle =>
+        !!v && typeof v === "object" && typeof (v as Vehicle).id === "string" && typeof (v as Vehicle).name === "string"
+    );
+  } catch {
+    return [];
+  }
+}
+
+function pickSelected(list: Vehicle[], cachedId: string | null): string {
+  if (cachedId && list.some(v => v.id === cachedId)) return cachedId;
+  return list[0]?.id ?? DEFAULT_VEHICLE.id;
+}
+
+function errorMessage(e: unknown): string {
+  if (isAuthTokenError(e)) return AUTH_TOKEN_ERROR_MESSAGE;
+  if (e && typeof e === "object" && typeof (e as { message?: unknown }).message === "string") {
+    return (e as { message: string }).message;
+  }
+  return "車両データの読み込みに失敗しました";
+}
+
+/** 認証トークン欠落は障害（outage）ではなくアプリエラーとして扱う */
+function classify(status: number | null | undefined, e: unknown) {
+  return isAuthTokenError(e) ? null : classifySupabaseFailure(status, e);
+}
+
+/** 呼び出し元（alert 等）に見せるエラーへ正規化する。認証トークン欠落は日本語メッセージに置き換える。 */
+function normalizeError(e: unknown, status?: number): unknown {
+  if (isAuthTokenError(e)) return new SupabaseAuthTokenError();
+  return e && typeof e === "object" ? withStatus(e, status) : e;
+}
 
 export function useVehicles() {
   const { getToken, userId, isSignedIn, isLoaded } = useAuth();
   const [vehicles, setVehicles] = useState<Vehicle[]>([DEFAULT_VEHICLE]);
-  const [selectedVehicleId, setSelectedVehicleIdState] = useState<string>(() => {
-    if (typeof window !== "undefined") {
-      return localStorage.getItem(SELECTED_VEHICLE_KEY) || DEFAULT_VEHICLE.id;
-    }
-    return DEFAULT_VEHICLE.id;
-  });
+  // localStorage は SSR と初回描画で一致させるため、初期化子では読まず loadVehicles 内で読む
+  const [selectedVehicleId, setSelectedVehicleIdState] = useState<string>(DEFAULT_VEHICLE.id);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const outage = useSupabaseOutage();
   const fetchCounter = useRef(0);
+  /** クラウドから正常に読み込めた後、この userId のキャッシュへ vehicles を書き戻す */
+  const cacheOwnerRef = useRef<string | null>(null);
+
+  const readOnly = !!isSignedIn && outage != null;
+
+  useEffect(() => {
+    if (cacheOwnerRef.current) writeCache(vehiclesCacheKey(cacheOwnerRef.current), vehicles);
+  }, [vehicles]);
 
   const setSelectedVehicleId = useCallback((id: string) => {
     setSelectedVehicleIdState(id);
     if (typeof window !== "undefined") {
       localStorage.setItem(SELECTED_VEHICLE_KEY, id);
-      window.dispatchEvent(new CustomEvent("vehicle_changed", { detail: { id } }));
     }
   }, []);
 
   const loadVehicles = useCallback(async (fetchId: number) => {
     if (!isLoaded) return;
     setLoading(true);
+    setError(null);
 
     const cachedSelectedId = typeof window !== "undefined" ? localStorage.getItem(SELECTED_VEHICLE_KEY) : null;
 
     if (!isSignedIn) {
-      const localSaved = typeof window !== "undefined" ? localStorage.getItem(LOCAL_VEHICLES_KEY) : null;
-      if (fetchId !== fetchCounter.current) return;
-      let loadedVehicles = [DEFAULT_VEHICLE];
-      if (localSaved) {
-        try {
-          const parsed = JSON.parse(localSaved);
-          if (parsed && parsed.length > 0) loadedVehicles = parsed;
-        } catch {}
+      cacheOwnerRef.current = null;
+      try {
+        const localSaved = typeof window !== "undefined" ? localStorage.getItem(LOCAL_VEHICLES_KEY) : null;
+        if (fetchId !== fetchCounter.current) return;
+        const parsed = parseLocalVehicles(localSaved);
+        const loadedVehicles = parsed.length > 0 ? parsed : [DEFAULT_VEHICLE];
+        setVehicles(loadedVehicles);
+        setSelectedVehicleIdState(pickSelected(loadedVehicles, cachedSelectedId));
+      } finally {
+        if (fetchId === fetchCounter.current) setLoading(false);
       }
-      setVehicles(loadedVehicles);
-      setSelectedVehicleIdState(
-        cachedSelectedId && loadedVehicles.some(v => v.id === cachedSelectedId)
-          ? cachedSelectedId
-          : loadedVehicles[0].id
-      );
-      setLoading(false);
       return;
     }
 
+    if (!userId) return;
+    const supabase = getSupabaseClient(userId, getToken);
+
     try {
-      const token = await getToken({ template: "supabase" });
-      if (!token) throw new Error("認証トークンの取得に失敗しました");
-      if (fetchId !== fetchCounter.current) return;
-      const supabase = createClerkSupabaseClient(token);
-
-      // ローカル車両データのマイグレーション
-      const localData = typeof window !== "undefined" ? localStorage.getItem(LOCAL_VEHICLES_KEY) : null;
-      if (localData) {
-        try {
-          const parsedLocal: Vehicle[] = JSON.parse(localData);
-          const toInsert = parsedLocal
-            .filter(v => v.id !== DEFAULT_VEHICLE.id)
-            .map(v => ({ user_id: userId, name: v.name, type: v.type }));
-          
-          if (toInsert.length > 0) {
-            const { error: insertError } = await supabase.from("vehicles").insert(toInsert);
-            if (!insertError) {
-              // 成功した場合のみローカルデータを削除
-              localStorage.removeItem(LOCAL_VEHICLES_KEY);
-            }
-          } else {
-            // デフォルト車両のみの場合はローカルデータを削除
-            localStorage.removeItem(LOCAL_VEHICLES_KEY);
-          }
-        } catch (e) {
-          console.error("車両データのマイグレーション失敗:", e);
-          // エラー時はローカルデータを保持（次回再試行）
-        }
+      // ローカルデータの移行（useFuelRecords からも呼ばれるが、ロックにより 1 回しか走らない）
+      try {
+        await migrateLocalData(supabase, userId);
+      } catch (e) {
+        const kind = classify((e as { status?: number })?.status, e);
+        if (kind) throw e; // 障害なら以降の読み込みも失敗するので下の catch へ
+        // 障害以外（RLS 等）の移行失敗。ローカルデータは復元済みで次回再試行される。
+        // アップロードされていないことが利用者に伝わるよう error に表示する
+        // （認証トークン欠落は直後の読み込みでも失敗し、再ログイン案内が表示される）。
+        if (!isAuthTokenError(e) && fetchId === fetchCounter.current) setError(migrationErrorMessage(e));
       }
 
-      // クラウドから車両一覧を取得
-      const { data, error } = await supabase
-        .from("vehicles")
-        .select("*")
-        .order("created_at", { ascending: true });
-
       if (fetchId !== fetchCounter.current) return;
-      if (error) throw error;
 
-      let fetchedVehicles = data as Vehicle[];
+      // クラウドから車両一覧を取得（1 台もなければ既定車両を自動生成）
+      const fetchedVehicles = await ensureDefaultVehicle(supabase, userId);
+      if (fetchId !== fetchCounter.current) return;
 
-      // クラウドに車両がない場合はデフォルト車両を自動生成
-      if (!fetchedVehicles || fetchedVehicles.length === 0) {
-        const { data: insertedData, error: insertErr } = await supabase
-          .from("vehicles")
-          .insert({ user_id: userId, name: "メインカー", type: "car" })
-          .select()
-          .single();
-
-        if (fetchId !== fetchCounter.current) return;
-
-        if (!insertErr && insertedData) {
-          fetchedVehicles = [insertedData as Vehicle];
-        } else {
-          fetchedVehicles = [DEFAULT_VEHICLE];
-        }
-      }
-
+      clearOutage();
+      cacheOwnerRef.current = userId;
       setVehicles(fetchedVehicles);
-      setSelectedVehicleIdState(
-        cachedSelectedId && fetchedVehicles.some(v => v.id === cachedSelectedId)
-          ? cachedSelectedId
-          : fetchedVehicles[0].id
-      );
+      setSelectedVehicleIdState(pickSelected(fetchedVehicles, cachedSelectedId));
     } catch (e) {
+      if (fetchId !== fetchCounter.current) return;
       console.error("車両データの読み込み失敗:", e);
-      setVehicles([DEFAULT_VEHICLE]);
-      setSelectedVehicleIdState(DEFAULT_VEHICLE.id);
+
+      const kind = classify((e as { status?: number })?.status, e);
+      if (kind) setOutage(kind);
+      else setError(errorMessage(e));
+
+      // ログイン中は DEFAULT_VEHICLE へフォールバックしない（vehicle_id=null の保存を防ぐ）。
+      // 最後に同期した一覧があればそれを閲覧専用で表示する（キャッシュは上書きしない）。
+      cacheOwnerRef.current = null;
+      const cached = readCache<Vehicle[]>(vehiclesCacheKey(userId));
+      const list = Array.isArray(cached) ? cached : [];
+      setVehicles(list);
+      setSelectedVehicleIdState(list.length > 0 ? pickSelected(list, cachedSelectedId) : DEFAULT_VEHICLE.id);
     } finally {
       if (fetchId === fetchCounter.current) {
         setLoading(false);
@@ -142,30 +180,19 @@ export function useVehicles() {
     }
   }, [isLoaded, isSignedIn, userId, getToken]);
 
-  // 他コンポーネントでの選択変更イベントをリッスン
   useEffect(() => {
     const currentFetchId = ++fetchCounter.current;
     loadVehicles(currentFetchId);
   }, [loadVehicles]);
 
-  useEffect(() => {
-    const handleVehicleSync = (e: Event) => {
-      const customEvent = e as CustomEvent<{ id: string }>;
-      if (customEvent.detail?.id) {
-        setSelectedVehicleIdState(customEvent.detail.id);
-      }
-    };
-
-    if (typeof window !== "undefined") {
-      window.addEventListener("vehicle_changed", handleVehicleSync);
-      return () => window.removeEventListener("vehicle_changed", handleVehicleSync);
-    }
-  }, []);
-
   const refreshVehicles = useCallback(() => {
     const currentFetchId = ++fetchCounter.current;
     return loadVehicles(currentFetchId);
   }, [loadVehicles]);
+
+  const requireWritable = () => {
+    if (readOnly) throw readOnlyError(outage);
+  };
 
   const addVehicle = async (name: string, type: "car" | "bike") => {
     if (!isSignedIn) {
@@ -184,16 +211,19 @@ export function useVehicles() {
       return newVehicle;
     }
 
-    const token = await getToken({ template: "supabase" });
-    if (!token) throw new Error("認証トークンの取得に失敗しました");
-    const supabase = createClerkSupabaseClient(token);
-    const { data, error } = await supabase
+    requireWritable();
+    const supabase = getSupabaseClient(userId, getToken);
+    const { data, error: insertError, status } = await supabase
       .from("vehicles")
       .insert({ user_id: userId, name, type })
       .select()
       .single();
 
-    if (error) throw error;
+    if (insertError) {
+      const kind = classify(status, insertError);
+      if (kind) setOutage(kind);
+      throw normalizeError(insertError, status);
+    }
 
     const added = data as Vehicle;
     setVehicles(prev => [...prev, added]);
@@ -203,57 +233,63 @@ export function useVehicles() {
 
   const deleteVehicle = async (id: string) => {
     if (vehicles.length <= 1) {
-      alert("最低1台の車両は残す必要があります。");
-      return;
+      // データフック内では UI（alert/toast）を出さず、呼び出し元に判断を委ねる
+      throw new Error("最低1台の車両は残す必要があります。");
     }
 
     if (!isSignedIn) {
       const updated = vehicles.filter(v => v.id !== id);
       setVehicles(updated);
-      const nextActiveId = selectedVehicleId === id ? updated[0].id : selectedVehicleId;
-      if (selectedVehicleId === id) {
-        setSelectedVehicleId(nextActiveId);
+      if (selectedVehicleId === id && updated.length > 0) {
+        setSelectedVehicleId(updated[0].id);
       }
       if (typeof window !== "undefined") {
         localStorage.setItem(LOCAL_VEHICLES_KEY, JSON.stringify(updated));
-        
+
         // 関連するローカルの給油レコードも削除
-        const localRecords = localStorage.getItem("fuel_lens_data");
+        const localRecords = localStorage.getItem(LOCAL_RECORDS_KEY);
         if (localRecords) {
           try {
-            const parsedRecords = JSON.parse(localRecords);
-            // 削除された車両に紐づくレコードを除外
-            const filteredRecords = parsedRecords.filter((r: Record<string, unknown>) => r.vehicle_id !== id);
-            localStorage.setItem("fuel_lens_data", JSON.stringify(filteredRecords));
+            const parsedRecords: unknown = JSON.parse(localRecords);
+            if (Array.isArray(parsedRecords)) {
+              const filteredRecords = parsedRecords.filter(
+                (r: { vehicle_id?: unknown }) => r?.vehicle_id !== id
+              );
+              localStorage.setItem(LOCAL_RECORDS_KEY, JSON.stringify(filteredRecords));
+            }
           } catch (e) {
             console.error("ローカル給油レコードの削除失敗:", e);
           }
         }
-
-        window.dispatchEvent(new CustomEvent("vehicle_changed", { detail: { id: nextActiveId } }));
+        window.dispatchEvent(new CustomEvent(FUEL_RECORDS_CHANGED_EVENT, { detail: { vehicleId: id } }));
       }
       return;
     }
 
+    requireWritable();
     try {
-      const token = await getToken({ template: "supabase" });
-      if (!token) throw new Error("認証トークンの取得に失敗しました");
-      const supabase = createClerkSupabaseClient(token);
-      const { error } = await supabase.from("vehicles").delete().eq("id", id);
-      if (error) throw error;
+      const supabase = getSupabaseClient(userId, getToken);
+
+      // 確認ダイアログの文言どおり、関連する給油記録を先に削除してから車両を削除する
+      const recRes = await supabase.from("fuel_records").delete().eq("vehicle_id", id);
+      if (recRes.error) throw withStatus(recRes.error, recRes.status);
+
+      const vehRes = await supabase.from("vehicles").delete().eq("id", id);
+      if (vehRes.error) throw withStatus(vehRes.error, vehRes.status);
 
       const updated = vehicles.filter(v => v.id !== id);
       setVehicles(updated);
-      const nextActiveId = selectedVehicleId === id ? updated[0].id : selectedVehicleId;
-      if (selectedVehicleId === id) {
-        setSelectedVehicleId(nextActiveId);
+      if (selectedVehicleId === id && updated.length > 0) {
+        setSelectedVehicleId(updated[0].id);
       }
       if (typeof window !== "undefined") {
-        window.dispatchEvent(new CustomEvent("vehicle_changed", { detail: { id: nextActiveId } }));
+        window.dispatchEvent(new CustomEvent(FUEL_RECORDS_CHANGED_EVENT, { detail: { vehicleId: id } }));
       }
     } catch (e) {
       console.error("車両の削除失敗:", e);
-      throw e;
+      const kind = classify((e as { status?: number })?.status, e);
+      if (kind) setOutage(kind);
+      throw normalizeError(e);
     }
   };
 
@@ -263,30 +299,26 @@ export function useVehicles() {
       setVehicles(updated);
       if (typeof window !== "undefined") {
         localStorage.setItem(LOCAL_VEHICLES_KEY, JSON.stringify(updated));
-        window.dispatchEvent(new CustomEvent("vehicle_changed", { detail: { id: selectedVehicleId } }));
       }
       return;
     }
 
+    requireWritable();
     try {
-      const token = await getToken({ template: "supabase" });
-      if (!token) throw new Error("認証トークンの取得に失敗しました");
-      const supabase = createClerkSupabaseClient(token);
-      const { error } = await supabase
+      const supabase = getSupabaseClient(userId, getToken);
+      const { error: updateError, status } = await supabase
         .from("vehicles")
         .update({ name, type })
         .eq("id", id);
 
-      if (error) throw error;
+      if (updateError) throw withStatus(updateError, status);
 
       setVehicles(prev => prev.map(v => v.id === id ? { ...v, name, type } : v));
-      
-      if (typeof window !== "undefined") {
-        window.dispatchEvent(new CustomEvent("vehicle_changed", { detail: { id: selectedVehicleId } }));
-      }
     } catch (e) {
       console.error("車両の更新失敗:", e);
-      throw e;
+      const kind = classify((e as { status?: number })?.status, e);
+      if (kind) setOutage(kind);
+      throw normalizeError(e);
     }
   };
 
@@ -295,6 +327,12 @@ export function useVehicles() {
     selectedVehicleId,
     selectedVehicle: vehicles.find(v => v.id === selectedVehicleId) || vehicles[0],
     loading,
+    /** 障害以外の読み込みエラー（RLS 違反など）。障害は `outage` で通知する。 */
+    error,
+    /** クラウドDBの障害種別。null なら正常。 */
+    outage,
+    /** ログイン中かつ障害中。true のとき add/update/delete は日本語エラーを投げる。 */
+    readOnly,
     setSelectedVehicleId,
     addVehicle,
     deleteVehicle,

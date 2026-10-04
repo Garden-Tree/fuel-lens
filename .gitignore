@@ -46,3 +46,9 @@ next-env.d.ts
 
 # 過去アプリからのデータ移行用 (個人の給油記録・DBバックアップを含むためコミットしない)
 /csv/
+
+# claude code local settings
+.claude/settings.local.json
+
+# supabase cli
+supabase/.temp/
