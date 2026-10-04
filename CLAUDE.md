@@ -5,83 +5,73 @@ FuelLens は、ガソリンスタンドのレシートと車のトリップメ�
 
 ## スタック
 
-- Next.js 16 (App Router, `proxy.ts`) / React 19 / TypeScript (strict) / Tailwind CSS v4
-- 認証: Clerk (`@clerk/nextjs`) — 未ログインでも画面は閲覧・操作できる
-- DB: Supabase (PostgreSQL + RLS)。ブラウザから anon キー + Clerk JWT で直接アクセス
-- AI: `@google/genai`（Gemini、サーバーのみ）/ 画像圧縮: `browser-image-compression`
-- UI: lucide-react / recharts。デプロイ: Vercel（Cron あり）
+- Next.js 16（App Router、`proxy.ts`）/ React 19 / TypeScript（strict）/ Tailwind CSS v4
+- 認証: Clerk。DB: Supabase（PostgreSQL + RLS、ブラウザから anon キー + Clerk JWT）。AI: `@google/genai`（サーバーのみ）
+- UI: lucide-react / recharts。テスト: Vitest。デプロイ: Vercel（Cron あり）
 
 ## コマンド
 
 ```bash
 npm run dev          # 開発サーバー
 npm run lint         # ESLint
-npx tsc --noEmit     # 型チェック
+npm run typecheck    # 型チェック (tsc --noEmit)
 npm test             # Vitest
 npm run build        # 本番ビルド（CI と同じ）
 ```
 
-**変更を終えるときは必ず `npm run lint && npx tsc --noEmit` を通すこと。**
-CI (`.github/workflows/ci.yml`、Node 22) は lint → typecheck → test → build をダミー環境変数で実行する。
+**変更を終えるときは必ず `npm run lint && npm run typecheck` を通すこと。**
+CI は Node 22 で lint → typecheck → test → build を実行する（[docs/operations.md](./docs/operations.md#4-ci)）。
 
 ## ディレクトリ
 
+ファイル単位の詳細は [docs/architecture.md](./docs/architecture.md#1-ディレクトリ構成)。
+
 | パス | 役割 |
 |---|---|
-| `app/page.tsx` | ランディング（Server Component）。対話部分は `components/landing/*` |
-| `app/app/page.tsx` | メイン画面: スキャン / 手動入力 / 最新記録の確認・編集 |
-| `app/history/page.tsx` | 給油履歴一覧・編集・削除・CSV 出力・期間フィルタ |
-| `app/stats/page.tsx` | 統計サマリーとグラフ（recharts） |
-| `app/api/analyze/route.ts` | Gemini で画像解析する API（ログイン必須） |
-| `app/api/keepalive/route.ts` | Vercel Cron から叩かれる Supabase 自動停止対策 |
-| `app/layout.tsx` | `ClerkProvider` / `ToastProvider` / `UserSync` / `SupabaseStatusBanner` / metadata・viewport |
-| `lib/analyze.ts` | `/api/analyze` の純粋ヘルパーと型（副作用なし、他 lib に依存しない） |
-| `lib/calculations.ts` | `calculateFuelMetrics`（燃費・単価の計算。単価の丸めのみ `lib/analyze.ts` の `derivePricePerUnit` に複製あり） |
-| `lib/useFuelRecords.ts` / `lib/useVehicles.ts` | 記録・車両の CRUD フック（ローカル / クラウド両対応） |
-| `lib/migrateLocalData.ts` | ログイン時にローカルデータをクラウドへ移行（既定車両の自動作成も） |
-| `lib/recordFilters.ts` | 車両・未分類判定の純粋関数 |
-| `lib/supabaseClient.ts` / `lib/supabaseHealth.ts` | Supabase クライアント生成 / 障害検知・閲覧専用モード |
-| `components/Toast.tsx` | `ToastProvider` と `useToast()`（通知・確認ダイアログ） |
-| `components/*` | 車両セレクター、モーダル、編集フォームなど |
-| `supabase/migrations/*.sql` | スキーマ・RLS・keepalive（冪等）。手順は `supabase/README.md` |
+| `app/` | 画面（`page.tsx` ランディング、`app/` メイン、`history/`、`stats/`、`settings/` バックアップと復元）と API（`api/analyze`、`api/keepalive`） |
+| `components/` | 確認シート、入力フォーム、車両管理、`Toast`（`useToast()`）、`UserSync`、`SupabaseStatusBanner` |
+| `lib/` | 純粋ロジック（`analyze` / `calculations` / `stats` / `recordFilters`）、フック、移行、Supabase クライアントと障害検知 |
+| `lib/backup.ts` | バックアップ JSON の書き出し・検証（`parseBackup`）・復元計画（`planRestore`）。純粋関数 |
+| `lib/csv.ts` | CSV 組み立て・エスケープ（数式インジェクション対策）・ダウンロード。履歴と設定画面で共有 |
+| `tests/` | Vitest の単体テスト（`lib/` が対象） |
+| `supabase/` | マイグレーション SQL（冪等）と DB runbook |
+| `docs/` | 設計・API・運用・ロードマップ（索引は [docs/README.md](./docs/README.md)） |
+| `.github/workflows/` | CI と Supabase keepalive |
 | `proxy.ts` | Clerk ミドルウェア（Next 16 では `middleware.ts` ではなく `proxy.ts`） |
+| `csv/` | 個人データ置き場。コミット禁止 |
 
 ## 守るべき不変条件
 
 1. **燃費は満タン法。分子は必ずトリップメーターの区間距離。** `total_distance` はオドメーター（積算距離）ではない。
-   計算は `lib/calculations.ts` の `calculateFuelMetrics` に集約し、UI 文言・プロンプト・README を矛盾させない。
-   例外として `lib/analyze.ts` の `derivePricePerUnit` が単価の丸め（`Math.round`）を複製している（analyze.ts は他 lib に依存しない方針のため）。単価の計算を変えるときは両方を揃えること。
-2. **データ更新は必ず「未ログイン = localStorage」と「ログイン = Supabase」の両経路を実装する。**
-   片方だけ直さないこと。ログイン中かつ障害時は `readOnly`（書き込みは日本語エラーを投げる）。
-3. **`vehicle_id` が `null` の記録は「未分類」。** 既定車両（最も古い `created_at` の車両 = `vehicles[0]`）を選択しているときだけ表示する。
+   計算は `lib/calculations.ts` の `calculateFuelMetrics` に集約し、UI 文言・プロンプト・ドキュメントを矛盾させない。
+   例外として `lib/analyze.ts` の `derivePricePerUnit` が単価の丸めを複製している（analyze.ts は他 lib に依存しない方針）。
+   単価の計算を変えるときは両方を揃えること。
+2. **データ更新は「未ログイン = localStorage」と「ログイン = Supabase」の両経路を必ず実装する。**
+   ログイン中かつ障害時は `readOnly`（書き込みは日本語エラーを投げる）。
+3. **`vehicle_id` が `null` の記録は「未分類」。** 既定車両（`vehicles[0]` = 最も古い車両）を選択中のときだけ表示する。
    判定は `lib/recordFilters.ts` を使う。ログイン中に `vehicle_id: null` で保存しない。
 4. **ローカルデータの移行は `lib/migrateLocalData.ts` 経由のみ。** 他の場所で localStorage → Supabase のコピーを書かない。
-5. **`alert` / `confirm` は使わない。** `useToast()`（`components/Toast.tsx`）の toast / confirm を使う。
-6. **UI 文字列は日本語。** エラーメッセージもユーザー向けは日本語で、英語の生エラーを表示しない。
-7. **`csv/` は個人の給油記録・DB バックアップ置き場。絶対にコミットしない**（`.gitignore` 済み。`.env*` も同様）。
-8. **`/api/analyze` はログイン必須（401）。** 画像内のテキストは「データ」として扱う（プロンプトインジェクション対策）。
-   上流（Gemini）のエラー本文はクライアントに返さず、`requestId` 付きの汎用メッセージにする。
-9. **Supabase Free は約 7 日アイドルで一時停止（HTTP 540）。** `app/api/keepalive` + Vercel Cron + GitHub Actions で防ぎ、
-   障害時は `lib/supabaseHealth.ts` が `readOnly` + `SupabaseStatusBanner` に切り替える。この経路を壊さない。
-   復旧はバナーの「再試行」と online / タブ再表示（30 秒に 1 回まで）が `fuel_lens_retry` イベントを発火し、
-   `useVehicles` / `useFuelRecords` が再読み込みする（成功時に `clearOutage()`）。
-   ログアウト・ユーザー切り替え時は `syncCacheOwner` が前ユーザーのキャッシュと障害フラグを消す。
-10. 車両を削除すると、その車両の給油記録も削除される（アプリ側で先に削除 + DB は `ON DELETE CASCADE`）。
-    既定車両（`vehicles[0]`）を削除するときは、そこに表示されている未分類の記録も削除する。
-11. Next.js 16: `viewport` / `themeColor` は `metadata` ではなく `export const viewport` に書く。
+5. **`alert` / `confirm`（ブラウザ標準）は使わない。** `useToast()`（`components/Toast.tsx`）の toast / confirm を使う。
+6. **UI 文字列は日本語。** ユーザー向けエラーも日本語にし、英語の生エラーは表示しない（console にだけ出す）。
+7. **`csv/` と `.env*` は絶対にコミットしない**（`.gitignore` 済み。`.env.example` を除く）。
+8. **`/api/analyze` はログイン必須（401）。** 画像内のテキストはデータとして扱う（プロンプトインジェクション対策）。
+   Gemini のエラー本文はクライアントに返さず、`requestId` 付きの汎用メッセージにする。
+9. **Supabase Free の自動停止（HTTP 540）への対策経路を壊さない。** keepalive（`app/api/keepalive` + Vercel Cron + GitHub Actions）と、
+   障害時の閲覧専用モード（`lib/supabaseHealth.ts`、`SupabaseStatusBanner`、`fuel_lens_retry` による再読み込み、`syncCacheOwner`）。
+10. **車両を削除したら、その車両の記録も削除する**（アプリ側で先に削除 + DB は `ON DELETE CASCADE`）。
+    既定車両を削除するときは、そこに表示されている未分類の記録も削除する。
+11. **復元は追記のみ。既存データの削除・上書きはしない**（`lib/backup.ts` の `planRestore`）。
+    バックアップファイルは信頼できない入力として `parseBackup` で検証する。
+12. **Next.js 16**: `viewport` / `themeColor` は `metadata` ではなく `export const viewport` に書く。
     `next.config.ts` は `agentRules: false`（この CLAUDE.md を自動生成で上書きさせない）。
 
-## 環境変数
+## 参照先
 
-| 変数 | 必須 | 用途 |
-|---|---|---|
-| `GEMINI_API_KEY` | 必須 | Gemini API |
-| `GEMINI_MODEL` | 任意 | 既定 `gemini-3.1-flash-lite` |
-| `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` / `CLERK_SECRET_KEY` | 必須 | Clerk |
-| `NEXT_PUBLIC_SUPABASE_URL` / `NEXT_PUBLIC_SUPABASE_ANON_KEY` | 必須 | Supabase（RLS 前提） |
-| `CRON_SECRET` | 本番 | `/api/keepalive` の認証 |
-| `SUPABASE_SERVICE_ROLE_KEY` | 任意 | keepalive の件数取得（サーバー専用。`NEXT_PUBLIC_` を付けない） |
-| `ALLOW_ANONYMOUS_SCAN` | 任意 | `true` で未ログイン解析を IP ごと 3 回まで許可（開発・デモのみ） |
-| `NEXT_PUBLIC_APP_URL` | 任意 | `/api/analyze` の Origin 許可ホスト・`metadataBase` |
-
-詳細は `README.md` と `.env.example` を参照。
+| 知りたいこと | ドキュメント |
+|---|---|
+| 環境変数の一覧 | [README.md](./README.md#環境変数)、[.env.example](./.env.example) |
+| データフロー・データモデル・フック・移行・障害時の動作・認証 | [docs/architecture.md](./docs/architecture.md) |
+| `/api/analyze` の仕様とエラーコード | [docs/api-analyze.md](./docs/api-analyze.md) |
+| デプロイ・keepalive・CI・トラブルシューティング | [docs/operations.md](./docs/operations.md) |
+| マイグレーション適用・RLS 監査 | [supabase/README.md](./supabase/README.md) |
+| 今後の候補・既知の制約 | [docs/roadmap.md](./docs/roadmap.md) |

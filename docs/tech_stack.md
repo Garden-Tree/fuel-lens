@@ -16,7 +16,7 @@
 - **選定理由**: 認証（Authentication）とユーザー管理を迅速かつ安全に実装するため。Next.jsとの親和性が非常に高く、コンポーネント（`<SignedIn>`, `<SignInButton>` など）を配置するだけで高度なログイン体験を提供できるため、開発のスタートダッシュに最適です。
 
 ### Supabase (@supabase/supabase-js)
-- **選定理由**: バックエンド・データベース（PostgreSQLベース）として採用。BaaS（Backend as a Service）としてRDBの高い表現力を持ちながらも、REST APIを介したフロントエンドからの直接データ操作が容易だからです。また、ClerkとのJWT連携（カスタムクレームを活用したRLSの実装）の相性が良いため、セキュアな構成を構築しやすい点も評価しました。
+- **選定理由**: バックエンド・データベース（PostgreSQLベース）として採用。BaaS（Backend as a Service）としてRDBの高い表現力を持ちながらも、REST APIを介したフロントエンドからの直接データ操作が容易だからです。また、ClerkとのJWT連携（カスタムクレームを活用したRLSの実装）の相性が良いため、セキュアな構成を構築しやすい点も評価しました。連携の仕組みは [architecture.md](./architecture.md#7-認証) を参照してください。
 
 ## AI / 画像処理
 
@@ -37,7 +37,7 @@
 ## 運用 / インフラ
 
 ### Vercel Cron + GitHub Actions (Supabase keepalive)
-- **選定理由**: Supabase Free プランは約 7 日間アクセスが無いとプロジェクトが一時停止されるため、定期的に DB へ軽い書き込みを行う必要があります。Vercel Hobby の Cron（1 日 1 回、本番デプロイのみ）を主経路とし、公開リポジトリでは 60 日無操作で schedule が止まる GitHub Actions を予備経路として二重化しました。どちらも DB 側の `security definer` 関数 `keepalive_ping()`（10 分スロットル付き）を呼ぶだけなので、anon キーが公開情報であっても悪用による負荷増加を抑えられます。詳細は `supabase/README.md` を参照してください。
+- **選定理由**: Supabase Free プランは約 7 日間アクセスが無いとプロジェクトが一時停止されるため、定期的に DB へ軽い書き込みを行う必要があります。Vercel Cron を主経路、GitHub Actions を予備経路として二重化しました。構成と設定手順は [operations.md](./operations.md#3-supabase-の自動停止と-keepalive) を参照してください。
 
 ### SQL マイグレーション (schema-as-code)
-- **選定理由**: Dashboard 上で手作業したスキーマ・RLS ポリシーはプロジェクトを作り直すと失われるため、`supabase/migrations/*.sql` として冪等な SQL をリポジトリに保持しています。Supabase CLI (`supabase db push`) と SQL Editor のどちらからでも適用できます。
+- **選定理由**: Dashboard 上で手作業したスキーマ・RLS ポリシーはプロジェクトを作り直すと失われるため、`supabase/migrations/*.sql` として冪等な SQL をリポジトリに保持しています。適用手順は [supabase/README.md](../supabase/README.md) を参照してください。
