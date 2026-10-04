@@ -1,6 +1,8 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Vehicle } from "./useVehicles";
+import { isValidCalendarDate } from "./analyze";
 import { isUuid } from "./recordFilters";
+import { PERMISSION_DENIED_MESSAGE, isPermissionDeniedError } from "./supabaseHealth";
 
 /**
  * ログアウト中に localStorage へ保存した車両・給油記録を、ログイン後に
@@ -109,17 +111,6 @@ function stringOrNull(v: unknown): string | null {
   return typeof v === "string" ? v : null;
 }
 
-const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
-
-/** YYYY-MM-DD 形式かつ実在する日付か（lib/analyze.ts の isValidCalendarDate と同じ規則） */
-function isValidCalendarDate(value: unknown): value is string {
-  if (typeof value !== "string" || !DATE_PATTERN.test(value)) return false;
-  const [y, mo, d] = value.split("-").map(Number);
-  if (mo < 1 || mo > 12 || d < 1 || d > 31) return false;
-  const dt = new Date(Date.UTC(y, mo - 1, d));
-  return dt.getUTCFullYear() === y && dt.getUTCMonth() === mo - 1 && dt.getUTCDate() === d;
-}
-
 /** Date をローカルタイムゾーンの YYYY-MM-DD に変換する */
 function toLocalDateString(d: Date): string {
   const y = String(d.getFullYear()).padStart(4, "0");
@@ -197,6 +188,16 @@ export function withStatus<E extends object>(error: E, status: number | undefine
 const LEASE_TTL_MS = 2 * 60 * 1000;
 const LEASE_REFRESH_MS = 20 * 1000;
 const LEASE_POLL_MS = 250;
+/** Web Locks の取得待ちの上限。別タブがロックを持ったまま固まっても無限に待たない */
+const LOCK_WAIT_TIMEOUT_MS = 30 * 1000;
+
+/** クロスタブロックを取得できなかったときのエラー（メッセージは日本語でそのまま画面に出してよい） */
+export class CrossTabLockError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "CrossTabLockError";
+  }
+}
 
 type Lease = { ts: number; token: string };
 
@@ -236,7 +237,7 @@ async function withLease<T>(key: string, fn: () => Promise<T>): Promise<T> {
       continue;
     }
     if (Date.now() > giveUpAt) {
-      throw new Error("他のタブでデータ移行が実行中のため、処理を開始できませんでした。しばらくしてから再読み込みしてください。");
+      throw new CrossTabLockError("他のタブでデータ移行が実行中のため、処理を開始できませんでした。しばらくしてから再読み込みしてください。");
     }
     await sleep(LEASE_POLL_MS);
   }
@@ -264,20 +265,32 @@ async function withLease<T>(key: string, fn: () => Promise<T>): Promise<T> {
 /**
  * userId 単位のクロスタブ排他ロックの下で fn を実行する。
  * Web Locks API があればそれを使い（タブ終了で自動解放）、無ければリース方式にフォールバックする。
+ * Web Locks の取得待ちは約 30 秒で打ち切り、CrossTabLockError を投げる（取得後の fn の実行時間は制限しない）。
  */
 function withCrossTabLock<T>(userId: string, fn: () => Promise<T>): Promise<T> {
   if (typeof navigator !== "undefined" && navigator.locks && typeof navigator.locks.request === "function") {
     // ロックはコールバックの Promise が解決するまで保持される（タブが閉じられれば自動解放）
     return new Promise<T>((resolve, reject) => {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), LOCK_WAIT_TIMEOUT_MS);
       navigator.locks
-        .request(lockName(userId), { mode: "exclusive" }, async () => {
+        .request(lockName(userId), { mode: "exclusive", signal: controller.signal }, async () => {
+          clearTimeout(timer);
           try {
             resolve(await fn());
           } catch (e) {
             reject(e);
           }
         })
-        .catch(reject);
+        .catch((e: unknown) => {
+          clearTimeout(timer);
+          // fn の例外はコールバック内で処理済みなので、ここに来るのはロック取得自体の失敗だけ
+          reject(
+            controller.signal.aborted
+              ? new CrossTabLockError("他のタブの処理が完了しないため移行を中断しました。再読み込みしてください。")
+              : e
+          );
+        });
     });
   }
   return withLease(leaseKey(userId), fn);
@@ -292,8 +305,10 @@ const userRowInflight = new Map<string, Promise<void>>();
 /**
  * users テーブルに userId の行があることを保証する（冪等）。
  *
- * vehicles.user_id / fuel_records.user_id は users(id) への外部キーを持つため、新規ユーザーの
- * 初回ログインで UserSync の upsert より先に車両・記録を挿入すると 23503（FK 違反）で失敗する。
+ * 本番 DB では vehicles.user_id / fuel_records.user_id に users(id) への外部キー
+ * （vehicles_user_id_fkey / fuel_records_user_id_fkey）があり、0001_schema_and_rls.sql も新規プロジェクトで
+ * 同じ FK を作成する。そのため新規ユーザーの初回ログインで UserSync の upsert より先に車両・記録を
+ * 挿入すると 23503（FK 違反）で失敗する。
  * id だけを ON CONFLICT DO NOTHING で挿入する（email などは UserSync が管理するので送らない）。
  * 成功した Promise はタブ内で userId ごとに使い回し、失敗時は破棄して次回再試行する。
  *
@@ -335,7 +350,8 @@ async function ensureDefaultVehicleUnlocked(
   const list = (data ?? []) as Vehicle[];
   if (list.length > 0) return { vehicles: list, created: false };
 
-  // 車両が 1 台でもあれば users 行は FK により必ず存在する。挿入する場合だけ保証すればよい。
+  // 車両が 1 台でもあれば users 行は FK（vehicles_user_id_fkey。本番 DB に存在し、0001 も作成する）により
+  // 必ず存在する。挿入する場合だけ保証すればよい。
   await ensureUserRow(supabase, userId);
 
   const { data: inserted, error: insertErr, status: insertStatus } = await supabase
@@ -394,13 +410,14 @@ export function migrationFailedRecently(userId: string, withinMs: number = FAILU
 /**
  * 障害以外の理由（RLS 違反・制約違反など）で移行に失敗したときに画面へ出すメッセージ。
  * ローカルデータは復元済みで、次回の読み込み時に再試行される。
+ * 英語の生エラーは画面に出さず console.error にだけ出す。
  */
 export function migrationErrorMessage(e: unknown): string {
-  const detail =
-    e && typeof e === "object" && typeof (e as { message?: unknown }).message === "string"
-      ? (e as { message: string }).message
-      : String(e);
-  return `ローカルの記録をクラウドへ移行できませんでした（データはブラウザに保持されています）: ${detail}`;
+  console.error("ローカルデータの移行エラー:", e);
+  const prefix = "ローカルの記録をクラウドへ移行できませんでした（データはブラウザに保持されています）。";
+  if (e instanceof CrossTabLockError) return `${prefix}${e.message}`;
+  if (isPermissionDeniedError(e)) return `${prefix}${PERMISSION_DENIED_MESSAGE}`;
+  return `${prefix}時間をおいて再試行してください。`;
 }
 
 export function migrateLocalData(supabase: SupabaseClient, userId: string): Promise<MigrationResult> {

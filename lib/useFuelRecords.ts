@@ -11,16 +11,27 @@ import {
   migrationFailedRecently,
   migrationErrorMessage,
   withStatus,
+  CrossTabLockError,
   LOCAL_RECORDS_KEY,
   LOCAL_DEFAULT_VEHICLE_ID,
 } from "./migrateLocalData";
-import { isDefaultVehicleSelected, isUuid, matchesSelectedVehicle } from "./recordFilters";
 import {
+  FUEL_RECORDS_CHANGED_EVENT,
+  isDefaultVehicleSelected,
+  isUuid,
+  matchesSelectedVehicle,
+} from "./recordFilters";
+import {
+  CLOUD_LOAD_ERROR_MESSAGE,
+  PERMISSION_DENIED_MESSAGE,
+  SUPABASE_RETRY_EVENT,
   classifySupabaseFailure,
   clearOutage,
+  isPermissionDeniedError,
   readCache,
   readOnlyError,
   setOutage,
+  toUserFacingWriteError,
   useSupabaseOutage,
   writeCache,
 } from "./supabaseHealth";
@@ -46,9 +57,6 @@ export type UseFuelRecordsOptions = {
    */
   enabled?: boolean;
 };
-
-/** 車両削除などで給油記録が別経路から変更されたときに発火するイベント名（useVehicles と共有） */
-const FUEL_RECORDS_CHANGED_EVENT = "fuel_records_changed";
 
 const recordsCacheKey = (userId: string, vehicleId: string | null) =>
   `fuel_lens_cache_records_${userId}_${vehicleId ?? "all"}`;
@@ -86,12 +94,12 @@ function writeLocalRecords(list: FuelRecord[]) {
   localStorage.setItem(LOCAL_RECORDS_KEY, JSON.stringify(list));
 }
 
+/** 読み込み失敗時に画面へ出す日本語メッセージ（英語の生エラーは console.error のみに出す） */
 function errorMessage(e: unknown): string {
   if (isAuthTokenError(e)) return AUTH_TOKEN_ERROR_MESSAGE;
-  if (e && typeof e === "object" && typeof (e as { message?: unknown }).message === "string") {
-    return (e as { message: string }).message;
-  }
-  return "給油データの取得に失敗しました";
+  if (isPermissionDeniedError(e)) return PERMISSION_DENIED_MESSAGE;
+  if (e instanceof CrossTabLockError) return e.message;
+  return CLOUD_LOAD_ERROR_MESSAGE;
 }
 
 /** 認証トークン欠落は障害（outage）ではなくアプリエラーとして扱う */
@@ -100,9 +108,10 @@ function classify(status: number | null | undefined, e: unknown) {
 }
 
 /** 呼び出し元（alert 等）に見せるエラーへ正規化する。認証トークン欠落は日本語メッセージに置き換える。 */
-function normalizeError(e: unknown, status?: number): unknown {
+function normalizeError(e: unknown, status?: number): Error {
   if (isAuthTokenError(e)) return new SupabaseAuthTokenError();
-  return e && typeof e === "object" ? withStatus(e, status) : e;
+  // 生エラーのログと日本語メッセージへの変換は toUserFacingWriteError に集約する
+  return toUserFacingWriteError(e, status);
 }
 
 export function useFuelRecords(
@@ -324,6 +333,16 @@ export function useFuelRecords(
     const currentFetchId = ++fetchCounter.current;
     return loadData(currentFetchId);
   }, [loadData]);
+
+  // 障害バナーの「再試行」・自動再試行で再読み込みする
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const handler = () => {
+      void refresh();
+    };
+    window.addEventListener(SUPABASE_RETRY_EVENT, handler);
+    return () => window.removeEventListener(SUPABASE_RETRY_EVENT, handler);
+  }, [refresh]);
 
   return {
     records,

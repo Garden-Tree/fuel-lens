@@ -22,7 +22,7 @@ npm run build        # 本番ビルド（CI と同じ）
 ```
 
 **変更を終えるときは必ず `npm run lint && npx tsc --noEmit` を通すこと。**
-CI (`.github/workflows/ci.yml`) は lint → typecheck → build をダミー環境変数で実行する。
+CI (`.github/workflows/ci.yml`、Node 22) は lint → typecheck → test → build をダミー環境変数で実行する。
 
 ## ディレクトリ
 
@@ -36,7 +36,7 @@ CI (`.github/workflows/ci.yml`) は lint → typecheck → build をダミー環
 | `app/api/keepalive/route.ts` | Vercel Cron から叩かれる Supabase 自動停止対策 |
 | `app/layout.tsx` | `ClerkProvider` / `ToastProvider` / `UserSync` / `SupabaseStatusBanner` / metadata・viewport |
 | `lib/analyze.ts` | `/api/analyze` の純粋ヘルパーと型（副作用なし、他 lib に依存しない） |
-| `lib/calculations.ts` | `calculateFuelMetrics`（燃費・単価の計算、唯一の計算ロジック） |
+| `lib/calculations.ts` | `calculateFuelMetrics`（燃費・単価の計算。単価の丸めのみ `lib/analyze.ts` の `derivePricePerUnit` に複製あり） |
 | `lib/useFuelRecords.ts` / `lib/useVehicles.ts` | 記録・車両の CRUD フック（ローカル / クラウド両対応） |
 | `lib/migrateLocalData.ts` | ログイン時にローカルデータをクラウドへ移行（既定車両の自動作成も） |
 | `lib/recordFilters.ts` | 車両・未分類判定の純粋関数 |
@@ -50,6 +50,7 @@ CI (`.github/workflows/ci.yml`) は lint → typecheck → build をダミー環
 
 1. **燃費は満タン法。分子は必ずトリップメーターの区間距離。** `total_distance` はオドメーター（積算距離）ではない。
    計算は `lib/calculations.ts` の `calculateFuelMetrics` に集約し、UI 文言・プロンプト・README を矛盾させない。
+   例外として `lib/analyze.ts` の `derivePricePerUnit` が単価の丸め（`Math.round`）を複製している（analyze.ts は他 lib に依存しない方針のため）。単価の計算を変えるときは両方を揃えること。
 2. **データ更新は必ず「未ログイン = localStorage」と「ログイン = Supabase」の両経路を実装する。**
    片方だけ直さないこと。ログイン中かつ障害時は `readOnly`（書き込みは日本語エラーを投げる）。
 3. **`vehicle_id` が `null` の記録は「未分類」。** 既定車両（最も古い `created_at` の車両 = `vehicles[0]`）を選択しているときだけ表示する。
@@ -62,7 +63,11 @@ CI (`.github/workflows/ci.yml`) は lint → typecheck → build をダミー環
    上流（Gemini）のエラー本文はクライアントに返さず、`requestId` 付きの汎用メッセージにする。
 9. **Supabase Free は約 7 日アイドルで一時停止（HTTP 540）。** `app/api/keepalive` + Vercel Cron + GitHub Actions で防ぎ、
    障害時は `lib/supabaseHealth.ts` が `readOnly` + `SupabaseStatusBanner` に切り替える。この経路を壊さない。
+   復旧はバナーの「再試行」と online / タブ再表示（30 秒に 1 回まで）が `fuel_lens_retry` イベントを発火し、
+   `useVehicles` / `useFuelRecords` が再読み込みする（成功時に `clearOutage()`）。
+   ログアウト・ユーザー切り替え時は `syncCacheOwner` が前ユーザーのキャッシュと障害フラグを消す。
 10. 車両を削除すると、その車両の給油記録も削除される（アプリ側で先に削除 + DB は `ON DELETE CASCADE`）。
+    既定車両（`vehicles[0]`）を削除するときは、そこに表示されている未分類の記録も削除する。
 11. Next.js 16: `viewport` / `themeColor` は `metadata` ではなく `export const viewport` に書く。
     `next.config.ts` は `agentRules: false`（この CLAUDE.md を自動生成で上書きさせない）。
 

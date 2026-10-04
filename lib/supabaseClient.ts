@@ -1,7 +1,6 @@
 "use client";
 
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
-import { useAuth } from "@clerk/nextjs";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
@@ -74,42 +73,37 @@ type CacheEntry = {
   tokenRef: { current: GetToken | null };
 };
 
-const ANON_KEY = "__anon__";
 const clientCache = new Map<string, CacheEntry>();
 
-function buildClient(tokenRef: { current: GetToken | null }, withAccessToken: boolean): SupabaseClient {
+function buildClient(tokenRef: { current: GetToken | null }): SupabaseClient {
   return createClient(supabaseUrl || "", supabaseAnonKey || "", {
-    ...(withAccessToken
-      ? {
-          // supabase-js の accessToken オプション: リクエストごとに呼ばれ、Authorization ヘッダーに使われる。
-          // Clerk 側でトークンが自動更新されるため、クライアントを作り直す必要がない。
-          // null を返すと supabase-js が anon キーで送信してしまうため、取得できない場合は例外にする。
-          // NOTE: postgrest-js は GET の fetch 例外を最大 3 回（1s/2s/4s）再試行するため、
-          // トークン取得失敗が確定するまで最長 7 秒ほどかかる。その間に Clerk が復帰すれば成功する。
-          accessToken: async () => {
-            const getToken = tokenRef.current;
-            if (!getToken) throw new SupabaseAuthTokenError();
-            let token: string | null = null;
-            try {
-              token = await getToken({ template: SUPABASE_JWT_TEMPLATE });
-            } catch (e) {
-              console.error("Clerk トークンの取得に失敗しました:", e);
-              // オフライン / ネットワーク障害による失敗は認証エラーではない。元の例外をそのまま投げ、
-              // postgrest-js に status 0 として包ませる（→ "unreachable" に分類され閲覧専用になる）。
-              if (isNetworkLikeError(e)) throw e;
-              throw new SupabaseAuthTokenError();
-            }
-            if (!token) {
-              // Clerk はオフライン時に例外ではなく null を返すことがある。その場合も障害として扱う。
-              if (typeof navigator !== "undefined" && navigator.onLine === false) {
-                throw new TypeError("Failed to fetch: offline (Clerk token unavailable)");
-              }
-              throw new SupabaseAuthTokenError();
-            }
-            return token;
-          },
+    // supabase-js の accessToken オプション: リクエストごとに呼ばれ、Authorization ヘッダーに使われる。
+    // Clerk 側でトークンが自動更新されるため、クライアントを作り直す必要がない。
+    // null を返すと supabase-js が anon キーで送信してしまうため、取得できない場合は例外にする。
+    // NOTE: postgrest-js は GET の fetch 例外を最大 3 回（1s/2s/4s）再試行するため、
+    // トークン取得失敗が確定するまで最長 7 秒ほどかかる。その間に Clerk が復帰すれば成功する。
+    accessToken: async () => {
+      const getToken = tokenRef.current;
+      if (!getToken) throw new SupabaseAuthTokenError();
+      let token: string | null = null;
+      try {
+        token = await getToken({ template: SUPABASE_JWT_TEMPLATE });
+      } catch (e) {
+        console.error("Clerk トークンの取得に失敗しました:", e);
+        // オフライン / ネットワーク障害による失敗は認証エラーではない。元の例外をそのまま投げ、
+        // postgrest-js に status 0 として包ませる（→ "unreachable" に分類され閲覧専用になる）。
+        if (isNetworkLikeError(e)) throw e;
+        throw new SupabaseAuthTokenError();
+      }
+      if (!token) {
+        // Clerk はオフライン時に例外ではなく null を返すことがある。その場合も障害として扱う。
+        if (typeof navigator !== "undefined" && navigator.onLine === false) {
+          throw new TypeError("Failed to fetch: offline (Clerk token unavailable)");
         }
-      : {}),
+        throw new SupabaseAuthTokenError();
+      }
+      return token;
+    },
     auth: {
       // 認証は Clerk が担うため、Supabase Auth のセッション永続化は行わない
       persistSession: false,
@@ -124,26 +118,18 @@ function buildClient(tokenRef: { current: GetToken | null }, withAccessToken: bo
  *
  * - 同じ userId には常に同じインスタンスを返す（毎回 createClient しない）
  * - getToken は呼び出しのたびに最新のものへ差し替える
- * - userId が null（未ログイン）の場合は anon クライアント
+ * - 未ログイン時はアプリが localStorage のみを使うため anon クライアントは作らない。
+ *   userId が無い状態で呼ばれた場合は SupabaseAuthTokenError を投げる
  */
 export function getSupabaseClient(userId: string | null | undefined, getToken: GetToken | null | undefined): SupabaseClient {
-  const key = userId ?? ANON_KEY;
-  let entry = clientCache.get(key);
+  if (!userId) throw new SupabaseAuthTokenError();
+  let entry = clientCache.get(userId);
   if (!entry) {
     const tokenRef = { current: getToken ?? null };
-    entry = { client: buildClient(tokenRef, key !== ANON_KEY), tokenRef };
-    clientCache.set(key, entry);
+    entry = { client: buildClient(tokenRef), tokenRef };
+    clientCache.set(userId, entry);
   } else if (getToken) {
     entry.tokenRef.current = getToken;
   }
   return entry.client;
-}
-
-/**
- * React フック版。コンポーネント / フック内では基本的にこちらを使う。
- * 戻り値は userId が変わらない限り同一参照。
- */
-export function useSupabase(): SupabaseClient {
-  const { getToken, userId } = useAuth();
-  return getSupabaseClient(userId, getToken);
 }

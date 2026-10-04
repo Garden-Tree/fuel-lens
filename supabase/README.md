@@ -7,7 +7,8 @@ Supabase Free プランの **自動停止対策** に関するファイルを置
 supabase/
 ├── migrations/
 │   ├── 0001_schema_and_rls.sql   # users / vehicles / fuel_records + RLS ポリシー
-│   └── 0002_keepalive.sql        # ハートビートテーブル + keepalive_ping() 関数
+│   ├── 0002_keepalive.sql        # ハートビートテーブル + keepalive_ping() 関数
+│   └── 0003_fuel_records_vehicle_ownership.sql  # fuel_records の insert/update ポリシー強化 (適用済み DB 向け)
 └── README.md                     # このファイル
 ```
 
@@ -23,22 +24,36 @@ supabase/
 
 ## 1. マイグレーションの適用
 
-どちらの SQL も **冪等** です。新規プロジェクトでも、既にテーブルが存在する本番プロジェクトでも、
-番号順にそのまま実行して問題ありません (型の変更やデータの削除は一切行いません)。
+どの SQL も **冪等** です。新規プロジェクトでも、既にテーブルが存在する本番プロジェクトでも、
+番号順にそのまま実行して問題ありません。列の型の変更や行の削除は行いませんが、`0001` は既存のデータ・制約に
+対して次の変更を行います。
 
-> `fuel_records.vehicle_id` の外部キーは **`ON DELETE CASCADE`** です (アプリの「車両を削除すると関連する給油記録も削除されます」という挙動と一致させるための DB 側の安全網)。
-> 既存プロジェクトで `set null` のまま作られていた場合、`0001` を再実行すると制約が張り直されます。また `users.email` は null 許容です。
+- **孤児レコードの未分類化**: 存在しない車両を指す `fuel_records.vehicle_id` を `null` に更新する (外部キー追加の前処理)
+- **`fuel_records_vehicle_id_fkey` の張り直し**: 既存の制約が `ON DELETE CASCADE` 以外 (`set null` など) なら drop して
+  **`ON DELETE CASCADE`** で作り直す (アプリの「車両を削除すると関連する給油記録も削除されます」と一致させる DB 側の安全網)
+- **`users.email` を null 許容に変更** (`drop not null`)
+- **`vehicles_user_id_fkey` / `fuel_records_user_id_fkey` の追加** (`users(id)` への FK、`ON DELETE CASCADE`):
+  本番 DB には既に存在するため同名なら何もしない。新規プロジェクト向けに `NOT VALID` で追加する
+- `vehicles_type_check` (CHECK 制約) を `NOT VALID` で追加、RLS の有効化・anon 権限の revoke・ポリシーの作り直し
+
+`0003_fuel_records_vehicle_ownership.sql` は `fuel_records_insert_own` / `fuel_records_update_own` を
+「`vehicle_id` は null か自分の車両に限る」定義へ更新するだけのファイルです (`0001` の同じ部分と同一)。
+`0001` 適用済みの本番 DB にはこれを単独で実行してください (新規プロジェクトで実行しても無害)。
 
 ### 方法 A: SQL Editor (推奨・最も簡単)
 
 1. Supabase Dashboard → **SQL Editor** → **New query**
 2. `migrations/0001_schema_and_rls.sql` の内容を貼り付けて **Run**
-3. 同様に `migrations/0002_keepalive.sql` を **Run**
+3. 同様に `migrations/0002_keepalive.sql` → `migrations/0003_fuel_records_vehicle_ownership.sql` を **Run**
 
 ### 方法 B: Supabase CLI
 
+このリポジトリには `supabase/config.toml` が含まれていないため、CLI を使う場合は先に
+`npx supabase init` で `config.toml` を生成する必要があります (既存の `supabase/migrations/` はそのまま使われます)。
+
 ```bash
 # 初回のみ
+npx supabase init                                # supabase/config.toml を生成
 npx supabase login
 npx supabase link --project-ref <project-ref>   # URL の https://<project-ref>.supabase.co
 
@@ -55,6 +70,14 @@ npx supabase db push
 
 ```sql
 alter table public.vehicles validate constraint vehicles_type_check;
+```
+
+新規プロジェクトで `0001` が `NOT VALID` で追加した `users(id)` への外部キーも、同様に検証できます
+(既存行に `users` 行の無い `user_id` があると失敗します)。
+
+```sql
+alter table public.vehicles     validate constraint vehicles_user_id_fkey;
+alter table public.fuel_records validate constraint fuel_records_user_id_fkey;
 ```
 
 ---

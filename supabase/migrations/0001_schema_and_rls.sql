@@ -87,6 +87,28 @@ begin
 end
 $$;
 
+-- users への外部キー (vehicles.user_id → users.id)。
+-- 本番 DB には既に存在する (この名前なら何もしない)。新規プロジェクト向けに、無ければ追加する。
+-- 既存行に users 行の無い user_id が残っていても失敗しないよう NOT VALID で追加し、新規行のみ検証する
+-- (既存行の検証は supabase/README.md 参照)。users 行を削除するとそのユーザーの車両も削除される。
+-- アプリは挿入前に lib/migrateLocalData.ts の ensureUserRow で users 行を作成する。
+do $$
+begin
+  if not exists (
+    select 1
+      from pg_constraint
+     where conname  = 'vehicles_user_id_fkey'
+       and conrelid = 'public.vehicles'::regclass
+  ) then
+    alter table public.vehicles
+      add constraint vehicles_user_id_fkey
+      foreign key (user_id) references public.users (id)
+      on delete cascade
+      not valid;
+  end if;
+end
+$$;
+
 comment on table public.vehicles is 'ユーザーの車両 (車/バイク)';
 
 -- -----------------------------------------------------------------------------
@@ -145,6 +167,25 @@ begin
       add constraint fuel_records_vehicle_id_fkey
       foreign key (vehicle_id) references public.vehicles (id)
       on delete cascade;
+  end if;
+end
+$$;
+
+-- users への外部キー (fuel_records.user_id → users.id)。vehicles_user_id_fkey と同じ方針
+-- (本番 DB には既に存在する。新規プロジェクト向けに NOT VALID で追加)。
+do $$
+begin
+  if not exists (
+    select 1
+      from pg_constraint
+     where conname  = 'fuel_records_user_id_fkey'
+       and conrelid = 'public.fuel_records'::regclass
+  ) then
+    alter table public.fuel_records
+      add constraint fuel_records_user_id_fkey
+      foreign key (user_id) references public.users (id)
+      on delete cascade
+      not valid;
   end if;
 end
 $$;
@@ -250,16 +291,41 @@ create policy fuel_records_select_own on public.fuel_records
   for select to authenticated
   using ((select auth.jwt()->>'sub') = user_id);
 
+-- insert / update は、vehicle_id が null (未分類) か「自分の車両」を指す場合だけ許可する。
+-- 外部キーは車両の存在しか確認しないため、他ユーザーの vehicle_id を指す記録を作れないよう RLS で所有者を確認する。
+-- 適用済みの本番 DB には 0003_fuel_records_vehicle_ownership.sql で同じ定義を単独で適用できる。
 drop policy if exists fuel_records_insert_own on public.fuel_records;
 create policy fuel_records_insert_own on public.fuel_records
   for insert to authenticated
-  with check ((select auth.jwt()->>'sub') = user_id);
+  with check (
+    (select auth.jwt()->>'sub') = user_id
+    and (
+      vehicle_id is null
+      or exists (
+        select 1
+          from public.vehicles v
+         where v.id = fuel_records.vehicle_id
+           and v.user_id = (select auth.jwt()->>'sub')
+      )
+    )
+  );
 
 drop policy if exists fuel_records_update_own on public.fuel_records;
 create policy fuel_records_update_own on public.fuel_records
   for update to authenticated
-  using      ((select auth.jwt()->>'sub') = user_id)
-  with check ((select auth.jwt()->>'sub') = user_id);
+  using ((select auth.jwt()->>'sub') = user_id)
+  with check (
+    (select auth.jwt()->>'sub') = user_id
+    and (
+      vehicle_id is null
+      or exists (
+        select 1
+          from public.vehicles v
+         where v.id = fuel_records.vehicle_id
+           and v.user_id = (select auth.jwt()->>'sub')
+      )
+    )
+  );
 
 drop policy if exists fuel_records_delete_own on public.fuel_records;
 create policy fuel_records_delete_own on public.fuel_records

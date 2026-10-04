@@ -1,9 +1,12 @@
 /**
  * 車両と給油記録の対応判定（純粋関数）。
  *
- * useFuelRecords の読み込み・追加・更新・削除、および useVehicles で共有し、
- * 「どの記録がどの車両に属するか」の判定を 1 箇所に集約する。
+ * useFuelRecords の読み込み・更新後の絞り込み、useVehicles の車両削除（既定車両なら未分類の記録も削除）、
+ * migrateLocalData の UUID 判定で共有し、「どの記録がどの車両に属するか」の判定を 1 箇所に集約する。
  */
+
+/** 車両削除など、給油記録が別経路で変更されたことを useVehicles → useFuelRecords へ知らせる window イベント */
+export const FUEL_RECORDS_CHANGED_EVENT = "fuel_records_changed";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
