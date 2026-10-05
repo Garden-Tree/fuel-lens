@@ -45,8 +45,22 @@ function isVisible(el: HTMLElement): boolean {
   return getComputedStyle(el).position === "fixed";
 }
 
+/**
+ * tabindex 属性の値が Tab 移動の対象になるか（純粋関数）。
+ * 属性なし（null）・0 以上・数値でない値は対象、負の値（`-1` など）は対象外。
+ * `button:not([disabled])` などのセレクターは tabindex="-1" のボタンにも一致するため、ここで除く。
+ */
+export function isTabbableTabIndexAttr(value: string | null): boolean {
+  if (value === null) return true;
+  const n = Number(value.trim());
+  return !(value.trim() !== "" && Number.isFinite(n) && n < 0);
+}
+
 function getFocusable(container: HTMLElement): HTMLElement[] {
-  return Array.from(container.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR)).filter(isVisible);
+  // tabindex が負の要素は除く。0 個ならコンテナ自身（tabindex=-1）が最後の受け皿になる
+  return Array.from(container.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR)).filter(
+    el => isTabbableTabIndexAttr(el.getAttribute("tabindex")) && isVisible(el)
+  );
 }
 
 interface TrapEntry {

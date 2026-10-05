@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { nextTrapIndex } from "@/lib/useFocusTrap";
+import { isTabbableTabIndexAttr, nextTrapIndex } from "@/lib/useFocusTrap";
 
 describe("nextTrapIndex", () => {
   it("末尾で Tab を押すと先頭へ循環する", () => {
@@ -27,5 +27,19 @@ describe("nextTrapIndex", () => {
 
   it("要素が 0 個なら null（呼び出し側でコンテナ自身にフォーカスする）", () => {
     expect(nextTrapIndex(-1, 0, false)).toBeNull();
+  });
+});
+
+describe("isTabbableTabIndexAttr", () => {
+  it("属性なし・0 以上は Tab 移動の対象", () => {
+    expect(isTabbableTabIndexAttr(null)).toBe(true);
+    expect(isTabbableTabIndexAttr("0")).toBe(true);
+    expect(isTabbableTabIndexAttr("2")).toBe(true);
+  });
+
+  it("負の tabindex（-1 など）は対象外", () => {
+    expect(isTabbableTabIndexAttr("-1")).toBe(false);
+    expect(isTabbableTabIndexAttr(" -1 ")).toBe(false);
+    expect(isTabbableTabIndexAttr("-2")).toBe(false);
   });
 });

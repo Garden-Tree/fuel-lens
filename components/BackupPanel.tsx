@@ -35,9 +35,17 @@ export interface BackupPanelProps {
     items: Omit<FuelRecord, "id">[],
     options?: { onProgress?: (done: number, total: number) => void }
   ) => Promise<number>;
+  /** 変わるたびにデータ概要（記録数）を読み込み直す（インポート後など） */
+  refreshToken?: number;
+  /**
+   * 設定画面で共有する処理中フラグ（ImportPanel と同時に動かさないため）。
+   * null 以外なら、どちらかのパネルで処理中
+   */
+  busy: string | null;
+  setBusy: (busy: BackupBusy | null) => void;
 }
 
-type Busy = null | "json" | "csv" | "prepare" | "restore";
+export type BackupBusy = "json" | "csv" | "restore-prepare" | "restore";
 
 type PendingRestore = {
   fileName: string;
@@ -67,11 +75,13 @@ export default function BackupPanel({
   fetchAllRecords,
   addVehicles,
   addRecords,
+  refreshToken = 0,
+  busy,
+  setBusy,
 }: BackupPanelProps) {
   const { toast, confirm } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const [busy, setBusy] = useState<Busy>(null);
   const [progress, setProgress] = useState<string | null>(null);
   const [pending, setPending] = useState<PendingRestore | null>(null);
 
@@ -98,7 +108,7 @@ export default function BackupPanel({
     return () => {
       cancelled = true;
     };
-  }, [loading, fetchAllRecords, reloadKey]);
+  }, [loading, fetchAllRecords, reloadKey, refreshToken]);
 
   const actionsDisabled = loading || busy !== null;
   const restoreDisabled = actionsDisabled || readOnly || !!vehiclesError || vehicles.length === 0;
@@ -155,9 +165,16 @@ export default function BackupPanel({
       return;
     }
 
-    setBusy("prepare");
+    setBusy("restore-prepare");
     try {
-      const text = await file.text();
+      let text: string;
+      try {
+        text = await file.text();
+      } catch (readError) {
+        // 選択後にファイルが移動・削除された等の DOMException（英語のメッセージ）は画面に出さない
+        console.error(readError);
+        throw new Error("ファイルを読み込めませんでした。もう一度選択してください。");
+      }
       const parsed = parseBackup(text);
       if (!parsed.ok) {
         toast(parsed.error, { type: "error" });
@@ -345,7 +362,7 @@ export default function BackupPanel({
           disabled={restoreDisabled}
           className={`${buttonClass} bg-gray-900 hover:bg-gray-800 border-gray-700 text-gray-200 w-full sm:w-auto`}
         >
-          {busy === "prepare" ? (
+          {busy === "restore-prepare" ? (
             <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" />
           ) : (
             <Upload className="w-4 h-4" aria-hidden="true" />

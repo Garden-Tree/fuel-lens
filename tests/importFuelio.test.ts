@@ -7,6 +7,7 @@ import {
   fuelioToBackup,
   guessFuelioVehicleType,
   isFuelioCsv,
+  parseCsvNumber,
   parseCsvRows,
   parseFlexibleDate,
   parseFuelioCsv,
@@ -41,11 +42,14 @@ type LogRow = {
   missed?: string;
   volumePrice?: string;
   uniqueId?: string;
+  tank?: string;
 };
 
 const q = (v: string) => `"${v.replace(/"/g, '""')}"`;
 
-function vehicleRow(opts: { name?: string; dateFormat?: string; model?: string; capacity?: string } = {}): string {
+function vehicleRow(
+  opts: { name?: string; dateFormat?: string; model?: string; capacity?: string; tankCount?: string } = {}
+): string {
   const values = [
     opts.name ?? "Test Car",
     "",
@@ -59,7 +63,7 @@ function vehicleRow(opts: { name?: string; dateFormat?: string; model?: string; 
     "",
     opts.model ?? "",
     "",
-    "0",
+    opts.tankCount ?? "0",
     "1",
     "0",
     "0.0",
@@ -86,7 +90,7 @@ function logRow(r: LogRow): string {
     r.city ?? "",
     r.notes ?? "",
     r.missed ?? "0",
-    "1",
+    r.tank ?? "1",
     "100",
     r.volumePrice ?? "",
     "0",
@@ -175,6 +179,30 @@ describe("parseCsvRows", () => {
   });
 });
 
+describe("parseCsvNumber", () => {
+  it("桁区切りのカンマは取り除く", () => {
+    expect(parseCsvNumber("5,000")).toBe(5000);
+    expect(parseCsvNumber("1,234")).toBe(1234);
+    expect(parseCsvNumber("12,345.6")).toBe(12345.6);
+    expect(parseCsvNumber("141,789")).toBe(141789);
+    expect(parseCsvNumber("1,234,567")).toBe(1234567);
+  });
+
+  it("カンマが 1 つで小数部が 3 桁でなければ小数点として読む", () => {
+    expect(parseCsvNumber("5,5")).toBe(5.5);
+    expect(parseCsvNumber("12,34")).toBe(12.34);
+    expect(parseCsvNumber("12,3456")).toBe(12.3456);
+  });
+
+  it("空・不正・負数は null", () => {
+    expect(parseCsvNumber("")).toBeNull();
+    expect(parseCsvNumber(undefined)).toBeNull();
+    expect(parseCsvNumber("abc")).toBeNull();
+    expect(parseCsvNumber("1,2,3")).toBeNull();
+    expect(parseCsvNumber("-5")).toBeNull();
+  });
+});
+
 describe("parseFlexibleDate", () => {
   it("yyyy-MM-dd（時刻付きも）を読む", () => {
     expect(parseFlexibleDate("2024-12-01")?.date).toBe("2024-12-01");
@@ -210,7 +238,8 @@ describe("parseFuelioCsv", () => {
     const parsed = parseOk(text);
     expect(parsed.vehicleName).toBe("Test Car");
     expect(parsed.vehicleType).toBe("car");
-    expect(parsed.stats).toEqual({ rows: 3, partial: 0, missed: 0, skippedInvalid: 0 });
+    expect(parsed.stats).toEqual({ rows: 3, partial: 0, missed: 0, skippedInvalid: 0, skippedOtherTank: 0 });
+    expect(parsed.tankCount).toBe(1);
     expect(parsed.records.map(r => r.date)).toEqual(["2024-01-10", "2024-02-01", "2024-03-01"]);
     expect(parsed.records[1]).toMatchObject({
       fuel_amount: 15.5,
@@ -321,6 +350,64 @@ describe("parseFuelioCsv", () => {
     expect(parsed.records[0].price_per_unit).toBe(calculateFuelMetrics(null, 10, 1715).price_per_unit);
   });
 
+  it("Price が 0（Fuelio の金額不明）は支払総額・単価とも null。VolumePrice があれば補う", () => {
+    const parsed = parseOk(
+      fuelioCsv([
+        { date: "2024-01-01", odo: "1000", fuel: "10", price: "0" },
+        { date: "2024-01-02", odo: "1100", fuel: "10", price: "0", volumePrice: "0" },
+        { date: "2024-01-03", odo: "1200", fuel: "10", price: "0", volumePrice: "170" },
+      ])
+    );
+    expect(parsed.records.map(r => [r.total_cost, r.price_per_unit])).toEqual([
+      [null, null],
+      [null, null],
+      [1700, calculateFuelMetrics(null, 10, 1700).price_per_unit],
+    ]);
+  });
+
+  it("積算距離が後戻りした行は区間距離 null。次の行の区間距離は最大値から求める", () => {
+    const parsed = parseOk(
+      fuelioCsv([
+        { date: "2024-01-01", odo: "1000", fuel: "20", price: "3400" },
+        { date: "2024-01-10", odo: "1300", fuel: "20", price: "3400" },
+        // 入力ミスで小さい積算距離
+        { date: "2024-01-20", odo: "130", fuel: "20", price: "3400" },
+        { date: "2024-01-30", odo: "1600", fuel: "20", price: "3400" },
+      ])
+    );
+    expect(parsed.records.map(r => r.total_distance)).toEqual([null, 300, null, 300]);
+    expect(parsed.records[2].fuel_efficiency).toBeNull();
+  });
+
+  it("TankNumber が 0 の行はすべて 1 本目として取り込む", () => {
+    const parsed = parseOk(
+      fuelioCsv(BASIC_ROWS.map(r => ({ ...r, tank: "0" })))
+    );
+    expect(parsed.stats).toMatchObject({ rows: 3, skippedOtherTank: 0 });
+  });
+
+  it("2 本目のタンク（TankNumber >= 2）の記録は取り込まず件数を数える。TankCount を返す", () => {
+    const parsed = parseOk(
+      fuelioCsv(
+        [
+          { date: "2024-01-01", odo: "1000", fuel: "20", price: "3400" },
+          { date: "2024-01-05", odo: "1100", fuel: "30", price: "3000", tank: "2" },
+          { date: "2024-01-10", odo: "1300", fuel: "20", price: "3400", tank: "" },
+          { date: "2024-01-15", odo: "1400", fuel: "25", price: "2500", tank: "3" },
+          { date: "2024-01-20", odo: "1500", fuel: "10", price: "1700", tank: "0" },
+        ],
+        { tankCount: "2" }
+      )
+    );
+    expect(parsed.tankCount).toBe(2);
+    expect(parsed.stats).toMatchObject({ rows: 3, skippedOtherTank: 2, skippedInvalid: 0 });
+    expect(parsed.records.map(r => [r.date, r.total_distance])).toEqual([
+      ["2024-01-01", null],
+      ["2024-01-10", 300],
+      ["2024-01-20", 200],
+    ]);
+  });
+
   it("店舗名は City → Notes の順。日付だけのメモは使わない", () => {
     const parsed = parseOk(
       fuelioCsv([
@@ -340,7 +427,7 @@ describe("parseFuelioCsv", () => {
         { date: "2024-01-03", odo: "1200", fuel: "10", price: "1700" },
       ])
     );
-    expect(parsed.stats).toEqual({ rows: 1, partial: 0, missed: 0, skippedInvalid: 2 });
+    expect(parsed.stats).toEqual({ rows: 1, partial: 0, missed: 0, skippedInvalid: 2, skippedOtherTank: 0 });
   });
 
   it("ImportCSVDateFormat のヒントで日付を解釈する", () => {

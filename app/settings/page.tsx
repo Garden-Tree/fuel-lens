@@ -7,8 +7,8 @@ import { ArrowLeft, Settings } from "lucide-react";
 
 import { useFuelRecords } from "@/lib/useFuelRecords";
 import { useVehicles } from "@/lib/useVehicles";
-import BackupPanel from "@/components/BackupPanel";
-import ImportPanel from "@/components/ImportPanel";
+import BackupPanel, { type BackupBusy } from "@/components/BackupPanel";
+import ImportPanel, { type ImportBusy } from "@/components/ImportPanel";
 
 export default function SettingsPage() {
   const { isSignedIn } = useAuth();
@@ -28,8 +28,11 @@ export default function SettingsPage() {
     readOnly: recordsReadOnly,
   } = useFuelRecords(selectedVehicleId, vehicles[0]?.id, { enabled: !vehiclesLoading });
 
-  // インポート後に BackupPanel を作り直し、データ概要（記録数）を読み込み直す
+  // インポート後に BackupPanel のデータ概要（記録数）を読み込み直す。
+  // key で作り直すと処理中の復元がアンマウントされるため、refreshToken で再取得だけさせる
   const [dataVersion, setDataVersion] = useState(0);
+  // バックアップ・復元・取り込みを同時に動かさないよう、処理中フラグを 2 つのパネルで共有する
+  const [busy, setBusy] = useState<BackupBusy | ImportBusy | null>(null);
 
   const readOnly = vehiclesReadOnly || recordsReadOnly;
   const loadError = vehiclesError ?? recordsError;
@@ -69,7 +72,9 @@ export default function SettingsPage() {
         )}
 
         <BackupPanel
-          key={dataVersion}
+          refreshToken={dataVersion}
+          busy={busy}
+          setBusy={setBusy}
           vehicles={vehicles}
           loading={vehiclesLoading}
           isSignedIn={!!isSignedIn}
@@ -91,6 +96,8 @@ export default function SettingsPage() {
             addVehicles={addVehicles}
             addRecords={addRecords}
             onImported={() => setDataVersion(v => v + 1)}
+            busy={busy}
+            setBusy={setBusy}
           />
         </div>
       </div>
