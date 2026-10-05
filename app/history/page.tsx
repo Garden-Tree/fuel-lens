@@ -517,7 +517,7 @@ export default function HistoryPage() {
                         </div>
                         <div className="flex justify-between pl-2">
                           <span className="text-gray-500 text-xs">走行</span>
-                          <span className="font-mono text-gray-300">{rec.total_distance} km</span>
+                          <span className="font-mono text-gray-300">{rec.total_distance ?? "--"} km</span>
                         </div>
                       </div>
 

@@ -39,7 +39,15 @@ export interface ImportPanelProps {
   ) => Promise<number>;
   /** 取り込みが終わった（一部でも追加した）ときに呼ぶ。データ概要の再読み込み用 */
   onImported?: () => void;
+  /**
+   * 設定画面で共有する処理中フラグ（BackupPanel と同時に動かさないため）。
+   * null 以外なら、どちらかのパネルで処理中
+   */
+  busy: string | null;
+  setBusy: (busy: ImportBusy | null) => void;
 }
+
+export type ImportBusy = "import-prepare" | "import";
 
 type Source = { kind: "fuelio"; parsed: ParsedFuelio } | { kind: "fuellens"; parsed: ParsedFuelLensCsv };
 
@@ -50,8 +58,6 @@ type PendingImport = {
   existing: FuelRecord[];
 };
 
-type Busy = null | "prepare" | "import";
-
 const MAX_VEHICLE_NAME_LENGTH = 50;
 
 function errorText(e: unknown, fallback: string): string {
@@ -60,7 +66,14 @@ function errorText(e: unknown, fallback: string): string {
 
 /** UTF-8 として読み、壊れていれば Shift_JIS（Excel で保存し直した CSV）として読む */
 async function readCsvText(file: File): Promise<string> {
-  const buf = await file.arrayBuffer();
+  let buf: ArrayBuffer;
+  try {
+    buf = await file.arrayBuffer();
+  } catch (e) {
+    // 選択後にファイルが移動・削除された等の DOMException（英語のメッセージ）は画面に出さない
+    console.error(e);
+    throw new Error("ファイルを読み込めませんでした。もう一度選択してください。");
+  }
   try {
     return new TextDecoder("utf-8", { fatal: true }).decode(buf);
   } catch {
@@ -122,11 +135,12 @@ export default function ImportPanel({
   addVehicles,
   addRecords,
   onImported,
+  busy,
+  setBusy,
 }: ImportPanelProps) {
   const { toast, confirm } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const [busy, setBusy] = useState<Busy>(null);
   const [progress, setProgress] = useState<string | null>(null);
   const [pending, setPending] = useState<PendingImport | null>(null);
   const [vehicleName, setVehicleName] = useState("");
@@ -159,7 +173,7 @@ export default function ImportPanel({
       return;
     }
 
-    setBusy("prepare");
+    setBusy("import-prepare");
     try {
       const text = await readCsvText(file);
       let source: Source;
@@ -284,7 +298,13 @@ export default function ImportPanel({
 
   const notes: string[] = [];
   if (source?.kind === "fuelio") {
-    const { partial, missed, skippedInvalid } = source.parsed.stats;
+    const { partial, missed, skippedInvalid, skippedOtherTank } = source.parsed.stats;
+    if (source.parsed.tankCount > 1) {
+      notes.push(
+        `燃料タンクが ${source.parsed.tankCount} つの車両です。1 本目のタンクの記録だけを取り込みます（走行距離には他の燃料で走った分も含まれます）`
+      );
+    }
+    if (skippedOtherTank > 0) notes.push(`2本目のタンクの記録 ${skippedOtherTank} 件は対象外`);
     if (partial > 0) notes.push(`部分給油 ${partial} 件は燃費なし（次の満タン給油でまとめて計算）`);
     if (missed > 0) notes.push(`給油の記録漏れ（Missed）${missed} 件は走行距離・燃費なし`);
     if (skippedInvalid > 0) notes.push(`日付・給油量が読めない ${skippedInvalid} 行は読み飛ばし`);
@@ -332,7 +352,7 @@ export default function ImportPanel({
         disabled={importDisabled}
         className={`${buttonClass} bg-gray-900 hover:bg-gray-800 border-gray-700 text-gray-200 w-full sm:w-auto`}
       >
-        {busy === "prepare" ? (
+        {busy === "import-prepare" ? (
           <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" />
         ) : (
           <FileSpreadsheet className="w-4 h-4 text-cyan-400" aria-hidden="true" />

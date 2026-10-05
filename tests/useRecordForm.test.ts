@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import type { FuelRecord } from "@/lib/useFuelRecords";
 import {
+  buildRecordInput,
+  efficiencyFallbackOf,
   findDuplicateRecord,
   normalizeNumericInput,
   parseDraft,
@@ -130,5 +132,36 @@ describe("findDuplicateRecord", () => {
 
   it("skips the excluded record id (editing itself)", () => {
     expect(findDuplicateRecord(records, { date: "2025-01-05", fuel_amount: 30, total_cost: 4800 }, "a")).toBeNull();
+  });
+});
+
+describe("buildRecordInput / efficiencyFallbackOf", () => {
+  it("keeps a stored null efficiency (imported partial fill) when only the station is edited", () => {
+    const stored = rec({ fuel_efficiency: null, gas_station: "ENEOS" });
+    const d = { ...recordToDraft(stored), gas_station: "出光" };
+    const out = buildRecordInput(d, stored.price_per_unit, efficiencyFallbackOf(stored));
+    expect(out.fuel_efficiency).toBeNull();
+    expect(out.gas_station).toBe("出光");
+  });
+
+  it("keeps a stored run efficiency (Σdistance/Σfuel) that differs from distance/fuel of the row", () => {
+    const stored = rec({ total_distance: 200, fuel_amount: 20, fuel_efficiency: 14.29 });
+    const out = buildRecordInput(recordToDraft(stored), stored.price_per_unit, efficiencyFallbackOf(stored));
+    expect(out.fuel_efficiency).toBe(14.29);
+  });
+
+  it("recomputes once distance or fuel has been edited (fallback cleared)", () => {
+    const stored = rec({ total_distance: 200, fuel_amount: 20, fuel_efficiency: null });
+    const d = { ...recordToDraft(stored), total_distance: "300" };
+    expect(buildRecordInput(d, null, null).fuel_efficiency).toBe(15);
+  });
+
+  it("does not carry over efficiency for new records or scan results (fuel_efficiency undefined)", () => {
+    expect(efficiencyFallbackOf(undefined)).toBeNull();
+    expect(efficiencyFallbackOf({ date: "2025-01-05", fuel_amount: 30 })).toBeNull();
+    expect(efficiencyFallbackOf(rec({ fuel_efficiency: null }))).toEqual({ value: null });
+    expect(efficiencyFallbackOf(rec({ fuel_efficiency: 15 }))).toEqual({ value: 15 });
+    const out = buildRecordInput(draft(), null, efficiencyFallbackOf({ date: "2025-01-05" }));
+    expect(out.fuel_efficiency).toBe(15);
   });
 });

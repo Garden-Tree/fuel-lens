@@ -46,6 +46,8 @@ interface ToastItem {
 }
 
 interface ConfirmState {
+  /** 開くたびに増える ID（開いたままの確認を新しい確認で置き換えたことを検知する） */
+  id: number;
   message: string;
   options: ConfirmOptions;
   resolve: (ok: boolean) => void;
@@ -69,6 +71,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<ToastItem[]>([]);
   const [confirmState, setConfirmState] = useState<ConfirmState | null>(null);
   const nextId = useRef(1);
+  const nextConfirmId = useRef(1);
   const timers = useRef(new Map<number, ReturnType<typeof setTimeout>>());
 
   const dismiss = useCallback((id: number) => {
@@ -97,10 +100,11 @@ export function ToastProvider({ children }: { children: ReactNode }) {
 
   const confirm = useCallback((message: string, options: ConfirmOptions = {}) => {
     return new Promise<boolean>((resolve) => {
+      const id = nextConfirmId.current++;
       setConfirmState((prev) => {
         // 既に開いているダイアログがあればキャンセル扱いで閉じる
         prev?.resolve(false);
-        return { message, options, resolve };
+        return { id, message, options, resolve };
       });
     });
   }, []);
@@ -143,6 +147,15 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     active: confirmState !== null,
     initialFocusRef: confirmState?.options.danger ? cancelButtonRef : okButtonRef,
   });
+
+  // 開いている確認を新しい確認が置き換えたとき（トラップは開いたままなので初期フォーカスが再適用されない）、
+  // 新しい確認の初期フォーカス（破壊的操作ならキャンセル側）を置き直す
+  const confirmId = confirmState?.id ?? null;
+  const confirmDanger = !!confirmState?.options.danger;
+  useEffect(() => {
+    if (confirmId === null) return;
+    (confirmDanger ? cancelButtonRef : okButtonRef).current?.focus();
+  }, [confirmId, confirmDanger]);
 
   const value = useMemo(() => ({ toast, confirm }), [toast, confirm]);
 

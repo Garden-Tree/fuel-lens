@@ -8,6 +8,8 @@
  * FuelLens は満タン法で「前回給油からの区間距離（トリップ）」を保存するが、Fuelio は積算距離（Odo）を記録する。
  * そのため日付 → 積算距離の順に並べ、前の行との差分を区間距離にする（先頭行・Missed=1 の行は null）。
  * 部分給油（Full=0）の行は燃費を null にし、次の満タン給油の燃費を「前回の満タン以降の距離合計 ÷ 給油量合計」で計算する。
+ * 積算距離がそれまでの最大値以下の行（並びの乱れ・入力ミス）は区間距離を null にし、次の行の区間距離を水増ししない。
+ * 燃料タンクが 2 つある車両（TankCount > 1）は 1 本目のタンク（TankNumber が 0・1・空）の記録だけを取り込む。
  *
  * 取り込みは lib/backup.ts のバックアップ形式（FuelLensBackup）に変換し、復元と同じ planRestore で追記する。
  * ID は入力から決まる（同じファイル → 同じ ID）。
@@ -39,6 +41,8 @@ export type FuelioImportStats = {
   missed: number;
   /** 日付が読めない・給油量も金額も無いなどで読み飛ばした行数 */
   skippedInvalid: number;
+  /** 2 本目以降の燃料タンク（TankNumber >= 2）の記録で、取り込み対象外にした行数 */
+  skippedOtherTank: number;
 };
 
 export type ParsedFuelio = {
@@ -49,6 +53,8 @@ export type ParsedFuelio = {
   vehicleType: VehicleType;
   /** 車両と記録の ID に使うキー（Fuelio 上の車両名のハッシュ） */
   vehicleKey: string;
+  /** Fuelio 上の燃料タンクの数（TankCount）。不明なら 1 */
+  tankCount: number;
   records: ImportedRecord[];
   stats: FuelioImportStats;
 };
@@ -131,12 +137,17 @@ export function hashString(value: string): string {
   return (h >>> 0).toString(16).padStart(8, "0");
 }
 
-/** 数値文字列を 0〜1e9 の有限数にする。空・不正は null。小数点のカンマ（`12,5`）も受け付ける */
+/**
+ * 数値文字列を 0〜1e9 の有限数にする。空・不正は null。
+ * - 桁区切りのカンマ（`5,000` `1,234` `12,345.6`）は取り除く
+ * - 小数点のカンマ（`12,5`）は、カンマが 1 つで小数部が 3 桁でないときだけ受け付ける
+ */
 export function parseCsvNumber(raw: string | undefined): number | null {
   if (raw == null) return null;
   let s = raw.trim();
   if (s === "") return null;
-  if (/^-?\d+,\d+$/.test(s)) s = s.replace(",", ".");
+  if (/^-?\d{1,3}(,\d{3})+(\.\d+)?$/.test(s)) s = s.replace(/,/g, "");
+  else if (/^-?\d+,(\d{1,2}|\d{4,})$/.test(s)) s = s.replace(",", ".");
   if (!/^-?(\d+\.?\d*|\.\d+)(e[+-]?\d+)?$/i.test(s)) return null;
   const n = Number(s);
   return Number.isFinite(n) && n >= 0 && n <= MAX_NUMBER ? n : null;
@@ -318,6 +329,8 @@ export function parseFuelioCsv(text: string): ParseFuelioResult {
   const vehicleName = rawName.slice(0, MAX_VEHICLE_NAME_LENGTH).trim() || FALLBACK_VEHICLE_NAME;
   const vehicleKey = hashString(rawName || FALLBACK_VEHICLE_NAME);
   const dateFormatHint = vField("importcsvdateformat");
+  const rawTankCount = parseCsvNumber(vField("tankcount"));
+  const tankCount = rawTankCount != null && rawTankCount >= 1 ? Math.floor(rawTankCount) : 1;
   const vehicleType = guessFuelioVehicleType({
     tankCapacity: parseCsvNumber(vField("tank1capacity")),
     make: vField("make"),
@@ -338,6 +351,7 @@ export function parseFuelioCsv(text: string): ParseFuelioResult {
     missed: findColumn(logHeaders, h => h === "missed"),
     volumePrice: findColumn(logHeaders, h => h === "volumeprice"),
     uniqueId: findColumn(logHeaders, h => h === "uniqueid"),
+    tankNumber: findColumn(logHeaders, h => h === "tanknumber"),
   };
   if (col.date < 0 || col.fuel < 0) {
     return fail("Fuelio の給油記録（## Log）に日付または給油量の列が見つかりません。");
@@ -355,7 +369,15 @@ export function parseFuelioCsv(text: string): ParseFuelioResult {
 
   const raw: RawLogRow[] = [];
   let skippedInvalid = 0;
+  let skippedOtherTank = 0;
   logRows.forEach((row, index) => {
+    // 2 本目以降のタンク（LPG・CNG など、TankNumber >= 2）の記録は対象外。
+    // TankNumber が 0・1・空・読めない行は 1 本目とみなす
+    const tankNumber = parseCsvNumber(cell(row, col.tankNumber));
+    if (tankNumber != null && tankNumber >= 2) {
+      skippedOtherTank += 1;
+      return;
+    }
     const parsedDate = parseFlexibleDate(cell(row, col.date), dateFormatHint);
     if (!parsedDate) {
       skippedInvalid += 1;
@@ -364,11 +386,13 @@ export function parseFuelioCsv(text: string): ParseFuelioResult {
     const fuel = parseCsvNumber(cell(row, col.fuel));
     const price = parseCsvNumber(cell(row, col.price));
     const volumePrice = parseCsvNumber(cell(row, col.volumePrice));
-    // Price は支払総額。空のときだけ VolumePrice（単価）× 給油量で補う
+    // Price は支払総額。空・0 のときだけ VolumePrice（単価）× 給油量で補う。
+    // Fuelio は金額が不明な行を 0 で書き出すので、補えなかった 0 は「不明」（null）にする
     let cost: number | null = price;
     if ((cost == null || cost === 0) && volumePrice != null && volumePrice > 0 && fuel != null && fuel > 0) {
       cost = round2(volumePrice * fuel);
     }
+    if (cost === 0) cost = null;
     if ((fuel == null || fuel === 0) && (cost == null || cost === 0)) {
       skippedInvalid += 1;
       return;
@@ -408,7 +432,10 @@ export function parseFuelioCsv(text: string): ParseFuelioResult {
 
   const records: ImportedRecord[] = [];
   const usedIds = new Set<string>();
-  let prevOdo: number | null = null;
+  /** これまでの最大の積算距離（後戻りした行で下げない） */
+  let maxOdo: number | null = null;
+  /** 直前の行の積算距離が不明（区間距離をつなげられない） */
+  let odoChainBroken = false;
   /** 前回の満タン給油からの距離と給油量の合計。null は「満タン法で計算できない」状態 */
   let acc: { distance: number; fuel: number } | null = null;
   let partial = 0;
@@ -416,10 +443,16 @@ export function parseFuelioCsv(text: string): ParseFuelioResult {
 
   for (const r of raw) {
     let distance: number | null = null;
-    if (!r.missed && prevOdo != null && r.odometer != null && r.odometer > prevOdo) {
-      distance = round1(r.odometer - prevOdo);
+    if (!r.missed && !odoChainBroken && maxOdo != null && r.odometer != null && r.odometer > maxOdo) {
+      distance = round1(r.odometer - maxOdo);
     }
-    prevOdo = r.odometer;
+    if (r.odometer == null) {
+      odoChainBroken = true;
+    } else {
+      // 最大値より小さい（後戻りした）行は区間距離 null のまま、最大値も下げない
+      maxOdo = maxOdo == null ? r.odometer : Math.max(maxOdo, r.odometer);
+      odoChainBroken = false;
+    }
 
     if (acc && distance != null && r.fuel != null && r.fuel > 0) {
       acc = { distance: acc.distance + distance, fuel: acc.fuel + r.fuel };
@@ -463,8 +496,9 @@ export function parseFuelioCsv(text: string): ParseFuelioResult {
     vehicleName,
     vehicleType,
     vehicleKey,
+    tankCount,
     records,
-    stats: { rows: records.length, partial, missed, skippedInvalid },
+    stats: { rows: records.length, partial, missed, skippedInvalid, skippedOtherTank },
   };
 }
 
