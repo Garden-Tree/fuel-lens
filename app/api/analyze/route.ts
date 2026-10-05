@@ -397,7 +397,7 @@ export async function POST(req: Request) {
       });
     }
 
-    // 単価は総額÷給油量で再計算（lib/calculations.ts と同じ Math.round）。計算できないときは AI の読み取り値を残す
+    // 単価は総額÷給油量で再計算（lib/calculations.ts と同じ 0.1 円単位の丸め）。計算できないときは AI の読み取り値を残す
     data.price_per_unit = derivePricePerUnit(data.total_cost, data.fuel_amount) ?? data.price_per_unit;
 
     if (!hasAnyCoreValue(data)) {

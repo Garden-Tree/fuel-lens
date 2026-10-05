@@ -5,6 +5,8 @@ import { AlertTriangle, ScanLine } from "lucide-react";
 import type { AnalyzeSuccessResponse } from "@/lib/analyze";
 import { useRecordForm, todayLocalISO, type DraftField, type RecordInput } from "@/lib/useRecordForm";
 import { useBackdropClose } from "@/lib/useBackdropClose";
+import { useFocusTrap } from "@/lib/useFocusTrap";
+import { formatPricePerUnit } from "@/lib/calculations";
 import EditFuelRecordForm from "./EditFuelRecordForm";
 
 /** この値未満の確信度は「要確認」として強調する */
@@ -43,6 +45,7 @@ export default function ScanReviewSheet({ result, imageSrc, readOnly = false, on
 
   const [saving, setSaving] = useState(false);
   const firstFieldRef = useRef<HTMLInputElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
   const titleId = "scan-review-title";
 
   // 要確認: 読み取れなかった（null）または確信度が低い項目
@@ -63,10 +66,9 @@ export default function ScanReviewSheet({ result, imageSrc, readOnly = false, on
 
   const warnings = Array.isArray(result.warnings) ? result.warnings : [];
 
-  // 先頭の入力欄へフォーカス
-  useEffect(() => {
-    firstFieldRef.current?.focus();
-  }, []);
+  // 先頭の入力欄へフォーカスし、シート内でフォーカスを循環させる（背面の車両タブ等へ Tab で出られないように）。
+  // 閉じたら開く前にフォーカスされていた要素へ戻す
+  useFocusTrap(panelRef, { active: true, initialFocusRef: firstFieldRef });
 
   // Escape で破棄（保存中は無視）
   useEffect(() => {
@@ -112,6 +114,7 @@ export default function ScanReviewSheet({ result, imageSrc, readOnly = false, on
       {...backdropHandlers}
     >
       <div
+        ref={panelRef}
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
@@ -183,7 +186,7 @@ export default function ScanReviewSheet({ result, imageSrc, readOnly = false, on
             <div>
               <p className="text-[10px] text-gray-500 uppercase">単価</p>
               <p className="font-mono text-xl font-bold text-white">
-                {form.pricePerUnitDisplay != null ? `¥${form.pricePerUnitDisplay.toLocaleString()}` : "---"}
+                {form.pricePerUnitDisplay != null ? `¥${formatPricePerUnit(form.pricePerUnitDisplay)}` : "---"}
                 <span className="ml-1 text-xs text-gray-400">/L</span>
               </p>
             </div>

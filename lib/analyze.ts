@@ -312,7 +312,7 @@ export function sanitizeAIResponse(raw: unknown): AnalyzeResult | null {
 
 /**
  * 単価 (円/L) を総額と給油量から再計算する。
- * lib/calculations.ts の calculateFuelMetrics と同じ丸めルール（Math.round で整数円）を複製している。
+ * lib/calculations.ts の calculateFuelMetrics と同じ丸めルール（Math.round(x * 10) / 10 で 0.1 円/L 単位）を複製している。
  * ※ lib/analyze.ts は他の lib に依存しない方針のため import はしない。変更時は両方を揃えること。
  */
 export function derivePricePerUnit(
@@ -320,7 +320,7 @@ export function derivePricePerUnit(
   fuelAmount: number | null | undefined
 ): number | null {
   if (totalCost != null && fuelAmount != null && fuelAmount > 0) {
-    return Math.round(totalCost / fuelAmount);
+    return Math.round((totalCost / fuelAmount) * 10) / 10;
   }
   return null;
 }

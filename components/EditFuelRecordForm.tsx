@@ -3,6 +3,7 @@
 import { useId, type Ref } from "react";
 import { X, Save, Lock, Loader2 } from "lucide-react";
 import type { DraftField, UseRecordFormReturn } from "@/lib/useRecordForm";
+import { formatPricePerUnit } from "@/lib/calculations";
 
 interface Props {
   /** useRecordForm() の戻り値 */
@@ -161,7 +162,7 @@ export default function EditFuelRecordForm({
           <input
             id={`${uid}-price_per_unit`}
             type="text"
-            value={pricePerUnitDisplay ?? ""}
+            value={pricePerUnitDisplay != null ? formatPricePerUnit(pricePerUnitDisplay) : ""}
             readOnly
             tabIndex={-1}
             aria-readonly="true"

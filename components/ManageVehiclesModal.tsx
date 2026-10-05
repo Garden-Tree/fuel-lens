@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { X, Plus, Car, Bike, Edit2, Trash2, Check, Sliders, Loader2 } from "lucide-react";
 import { Vehicle } from "@/lib/useVehicles";
 import { useBackdropClose } from "@/lib/useBackdropClose";
+import { useFocusTrap } from "@/lib/useFocusTrap";
 import { useToast } from "./Toast";
 
 interface ManageVehiclesModalProps {
@@ -43,6 +44,7 @@ export default function ManageVehiclesModal({
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const closeButtonRef = useRef<HTMLButtonElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
   const titleId = "manage-vehicles-title";
 
   const busy = addLoading || updateLoading || deletingId !== null;
@@ -56,7 +58,7 @@ export default function ManageVehiclesModal({
   };
 
   // Escape: 行の編集中ならまず編集だけを取り消し（下書きを失わない）、次の Escape でモーダルを閉じる。
-  // 処理中は無視する。開いたら閉じるボタンにフォーカスを移す
+  // 処理中は無視する
   useEffect(() => {
     if (!isOpen) return;
     const onKey = (e: KeyboardEvent) => {
@@ -72,9 +74,8 @@ export default function ManageVehiclesModal({
     return () => window.removeEventListener("keydown", onKey);
   }, [isOpen, busy, editingId, onClose]);
 
-  useEffect(() => {
-    if (isOpen) closeButtonRef.current?.focus();
-  }, [isOpen]);
+  // 開いたら閉じるボタンにフォーカスを移し、モーダル内でフォーカスを循環させる。閉じたら開いた要素へ戻す
+  useFocusTrap(panelRef, { active: isOpen, initialFocusRef: closeButtonRef });
 
   // 背景クリックで閉じる（パネル内から背景へドラッグして離した場合は閉じない）
   const backdropHandlers = useBackdropClose(handleClose, !busy);
@@ -170,6 +171,7 @@ export default function ManageVehiclesModal({
       {...backdropHandlers}
     >
       <div
+        ref={panelRef}
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}

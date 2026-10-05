@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import { SignedIn, SignedOut, SignInButton, UserButton, useAuth } from "@clerk/nextjs";
 import { ArrowLeft, Settings } from "lucide-react";
@@ -7,6 +8,7 @@ import { ArrowLeft, Settings } from "lucide-react";
 import { useFuelRecords } from "@/lib/useFuelRecords";
 import { useVehicles } from "@/lib/useVehicles";
 import BackupPanel from "@/components/BackupPanel";
+import ImportPanel from "@/components/ImportPanel";
 
 export default function SettingsPage() {
   const { isSignedIn } = useAuth();
@@ -25,6 +27,9 @@ export default function SettingsPage() {
     error: recordsError,
     readOnly: recordsReadOnly,
   } = useFuelRecords(selectedVehicleId, vehicles[0]?.id, { enabled: !vehiclesLoading });
+
+  // インポート後に BackupPanel を作り直し、データ概要（記録数）を読み込み直す
+  const [dataVersion, setDataVersion] = useState(0);
 
   const readOnly = vehiclesReadOnly || recordsReadOnly;
   const loadError = vehiclesError ?? recordsError;
@@ -64,6 +69,7 @@ export default function SettingsPage() {
         )}
 
         <BackupPanel
+          key={dataVersion}
           vehicles={vehicles}
           loading={vehiclesLoading}
           isSignedIn={!!isSignedIn}
@@ -73,6 +79,20 @@ export default function SettingsPage() {
           addVehicles={addVehicles}
           addRecords={addRecords}
         />
+
+        <div className="mt-6">
+          <ImportPanel
+            vehicles={vehicles}
+            loading={vehiclesLoading}
+            isSignedIn={!!isSignedIn}
+            readOnly={readOnly}
+            vehiclesError={vehiclesError}
+            fetchAllRecords={fetchAllRecords}
+            addVehicles={addVehicles}
+            addRecords={addRecords}
+            onImported={() => setDataVersion(v => v + 1)}
+          />
+        </div>
       </div>
     </main>
   );

@@ -66,7 +66,7 @@ Content-Type: application/json
 
 その後の処理:
 
-- **単価の再計算**: `total_cost` と `fuel_amount` があれば `Math.round(total_cost / fuel_amount)` で上書きします
+- **単価の再計算**: `total_cost` と `fuel_amount` があれば `total_cost / fuel_amount` を 0.1 円単位に丸めた値（`lib/calculations.ts` と同じ規則）で上書きします
   （`derivePricePerUnit`。`lib/calculations.ts` と同じ丸め）。計算できなければ AI の読み取り値を残します。
 - **何も読めない場合**: `fuel_amount` / `total_cost` / `total_distance` がすべて `null` なら 422 を返します。
 - **妥当性警告**: 次のいずれかに当てはまると、日本語の注意文を `warnings[]` に入れて返します。値は書き換えも破棄もしません。
