@@ -529,7 +529,7 @@ export default function HistoryPage() {
                       </div>
 
                       {/* 操作ボタン群 */}
-                      <div className="absolute bottom-4 right-4 flex items-center opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition duration-200">
+                      <div className="absolute bottom-4 right-4 flex items-center opacity-100 sm:opacity-60 sm:group-hover:opacity-100 focus-visible:opacity-100 group-focus-within:opacity-100 transition duration-200">
                         {vehicles.length > 1 && (
                           <button
                             type="button"

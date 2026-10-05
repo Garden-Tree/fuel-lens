@@ -51,6 +51,15 @@ const DEFAULT_VEHICLE: Vehicle = {
 
 const SELECTED_VEHICLE_KEY = "fuel_lens_selected_vehicle_id";
 
+/**
+ * 選択中の車両 ID を保存する localStorage キー。
+ * ログイン中はユーザーごとに分け、別アカウントの車両 ID を読まないようにする。
+ * 未ログイン時は従来のキー（互換のため）。
+ */
+export function selectedVehicleStorageKey(userId: string | null | undefined): string {
+  return userId ? `${SELECTED_VEHICLE_KEY}_${userId}` : SELECTED_VEHICLE_KEY;
+}
+
 const vehiclesCacheKey = (userId: string) => `fuel_lens_cache_vehicles_${userId}`;
 
 function parseLocalVehicles(raw: string | null): Vehicle[] {
@@ -67,9 +76,14 @@ function parseLocalVehicles(raw: string | null): Vehicle[] {
   }
 }
 
-function pickSelected(list: Vehicle[], cachedId: string | null): string {
+export function pickSelected(list: Vehicle[], cachedId: string | null): string {
   if (cachedId && list.some(v => v.id === cachedId)) return cachedId;
   return list[0]?.id ?? DEFAULT_VEHICLE.id;
+}
+
+/** フォールバックなどで保存値と実際の選択がずれたときだけ、実際の選択を保存し直すべきか */
+export function shouldPersistSelection(effectiveId: string, storedId: string | null): boolean {
+  return effectiveId !== storedId;
 }
 
 /** 読み込み失敗時に画面へ出す日本語メッセージ（英語の生エラーは console.error のみに出す） */
@@ -117,19 +131,37 @@ export function useVehicles() {
     syncCacheOwner(isSignedIn ? userId ?? null : null);
   }, [isLoaded, isSignedIn, userId]);
 
+  const selectedKey = selectedVehicleStorageKey(isSignedIn ? userId : null);
+
   const setSelectedVehicleId = useCallback((id: string) => {
     setSelectedVehicleIdState(id);
     if (typeof window !== "undefined") {
-      localStorage.setItem(SELECTED_VEHICLE_KEY, id);
+      try {
+        localStorage.setItem(selectedKey, id);
+      } catch (e) {
+        console.error("選択車両の保存失敗:", e);
+      }
     }
-  }, []);
+  }, [selectedKey]);
 
   const loadVehicles = useCallback(async (fetchId: number) => {
     if (!isLoaded) return;
     setLoading(true);
     setError(null);
 
-    const cachedSelectedId = typeof window !== "undefined" ? localStorage.getItem(SELECTED_VEHICLE_KEY) : null;
+    const cachedSelectedId = typeof window !== "undefined" ? localStorage.getItem(selectedKey) : null;
+    // 保存値が一覧に無くフォールバックした場合は、実際の選択を保存し直す（古い ID を残さない）
+    const applySelection = (list: Vehicle[]) => {
+      const effective = pickSelected(list, cachedSelectedId);
+      setSelectedVehicleIdState(effective);
+      if (typeof window !== "undefined" && shouldPersistSelection(effective, cachedSelectedId)) {
+        try {
+          localStorage.setItem(selectedKey, effective);
+        } catch (e) {
+          console.error("選択車両の保存失敗:", e);
+        }
+      }
+    };
 
     if (!isSignedIn) {
       cacheOwnerRef.current = null;
@@ -139,7 +171,7 @@ export function useVehicles() {
         const parsed = parseLocalVehicles(localSaved);
         const loadedVehicles = parsed.length > 0 ? parsed : [DEFAULT_VEHICLE];
         setVehicles(loadedVehicles);
-        setSelectedVehicleIdState(pickSelected(loadedVehicles, cachedSelectedId));
+        applySelection(loadedVehicles);
       } finally {
         if (fetchId === fetchCounter.current) setLoading(false);
       }
@@ -171,7 +203,7 @@ export function useVehicles() {
       clearOutage();
       cacheOwnerRef.current = userId;
       setVehicles(fetchedVehicles);
-      setSelectedVehicleIdState(pickSelected(fetchedVehicles, cachedSelectedId));
+      applySelection(fetchedVehicles);
     } catch (e) {
       if (fetchId !== fetchCounter.current) return;
       console.error("車両データの読み込み失敗:", e);
@@ -186,13 +218,14 @@ export function useVehicles() {
       const cached = readCache<Vehicle[]>(vehiclesCacheKey(userId));
       const list = Array.isArray(cached) ? cached : [];
       setVehicles(list);
-      setSelectedVehicleIdState(list.length > 0 ? pickSelected(list, cachedSelectedId) : DEFAULT_VEHICLE.id);
+      if (list.length > 0) applySelection(list);
+      else setSelectedVehicleIdState(DEFAULT_VEHICLE.id);
     } finally {
       if (fetchId === fetchCounter.current) {
         setLoading(false);
       }
     }
-  }, [isLoaded, isSignedIn, userId, getToken]);
+  }, [isLoaded, isSignedIn, userId, getToken, selectedKey]);
 
   useEffect(() => {
     const currentFetchId = ++fetchCounter.current;
