@@ -322,6 +322,11 @@ describe("derivePricePerUnit", () => {
       [6000, undefined],
       [1, 3],
       [2, 3],
+      [5672, 40],
+      [6000, 42.3],
+      [5602, 40],
+      [7003, 50],
+      [6075, 40.5],
     ];
     for (const [cost, amount] of cases) {
       expect(derivePricePerUnit(cost, amount), `cost=${cost} amount=${amount}`).toBe(
@@ -330,10 +335,11 @@ describe("derivePricePerUnit", () => {
     }
   });
 
-  it("returns an integer yen value", () => {
+  it("returns a value rounded to 0.1 yen", () => {
     expect(derivePricePerUnit(6075, 40.5)).toBe(150);
     expect(derivePricePerUnit(6001, 40)).toBe(150);
-    expect(derivePricePerUnit(6020, 40)).toBe(151);
+    expect(derivePricePerUnit(6020, 40)).toBe(150.5);
+    expect(derivePricePerUnit(5672, 40)).toBe(141.8);
   });
 });
 

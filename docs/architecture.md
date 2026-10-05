@@ -21,6 +21,7 @@ FuelLens の構成、データの流れ、主要なモジュールの役割を�
 | `components/EditFuelRecordForm.tsx` | 記録の入力フォーム（手動入力・編集・確認シートで共用） |
 | `components/ManageVehiclesModal.tsx` / `components/VehicleSelector.tsx` | 車両の管理モーダル / 車両の切り替え |
 | `components/BackupPanel.tsx` | 設定画面の本体。データ概要、JSON / CSV の書き出し、復元（ファイル選択 → 件数プレビュー → 確認 → 追加） |
+| `components/ImportPanel.tsx` | 設定画面の「インポート」。Fuelio / FuelLens の CSV を読み込み、復元と同じ流れで追加する（[8 章](#インポートcsv)） |
 | `components/Toast.tsx` | `ToastProvider` と `useToast()`（通知と確認ダイアログ） |
 | `components/UserSync.tsx` | ログイン中のユーザーを `users` テーブルへ upsert |
 | `components/SupabaseStatusBanner.tsx` | クラウド障害時の警告バナーと「再試行」 |
@@ -30,6 +31,7 @@ FuelLens の構成、データの流れ、主要なモジュールの役割を�
 | `lib/recordFilters.ts` | 車両・未分類の判定（純粋関数） |
 | `lib/backup.ts` | バックアップ JSON の組み立て・検証（`parseBackup`）・復元計画（`planRestore` / `finalizeRestoreRecords`）。純粋関数 |
 | `lib/csv.ts` | CSV の組み立て・エスケープ・ダウンロード。履歴画面の CSV 出力と設定画面の全車両 CSV で共有 |
+| `lib/importers/fuelio.ts` / `lib/importers/fuellensCsv.ts` | CSV の取り込み（Fuelio / FuelLens の CSV → バックアップ形式）。純粋関数 |
 | `lib/useVehicles.ts` / `lib/useFuelRecords.ts` / `lib/useRecordForm.ts` | データフックとフォーム状態（[4 章](#4-フック-api)） |
 | `lib/useBackdropClose.ts` | モーダルの背景クリックで閉じるハンドラ（ドラッグでの誤閉じを防ぐ） |
 | `lib/migrateLocalData.ts` | ローカル → クラウドの移行と既定車両の自動作成（[5 章](#5-ローカル--クラウド移行)） |
@@ -76,7 +78,7 @@ FuelLens の構成、データの流れ、主要なモジュールの役割を�
 
 - 外部キーはすべて `ON DELETE CASCADE` です（`fuel_records.vehicle_id` → `vehicles`、`vehicles.user_id` / `fuel_records.user_id` → `users`）。
 - `fuel_efficiency` と `price_per_unit` は、保存時にクライアントが `calculateFuelMetrics` で計算した値です
-  （燃費は小数第 2 位、単価は整数円に丸める）。
+  （燃費は小数第 2 位、単価は 0.1 円/L 単位に丸める）。単価の表示は `formatPricePerUnit` で常に小数第 1 位まで出す（旧仕様の整数値も `160.0` と表示）。
 
 ### 既定車両と未分類
 
@@ -251,6 +253,39 @@ Supabase Free のプロジェクトが一時停止すると、API は HTTP 540 �
 - ログイン中の記録追加は 100 件ずつの挿入です。途中で失敗すると、追加済みの分は残り、「N 件を追加したところで中断しました。」を含むメッセージを表示します。
   同じファイルをもう一度復元すれば、重複判定により残りだけが追加されます。
 - 復元で追加した記録の ID は、未ログインでは `restored-` で始まるローカル採番、ログイン中は DB が採番する UUID になります（バックアップ内の ID は引き継ぎません）。
+
+### インポート（CSV）
+
+設定画面の「インポート」（`components/ImportPanel.tsx`）で、他アプリや FuelLens 自身の CSV を取り込みます。
+CSV を `lib/importers/` の純粋関数でバックアップ形式（`FuelLensBackup`、version 1）に変換し、以降は復元と同じ
+`planRestore` → 確認 → `addVehicles` → `finalizeRestoreRecords` → `addRecords` の流れで **追記のみ** で追加します。
+車両の対応付け・重複判定（同じ車両 + 日付 + 給油量 ±0.01 + 支払総額）も復元と同じなので、同じファイルを 2 回取り込んでも 2 回目は何も追加されません。
+閲覧専用・車両一覧の読み込みエラー・車両 0 台のときは無効です。文字コードは UTF-8（壊れていれば Shift_JIS として読み直す）、上限は 30MB・50,000 件です。
+
+| 形式 | 判定 | 車両 |
+|---|---|---|
+| Fuelio の CSV | `"## Vehicle"` と `"## Log"` のセクション行がある | 1 台。名前は `## Vehicle` の `Name`（画面で変更可）、種別は推定（画面で変更可） |
+| FuelLens の全車両 CSV（設定画面） | ヘッダーが `車両,日付,給油量(L),支払総額(円),単価(円/L),走行距離(km),燃費(km/L),店舗名` | 車両名ごと。種別は同名の既存車両に合わせ、無ければ car |
+| FuelLens の車両別 CSV（履歴画面） | ヘッダーが `給油日,走行距離(km),給油量(L),単価(円/L),支払総額(円),燃費(km/L),ガソリンスタンド名` | 1 台。名前はファイル名から推測（画面で変更可） |
+
+**Fuelio の変換**（`lib/importers/fuelio.ts`。列は位置ではなくヘッダー名で探す）:
+
+- `## Log` の `Data`（日付。`yyyy-MM-dd[ HH:mm]` のほか `dd.MM.yyyy`・`MM/dd/yyyy`・`dd/MM/yyyy` も読む。`## Vehicle` の `ImportCSVDateFormat` をヒントにする）、
+  `Odo (km)`、`Fuel (litres)`、`Full`、`Price (optional)`、`City (optional)`、`Notes (optional)`、`Missed`、`VolumePrice`、`UniqueId` を使います。
+  マイル・ガロン単位の CSV はエラーにします。
+- **区間距離**: Fuelio の `Odo` は積算距離なので、日付（時刻）→ 積算距離の順に並べ、前の行との差を `total_distance` にします（0.1km に丸める）。
+  先頭の行と `Missed=1`（前回の給油が記録されていない）の行は null です。
+- **燃費**: `Full=0`（部分給油）の行は取り込みますが `fuel_efficiency` は null です。満タンの行は「前回の満タン以降の区間距離の合計 ÷ 給油量の合計」
+  （部分給油が無ければ区間距離 ÷ 給油量）を `calculateFuelMetrics` で計算します。途中に `Missed` や距離不明の行があれば null です。
+- **金額**: `Price` を支払総額とし、空なら `VolumePrice × 給油量` で補います。単価は `calculateFuelMetrics(null, 給油量, 支払総額)` で計算します（丸めはアプリ全体と同じ）。
+- **店舗名**: `City` → `Notes` の順。日付だけのメモ（`2024/12/1` など）は使いません。
+- **車両種別の推定**: `Tank1Capacity` が分かれば 20L 以下を bike、不明（0）なら車名・車種名（`CB` / `PCX` / `カブ` / Kawasaki など）から推定し、既定は car です。
+- **ID**: 車両は `fuelio-<車両名の FNV-1a ハッシュ>`、記録は `fuelio-<同>-<UniqueId>`（無ければ `h<日付・積算距離・給油量のハッシュ>`、ファイル内の重複は `-2` …）。
+  同じファイルからは同じ ID になります（ただし追加される記録の ID は復元と同じく新しく採番されるため、再取り込みの重複判定は上記の内容一致で行います）。
+- 給油以外のセクション（`## Costs` など）は読みません。
+
+**FuelLens CSV の変換**（`lib/importers/fuellensCsv.ts`）: 書き出し時に CSV インジェクション対策で付けた先頭の `'` を外し、日付・給油量・支払総額が読めない行は読み飛ばします。
+単価・燃費は CSV の値を優先し、空なら `calculateFuelMetrics` で補います。ID は `fuellens-csv-<車両名と各列のハッシュ>` です。
 
 ## 9. PWA
 

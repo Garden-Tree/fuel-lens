@@ -19,6 +19,7 @@ import {
 
 import { useFuelRecords } from "@/lib/useFuelRecords";
 import { useVehicles } from "@/lib/useVehicles";
+import { formatPricePerUnit } from "@/lib/calculations";
 import {
   type Period,
   buildEfficiencyAxis,
@@ -340,7 +341,7 @@ function StatsContent({
           <div className="bg-gray-900/50 border border-gray-800 rounded-2xl p-4 md:p-5">
             <p className="text-[10px] md:text-xs text-gray-500 uppercase tracking-wider mb-1">平均単価</p>
             <p className="text-xl md:text-2xl font-bold font-mono text-gray-200">
-              {summary.avgPricePerUnit != null ? `¥${summary.avgPricePerUnit.toFixed(1)}` : "--"}
+              {summary.avgPricePerUnit != null ? `¥${formatPricePerUnit(summary.avgPricePerUnit)}` : "--"}
               <span className="text-xs text-gray-500 ml-1">/L</span>
             </p>
           </div>

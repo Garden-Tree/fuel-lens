@@ -154,7 +154,10 @@ export type UseRecordFormReturn = {
   hasCoreValue: boolean;
   /** 単価 (円/L) と燃費 (km/L)。入力に追従して再計算される */
   metrics: ReturnType<typeof calculateFuelMetrics>;
-  /** 画面に表示する単価。再計算できなければ、給油量・支払総額が未変更の間に限り元の記録の単価にフォールバックする */
+  /**
+   * 画面に表示する単価 (円/L、0.1 円単位の数値)。再計算できなければ、給油量・支払総額が未変更の間に限り元の記録の単価にフォールバックする。
+   * 文字列にするときは `formatPricePerUnit`（lib/calculations.ts）を使う
+   */
   pricePerUnitDisplay: number | null;
   /**
    * 保存用オブジェクト。date が空の場合は検証エラー（isValid=false）になるため UI からは保存されないが、

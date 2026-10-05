@@ -11,6 +11,7 @@ import {
   type ReactNode,
 } from 'react';
 import { useBackdropClose } from '@/lib/useBackdropClose';
+import { useFocusTrap } from '@/lib/useFocusTrap';
 
 /**
  * アプリ共通の通知（トースト）と確認ダイアログ。
@@ -133,6 +134,16 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   // 背景クリックでキャンセル（パネル内から背景へドラッグして離した場合は閉じない）
   const confirmBackdropHandlers = useBackdropClose(() => closeConfirm(false));
 
+  // 確認ダイアログのフォーカストラップ。開いたら初期フォーカスを置き、閉じたら呼び出し元へ戻す。
+  // 破壊的操作ではキャンセル側に初期フォーカスを置く（Enter のキーリピートで危険な操作が承認されるのを防ぐため）
+  const confirmPanelRef = useRef<HTMLDivElement>(null);
+  const cancelButtonRef = useRef<HTMLButtonElement>(null);
+  const okButtonRef = useRef<HTMLButtonElement>(null);
+  useFocusTrap(confirmPanelRef, {
+    active: confirmState !== null,
+    initialFocusRef: confirmState?.options.danger ? cancelButtonRef : okButtonRef,
+  });
+
   const value = useMemo(() => ({ toast, confirm }), [toast, confirm]);
 
   return (
@@ -174,6 +185,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
           {...confirmBackdropHandlers}
         >
           <div
+            ref={confirmPanelRef}
             role="dialog"
             aria-modal="true"
             aria-labelledby="confirm-dialog-title"
@@ -189,16 +201,16 @@ export function ToastProvider({ children }: { children: ReactNode }) {
                 フォーム送信の Enter のキーリピートで危険な操作が承認されるのを防ぐため。
               */}
               <button
+                ref={cancelButtonRef}
                 type="button"
-                autoFocus={!!confirmState.options.danger}
                 onClick={() => closeConfirm(false)}
                 className="rounded-lg px-4 py-2 text-sm text-gray-300 hover:bg-gray-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-500"
               >
                 {confirmState.options.cancelLabel ?? 'キャンセル'}
               </button>
               <button
+                ref={okButtonRef}
                 type="button"
-                autoFocus={!confirmState.options.danger}
                 onClick={() => closeConfirm(true)}
                 className={`rounded-lg px-4 py-2 text-sm font-medium text-white focus:outline-none focus-visible:ring-2 ${
                   confirmState.options.danger
