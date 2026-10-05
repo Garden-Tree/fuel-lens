@@ -61,7 +61,7 @@ FuelLens の構成、データの流れ、主要なモジュールの役割を�
   ローカルの記録をクラウドへ移します（[5 章](#5-ローカル--クラウド移行)）。
 - スキャンの流れ: 画像を 0.8MB 以下・長辺 1200px の JPEG に圧縮 → `POST /api/analyze` → 確認シートで確認・修正 →
   同じ日付・給油量・支払総額の記録があれば確認ダイアログ → `addRecord`。解析結果を自動保存することはありません。
-- 選択中の車両 ID は localStorage の `fuel_lens_selected_vehicle_id` に保存します。
+- 選択中の車両 ID は localStorage に保存します。未ログイン時は `fuel_lens_selected_vehicle_id`、ログイン時はユーザーごとの `fuel_lens_selected_vehicle_id_<userId>` を使い、保存値が現在の車両一覧に無い場合は既定車両へフォールバックして保存値を書き換えます。
 
 ## 3. データモデル
 
