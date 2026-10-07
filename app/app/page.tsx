@@ -27,7 +27,7 @@ import { useVehicles } from "@/lib/useVehicles";
 import VehicleSelector from "@/components/VehicleSelector";
 import { useToast } from "@/components/Toast";
 import { useRecordForm, findDuplicateRecord, todayLocalISO, type RecordInput } from "@/lib/useRecordForm";
-import { distanceModeOf, previousOdometer } from "@/lib/fillChain";
+import { distanceModeOf, openRunBefore, previousOdometer } from "@/lib/fillChain";
 import RecordBadges, { efficiencyNullReason, formatOdometer } from "@/components/RecordBadges";
 import type { AnalyzeErrorResponse, AnalyzeSuccessResponse } from "@/lib/analyze";
 
@@ -410,11 +410,20 @@ export default function Home() {
     [records]
   );
 
+  // フォーム内で日付を変えたときの「直前に開いている run」（部分給油の合算用。編集中の記録自身は除く）
+  const getOpenRun = useCallback(
+    (date: string, excludeRecordId?: string) =>
+      openRunBefore(excludeRecordId ? records.filter(r => r.id !== excludeRecordId) : records, selectedVehicle, { date }),
+    [records, selectedVehicle]
+  );
+
   const startEditing = (record: FuelRecord) => {
     form.reset(record, {
       vehicle: selectedVehicle,
       previousOdometer: previousOdometer(records, { recordId: record.id }),
       getPreviousOdometer,
+      openRun: openRunBefore(records, selectedVehicle, { recordId: record.id }),
+      getOpenRun,
     });
     setEditingRecordId(record.id);
     setIsManualEntry(false);
@@ -425,7 +434,13 @@ export default function Home() {
     const today = todayLocalISO();
     form.reset(
       { date: today },
-      { vehicle: selectedVehicle, previousOdometer: previousOdometer(records, { date: today }), getPreviousOdometer }
+      {
+        vehicle: selectedVehicle,
+        previousOdometer: previousOdometer(records, { date: today }),
+        getPreviousOdometer,
+        openRun: openRunBefore(records, selectedVehicle, { date: today }),
+        getOpenRun,
+      }
     );
     setEditingRecordId(null);
     setIsManualEntry(true);
@@ -838,6 +853,11 @@ export default function Home() {
                              <MapPin className="w-3 h-3 text-gray-500" />
                             <p className="text-xs text-gray-400 truncate">{displayRecord.gas_station || "場所不明"}</p>
                           </div>
+                          {displayRecord.memo && (
+                            <p className="col-span-2 text-xs text-gray-400 truncate" title={displayRecord.memo}>
+                              <span className="sr-only">メモ: </span>{displayRecord.memo}
+                            </p>
+                          )}
                         </div>
                       </div>
                     )}
@@ -887,6 +907,8 @@ export default function Home() {
           vehicle={selectedVehicle}
           previousOdometer={previousOdometer(records, { date: scanResult.data.date ?? todayLocalISO() })}
           getPreviousOdometer={getPreviousOdometer}
+          openRun={openRunBefore(records, selectedVehicle, { date: scanResult.data.date ?? todayLocalISO() })}
+          getOpenRun={getOpenRun}
           readOnly={readOnly}
           onSave={handleScanSave}
           onDiscard={handleScanDiscard}

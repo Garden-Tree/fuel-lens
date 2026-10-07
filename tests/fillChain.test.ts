@@ -7,6 +7,7 @@ import {
   isFuelType,
   normalizeRecord,
   normalizeVehicle,
+  openRunBefore,
   previousOdometer,
   sanitizeMemo,
   sortForChain,
@@ -470,6 +471,87 @@ describe("previousOdometer", () => {
     expect(previousOdometer(seqList, { date: "2026-11-30" })).toBe(1600);
     expect(previousOdometer(seqList, { recordId: "q3" })).toBe(1300);
     expect(previousOdometer(seqList, { recordId: "q4" })).toBe(1300); // 130 は基準にならない
+  });
+});
+
+describe("openRunBefore", () => {
+  const EMPTY = { distance: 0, fuel: 0, valid: true, count: 0 };
+
+  it("is empty and valid when there is no open run", () => {
+    expect(openRunBefore([], TRIP, { date: "2026-05-01" })).toEqual(EMPTY);
+    const afterFull = [rec({ id: "f1", date: "2026-05-01", total_distance: 400, fuel_amount: 30 })];
+    expect(openRunBefore(afterFull, TRIP, { date: "2026-05-10" })).toEqual(EMPTY);
+    expect(openRunBefore(afterFull, TRIP, { recordId: "f1" })).toEqual(EMPTY);
+    expect(openRunBefore(afterFull, TRIP, { recordId: "missing" })).toEqual(EMPTY);
+  });
+
+  it("sums the partial fills since the last full fill", () => {
+    const list = [
+      rec({ id: "f1", date: "2026-05-01", total_distance: 400, fuel_amount: 30 }),
+      rec({ id: "p1", date: "2026-05-05", total_distance: 149.5, fuel_amount: 2, is_full: false }),
+      rec({ id: "p2", date: "2026-05-07", total_distance: 100, fuel_amount: 8, is_full: false }),
+      rec({ id: "f2", date: "2026-05-10", total_distance: 250, fuel_amount: 5.2 }),
+    ];
+    expect(openRunBefore(list, TRIP, { recordId: "p1" })).toEqual(EMPTY);
+    expect(openRunBefore(list, TRIP, { recordId: "p2" })).toEqual({ distance: 149.5, fuel: 2, valid: true, count: 1 });
+    expect(openRunBefore(list, TRIP, { recordId: "f2" })).toEqual({ distance: 249.5, fuel: 10, valid: true, count: 2 });
+    expect(openRunBefore(list, TRIP, { date: "2026-05-08" })).toEqual({ distance: 249.5, fuel: 10, valid: true, count: 2 });
+    expect(openRunBefore(list, TRIP, { date: "2026-05-06" })).toEqual({ distance: 149.5, fuel: 2, valid: true, count: 1 });
+  });
+
+  it("matches the efficiency the chain stores for the following full fill (149.5 km / 2.0 L + 250 km / 5.2 L)", () => {
+    const list = [
+      rec({ id: "f1", date: "2026-05-01", total_distance: 400, fuel_amount: 30 }),
+      rec({ id: "p1", date: "2026-05-05", total_distance: 149.5, fuel_amount: 2, is_full: false }),
+      rec({ id: "f2", date: "2026-05-10", total_distance: 250, fuel_amount: 5.2 }),
+    ];
+    const run = openRunBefore(list, TRIP, { recordId: "f2" });
+    const preview = calculateFuelMetrics((run.distance + 250), 5.2 + run.fuel, null).fuel_efficiency;
+    expect(preview).toBe(55.49);
+    expect(effById(applyFillChain(list, TRIP)).f2).toBe(55.49);
+  });
+
+  it("is invalid when a record in the run has a null fuel amount or (trip mode) a null distance", () => {
+    const nullFuel = [
+      rec({ id: "f1", date: "2026-06-01", total_distance: 400, fuel_amount: 30 }),
+      rec({ id: "p1", date: "2026-06-05", total_distance: 100, fuel_amount: null, is_full: false }),
+    ];
+    expect(openRunBefore(nullFuel, TRIP, { date: "2026-06-10" })).toMatchObject({ valid: false, count: 1 });
+    const nullDistance = [
+      rec({ id: "f1", date: "2026-06-01", total_distance: 400, fuel_amount: 30 }),
+      rec({ id: "p1", date: "2026-06-05", total_distance: null, fuel_amount: 5, is_full: false }),
+    ];
+    expect(openRunBefore(nullDistance, TRIP, { date: "2026-06-10" })).toMatchObject({ valid: false, count: 1 });
+  });
+
+  it("odometer mode: a carry row with null fuel makes the run invalid, a carry row with fuel is counted", () => {
+    const base = rec({ id: "a", date: "2026-07-01", odometer: 1000, fuel_amount: 30 });
+    const carryNoFuel = rec({ id: "b", date: "2026-07-05", odometer: null, fuel_amount: null });
+    expect(openRunBefore([base, carryNoFuel], ODO, { date: "2026-07-10" })).toMatchObject({ valid: false, count: 1 });
+    const carry = rec({ id: "b", date: "2026-07-05", odometer: null, fuel_amount: 20 });
+    // 満タンの a の後の持ち越し行: 距離は次の記録の差分に含まれるので run は給油量だけ積む
+    const first = rec({ id: "z", date: "2026-06-20", odometer: 500, fuel_amount: 30 });
+    const chain = [first, rec({ id: "a", date: "2026-07-01", odometer: 1000, fuel_amount: 30 }), carry];
+    expect(openRunBefore(chain, ODO, { date: "2026-07-10" })).toEqual({ distance: 0, fuel: 20, valid: true, count: 1 });
+    // C(1600) の区間 600 km は持ち越し行の分を含む: (0 + 600) / (20 + 20) = 15
+    const next = rec({ id: "c", date: "2026-07-10", odometer: 1600, fuel_amount: 20 });
+    expect(effById(applyFillChain([...chain, next], ODO)).c).toBe(15);
+  });
+
+  it("resets the run after a full fill and at a missed_previous record", () => {
+    const list = [
+      rec({ id: "f1", date: "2026-08-01", total_distance: 400, fuel_amount: 30 }),
+      rec({ id: "p1", date: "2026-08-03", total_distance: 100, fuel_amount: 5, is_full: false }),
+      rec({ id: "f2", date: "2026-08-05", total_distance: 200, fuel_amount: 10 }),
+    ];
+    expect(openRunBefore(list, TRIP, { date: "2026-08-10" })).toEqual(EMPTY);
+    // 記録漏れの満タン給油は run を閉じる（その記録自身の分は残らない）
+    const missedFull = [...list, rec({ id: "m1", date: "2026-08-07", total_distance: 300, fuel_amount: 20, missed_previous: true })];
+    expect(openRunBefore(missedFull, TRIP, { date: "2026-08-10" })).toEqual(EMPTY);
+    // 記録漏れの部分給油: それ以前の run は捨て、その記録から新しい run が始まる（距離が信頼できないので無効）
+    const before = rec({ id: "p0", date: "2026-08-06", total_distance: 90, fuel_amount: 4, is_full: false });
+    const missedPartial = rec({ id: "m2", date: "2026-08-07", total_distance: 300, fuel_amount: 20, missed_previous: true, is_full: false });
+    expect(openRunBefore([...list, before, missedPartial], TRIP, { date: "2026-08-10" })).toMatchObject({ valid: false, count: 1 });
   });
 });
 

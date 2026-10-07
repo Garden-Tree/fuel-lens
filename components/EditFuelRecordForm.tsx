@@ -3,8 +3,10 @@
 import { useId, useState, type Ref } from "react";
 import { X, Save, Lock, Loader2, ChevronDown } from "lucide-react";
 import {
+  MISSED_PREVIOUS_DISTANCE_NOTE,
   ODOMETER_REQUIRED_MESSAGE,
   countChars,
+  mergedRunNote,
   type DraftField,
   type UseRecordFormReturn,
 } from "@/lib/useRecordForm";
@@ -69,6 +71,7 @@ export default function EditFuelRecordForm({
     distanceMode,
     previousOdometer,
     efficiencyNote,
+    mergedRunCount,
     odometerRequired,
     odometerHint,
   } = form;
@@ -114,6 +117,7 @@ export default function EditFuelRecordForm({
 
   // オドメーターモードの「前回から ○○ km」の表示
   const odometerDistanceText = (() => {
+    if (draft.missed_previous) return MISSED_PREVIOUS_DISTANCE_NOTE;
     if (previousOdometer === null) return "前回のオドメーターが無いため区間は計算できません";
     if (parsed.total_distance !== null) return `前回から ${formatKm(parsed.total_distance)} km（自動計算）`;
     if (parsed.odometer === null) return `前回のオドメーター: ${formatKm(previousOdometer)} km`;
@@ -398,6 +402,9 @@ export default function EditFuelRecordForm({
         </span>{" "}
         km/L
         {efficiencyNote && <span className="ml-1 text-amber-300/90">（{efficiencyNote}）</span>}
+        {mergedRunCount > 0 && metrics.fuel_efficiency != null && (
+          <span className="block mt-0.5 text-[10px] text-gray-500">{mergedRunNote(mergedRunCount)}</span>
+        )}
       </p>
 
       {!canSave && saveHint && (

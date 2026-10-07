@@ -11,7 +11,7 @@ import { useVehicles } from "@/lib/useVehicles";
 import VehicleSelector from "@/components/VehicleSelector";
 import { useToast } from "@/components/Toast";
 import { useRecordForm } from "@/lib/useRecordForm";
-import { distanceModeOf, previousOdometer } from "@/lib/fillChain";
+import { distanceModeOf, openRunBefore, previousOdometer } from "@/lib/fillChain";
 import RecordBadges, { efficiencyNullReason, formatOdometer } from "@/components/RecordBadges";
 import { normalizeDateString } from "@/lib/stats";
 import {
@@ -197,12 +197,21 @@ export default function HistoryPage() {
     [records]
   );
 
+  // フォーム内で日付を変えたときの「直前に開いている run」（部分給油の合算用。編集中の記録自身は除く）
+  const getOpenRun = useCallback(
+    (date: string, excludeRecordId?: string) =>
+      openRunBefore(excludeRecordId ? records.filter(r => r.id !== excludeRecordId) : records, selectedVehicle, { date }),
+    [records, selectedVehicle]
+  );
+
   const startEditing = (record: FuelRecord) => {
     if (readOnly) return;
     form.reset(record, {
       vehicle: selectedVehicle,
       previousOdometer: previousOdometer(records, { recordId: record.id }),
       getPreviousOdometer,
+      openRun: openRunBefore(records, selectedVehicle, { recordId: record.id }),
+      getOpenRun,
     });
     setEditingId(record.id);
     setMovingId(null);

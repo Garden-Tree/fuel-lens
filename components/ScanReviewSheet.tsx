@@ -32,6 +32,10 @@ interface Props {
   previousOdometer?: number | null;
   /** 確認シートで日付を直したときに、その日付での前回のオドメーターを返す（lib/fillChain.ts の previousOdometer） */
   getPreviousOdometer?: RecordFormContext["getPreviousOdometer"];
+  /** 連鎖計算で直前に開いている run（部分給油の合算。lib/fillChain.ts の openRunBefore） */
+  openRun?: RecordFormContext["openRun"];
+  /** 確認シートで日付を直したときに、その日付での openRun を返す */
+  getOpenRun?: RecordFormContext["getOpenRun"];
   /** 閲覧専用（クラウド障害中）なら保存を無効化する */
   readOnly?: boolean;
   /**
@@ -54,6 +58,8 @@ export default function ScanReviewSheet({
   vehicle = null,
   previousOdometer = null,
   getPreviousOdometer,
+  openRun = null,
+  getOpenRun,
   readOnly = false,
   onSave,
   onDiscard,
@@ -74,7 +80,7 @@ export default function ScanReviewSheet({
       price_per_unit: result.price_per_unit,
       fuel_type: result.fuel_type,
     },
-    { vehicle, previousOdometer, getPreviousOdometer, odometerOptional: true }
+    { vehicle, previousOdometer, getPreviousOdometer, openRun, getOpenRun, odometerOptional: true }
   );
 
   const [saving, setSaving] = useState(false);
