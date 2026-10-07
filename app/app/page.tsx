@@ -27,6 +27,8 @@ import { useVehicles } from "@/lib/useVehicles";
 import VehicleSelector from "@/components/VehicleSelector";
 import { useToast } from "@/components/Toast";
 import { useRecordForm, findDuplicateRecord, todayLocalISO, type RecordInput } from "@/lib/useRecordForm";
+import { distanceModeOf, previousOdometer } from "@/lib/fillChain";
+import RecordBadges, { efficiencyNullReason, formatOdometer } from "@/components/RecordBadges";
 import type { AnalyzeErrorResponse, AnalyzeSuccessResponse } from "@/lib/analyze";
 
 /** /api/analyze 呼び出しのクライアント側タイムアウト（サーバー側は Gemini 30秒 + 関数全体 60秒） */
@@ -95,6 +97,7 @@ export default function Home() {
   // 選択中車両IDと既定（先頭）車両IDを渡してレコード一覧を動的に同期。
   // 既定車両IDは、未分類（vehicle_id=null）の記録をどの車両に含めるか判定するために使う。
   // 車両一覧の読み込みが終わるまでレコードの読み込みは保留する。
+  // vehicles は連鎖計算（オドメーターモードの区間距離・部分給油の燃費）で各車両の方式を知るために渡す。
   const {
     records,
     addRecord,
@@ -102,7 +105,9 @@ export default function Home() {
     loading: recordsLoading,
     error: recordsError,
     readOnly,
-  } = useFuelRecords(selectedVehicleId, vehicles[0]?.id, { enabled: !vehiclesLoading });
+  } = useFuelRecords(selectedVehicleId, vehicles[0]?.id, { enabled: !vehiclesLoading, vehicles });
+  const selectedVehicle = vehicles.find(v => v.id === selectedVehicleId) ?? null;
+  const distanceMode = distanceModeOf(selectedVehicle);
 
   const [loading, setLoading] = useState(false);
   const [loadingStep, setLoadingStep] = useState<"compress" | "analyze" | null>(null);
@@ -399,14 +404,21 @@ export default function Home() {
   };
 
   const startEditing = (record: FuelRecord) => {
-    form.reset(record);
+    form.reset(record, {
+      vehicle: selectedVehicle,
+      previousOdometer: previousOdometer(records, { recordId: record.id }),
+    });
     setEditingRecordId(record.id);
     setIsManualEntry(false);
     setIsEditing(true);
   };
 
   const startManualEntry = () => {
-    form.reset({ date: todayLocalISO() });
+    const today = todayLocalISO();
+    form.reset(
+      { date: today },
+      { vehicle: selectedVehicle, previousOdometer: previousOdometer(records, { date: today }) }
+    );
     setEditingRecordId(null);
     setIsManualEntry(true);
     setIsEditing(true);
@@ -432,10 +444,12 @@ export default function Home() {
 
   // 車両を切り替えたら開いているフォーム（編集・手動入力）を閉じる。
   // 開いたままだと、切り替え前の車両の記録を更新してしまうため。
+  // 距離の入力方式を切り替えたときも、フォームの入力欄（走行距離 / オドメーター）が合わなくなるので閉じる。
   // （エフェクトではなく「前回の値を state に保持してレンダー中に調整する」React 推奨パターン）
-  const [formVehicleId, setFormVehicleId] = useState(selectedVehicleId);
-  if (formVehicleId !== selectedVehicleId) {
-    setFormVehicleId(selectedVehicleId);
+  const formContextKey = `${selectedVehicleId}:${distanceMode}`;
+  const [formVehicleKey, setFormVehicleKey] = useState(formContextKey);
+  if (formVehicleKey !== formContextKey) {
+    setFormVehicleKey(formContextKey);
     cancelEditing();
   }
 
@@ -642,7 +656,11 @@ export default function Home() {
                         <h2 className="text-lg font-semibold text-white">スキャンして記録</h2>
                         <p className="text-xs text-blue-400 font-semibold">対象: {currentVehicleName}</p>
                         <p className="text-sm text-gray-400">レシートとメーターを1枚に収めて撮影</p>
-                        <p className="text-xs text-amber-500/80 pt-1">走行距離はトリップメーター（前回給油からの区間距離）を入力してください</p>
+                        <p className="text-xs text-amber-500/80 pt-1">
+                          {distanceMode === "odometer"
+                            ? "メーターはオドメーター（積算距離）が写るように撮影してください"
+                            : "走行距離はトリップメーター（前回給油からの区間距離）を入力してください"}
+                        </p>
                       </div>
 
                       <button
@@ -783,6 +801,10 @@ export default function Home() {
                               </span>
                               <span className="text-sm font-bold text-blue-500">km/L</span>
                             </div>
+                            {efficiencyNullReason(displayRecord) && (
+                              <p className="text-[11px] text-gray-500 mt-0.5">燃費: {efficiencyNullReason(displayRecord)}</p>
+                            )}
+                            <RecordBadges record={displayRecord} className="mt-2" />
                           </div>
                           <div className="text-right">
                             <p className="text-2xl font-bold text-green-400 font-mono">
@@ -798,9 +820,12 @@ export default function Home() {
                             <p className="text-lg font-mono font-bold text-blue-200">{displayRecord.fuel_amount ?? "--"} <span className="text-xs text-gray-500">L</span></p>
                           </div>
                           <div>
-                            <p className="text-[10px] text-gray-400 uppercase">走行距離</p>
+                            <p className="text-[10px] text-gray-400 uppercase">{distanceMode === "odometer" ? "区間距離" : "走行距離"}</p>
                             <p className="text-lg font-mono font-bold text-gray-200">{displayRecord.total_distance ?? "--"} <span className="text-xs text-gray-500">km</span></p>
                           </div>
+                          {distanceMode === "odometer" && (
+                            <p className="col-span-2 text-xs font-mono text-gray-400">{formatOdometer(displayRecord.odometer)}</p>
+                          )}
                           <div className="col-span-2 flex items-center gap-2 pt-2 border-t border-white/5">
                              <MapPin className="w-3 h-3 text-gray-500" />
                             <p className="text-xs text-gray-400 truncate">{displayRecord.gas_station || "場所不明"}</p>
@@ -851,6 +876,8 @@ export default function Home() {
           key={scanResult.key}
           result={scanResult.data}
           imageSrc={scanResult.image}
+          vehicle={selectedVehicle}
+          previousOdometer={previousOdometer(records, { date: scanResult.data.date ?? todayLocalISO() })}
           readOnly={readOnly}
           onSave={handleScanSave}
           onDiscard={handleScanDiscard}

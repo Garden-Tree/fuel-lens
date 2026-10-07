@@ -53,7 +53,9 @@ Content-Type: application/json
   オドメーター（ODO、積算距離）の値は入れさせず、別項目 `odometer` として返させます。
   トリップメーターが判別できなければ `null`（オドメーターで代用しない）。
 - 抽出項目: `date`（西暦の YYYY-MM-DD）, `fuel_amount`（L）, `total_cost`（円、税込）, `price_per_unit`（円/L）,
-  `total_distance`（km）, `odometer`（km）, `gas_station`, `confidence`（各項目 0〜1）。
+  `total_distance`（km）, `odometer`（km）, `gas_station`, `fuel_type`（油種）, `confidence`（各項目 0〜1）。
+- `fuel_type` はレシートの油種を `regular`（レギュラー）/ `premium`（ハイオク）/ `diesel`（軽油）/ `other`（それ以外）の
+  いずれかで返させます（スキーマは `enum` 付きの nullable な文字列）。判別できなければ `null`。
 
 ## 応答の検証と警告
 
@@ -62,6 +64,9 @@ Content-Type: application/json
 - 数値は有限かつ 0 以上（`"12,345"` や `"45.6L"` のような数値文字列も許容）。それ以外は `null`
 - `date` は実在する `YYYY-MM-DD` のみ。それ以外は `null`
 - `gas_station` は前後の空白を除いて 100 文字まで。空なら `null`
+- `fuel_type` は `regular` / `premium` / `diesel` / `other` のみ許可（大文字小文字・前後の空白は無視）。
+  防御的に「レギュラー」→ `regular`、「ハイオク」「high-octane」→ `premium`、「軽油」→ `diesel`、それ以外の空でない文字列（`LPG` など）→ `other`、
+  空文字・文字列以外 → `null` に寄せます（`normalizeFuelType`）
 - `confidence` は 0〜1 に丸め、未知のキーは捨てる
 
 その後の処理:
@@ -96,13 +101,14 @@ Content-Type: application/json
   "total_distance": 512.3,
   "odometer": 45210,
   "gas_station": "...",
-  "confidence": { "fuel_amount": 0.95 },
+  "fuel_type": "regular",
+  "confidence": { "fuel_amount": 0.95, "fuel_type": 0.9 },
   "warnings": ["..."],
   "requestId": "a1b2c3d4"
 }
 ```
 
-各項目は読み取れなければ `null` です。`confidence` と `warnings` は該当するときだけ含まれます。
+各項目は読み取れなければ `null` です（`fuel_type` は `"regular"` / `"premium"` / `"diesel"` / `"other"` / `null`）。`confidence` と `warnings` は該当するときだけ含まれます。
 
 ### エラー
 

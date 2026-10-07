@@ -28,8 +28,13 @@ export const CONFIDENCE_FIELDS = [
   "total_distance",
   "odometer",
   "gas_station",
+  "fuel_type",
 ] as const;
 export type ConfidenceField = (typeof CONFIDENCE_FIELDS)[number];
+
+/** 油種（レシートの「レギュラー／ハイオク／軽油」など） */
+export const FUEL_TYPES = ["regular", "premium", "diesel", "other"] as const;
+export type FuelType = (typeof FUEL_TYPES)[number];
 
 /** サニタイズ済みの解析結果（/api/analyze 成功時の本体） */
 export type AnalyzeResult = {
@@ -47,6 +52,8 @@ export type AnalyzeResult = {
   odometer: number | null;
   /** 店舗名（最大100文字） */
   gas_station: string | null;
+  /** 油種。読み取れなければ null */
+  fuel_type: FuelType | null;
   /** 各項目の確信度 0〜1（AIが返した場合のみ） */
   confidence?: Partial<Record<ConfidenceField, number>>;
 };
@@ -268,6 +275,25 @@ function toConfidence(value: unknown): number | null {
   return Math.min(1, Math.max(0, value));
 }
 
+/**
+ * 油種の生の値を FuelType に正規化する。
+ * - 許可値（regular / premium / diesel / other）はそのまま
+ * - レギュラー・ハイオク・軽油や英語表記（high-octane など）は対応する値に寄せる
+ * - それ以外の空でない文字列は other、空・文字列以外は null
+ */
+export function normalizeFuelType(value: unknown): FuelType | null {
+  if (typeof value !== "string") return null;
+  const v = value.trim().toLowerCase();
+  if (v === "") return null;
+  if ((FUEL_TYPES as readonly string[]).includes(v)) return v as FuelType;
+  if (v.includes("レギュラー") || v.includes("regular")) return "regular";
+  if (v.includes("ハイオク") || v.includes("premium") || v.includes("high-octane") || v.includes("high octane")) {
+    return "premium";
+  }
+  if (v.includes("軽油") || v.includes("diesel")) return "diesel";
+  return "other";
+}
+
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -278,6 +304,7 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
  * - 数値: 有限かつ 0 以上。それ以外は null
  * - date: YYYY-MM-DD の実在日付。それ以外は null
  * - gas_station: trim して 100 文字まで。空なら null
+ * - fuel_type: regular / premium / diesel / other のいずれか（日本語・英語の表記ゆれは寄せる）。それ以外は null
  * - 未知のキーは捨てる
  */
 export function sanitizeAIResponse(raw: unknown): AnalyzeResult | null {
@@ -291,6 +318,7 @@ export function sanitizeAIResponse(raw: unknown): AnalyzeResult | null {
     total_distance: toNonNegativeNumber(raw.total_distance),
     odometer: toNonNegativeNumber(raw.odometer),
     gas_station: null,
+    fuel_type: normalizeFuelType(raw.fuel_type),
   };
 
   if (typeof raw.gas_station === "string") {

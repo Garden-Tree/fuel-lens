@@ -3,6 +3,14 @@ import type { Vehicle } from "./useVehicles";
 import { isValidCalendarDate } from "./analyze";
 import { isUuid } from "./recordFilters";
 import { PERMISSION_DENIED_MESSAGE, isPermissionDeniedError } from "./supabaseHealth";
+import {
+  isDistanceMode,
+  isFuelType,
+  sanitizeMemo,
+  sanitizeOdometer,
+  type DistanceMode,
+  type FuelType,
+} from "./fillChain";
 
 /**
  * ログアウト中に localStorage へ保存した車両・給油記録を、ログイン後に
@@ -51,7 +59,10 @@ export type MigrationResult = {
 const NOOP_RESULT: MigrationResult = { migratedVehicles: 0, migratedRecords: 0, didWrite: false };
 
 type VehicleType = "car" | "bike";
-type LocalVehicle = { id: string; name: string; type: VehicleType };
+/** 車両の設定（0004 で追加した列）。ローカルに値があるものだけを持ち、送信する */
+type VehicleSettingsColumns = { distance_mode?: DistanceMode; default_fuel_type?: FuelType };
+type VehicleSeed = { name: string; type: VehicleType } & VehicleSettingsColumns;
+type LocalVehicle = { id: string } & VehicleSeed;
 type LocalRecordRaw = Record<string, unknown>;
 
 // ------------------------------------------------------------------
@@ -98,9 +109,39 @@ function toLocalVehicles(items: unknown[]): LocalVehicle[] {
     if (typeof item.id !== "string" || !item.id) continue;
     const name =
       typeof item.name === "string" && item.name.trim() ? item.name.trim().slice(0, 20) : DEFAULT_VEHICLE_NAME;
-    out.push({ id: item.id, name, type: normalizeVehicleType(item.type) });
+    out.push({ id: item.id, name, type: normalizeVehicleType(item.type), ...vehicleSettingsColumns(item) });
   }
   return dedupeById(out);
+}
+
+/** ローカル車両の distance_mode / default_fuel_type のうち、有効な値のものだけを返す（無ければ DB の既定値） */
+function vehicleSettingsColumns(item: { distance_mode?: unknown; default_fuel_type?: unknown }): VehicleSettingsColumns {
+  const out: VehicleSettingsColumns = {};
+  if (isDistanceMode(item.distance_mode)) out.distance_mode = item.distance_mode;
+  if (isFuelType(item.default_fuel_type)) out.default_fuel_type = item.default_fuel_type;
+  return out;
+}
+
+/** 車両の insert 行（設定は値があるものだけ） */
+function vehicleInsertRow(userId: string, v: VehicleSeed) {
+  return { user_id: userId, name: v.name, type: v.type, ...vehicleSettingsColumns(v) };
+}
+
+/**
+ * ローカル記録の 0004 の列（odometer / is_full / missed_previous / fuel_type / memo）のうち、
+ * 有効な値を持つものだけを返す。無いキーは送らず、列の既定値（満タン・記録漏れなし・null）に任せる
+ * （insert は defaultToNull: false）。
+ */
+function recordFillChainColumns(r: LocalRecordRaw): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  const odometer = sanitizeOdometer(r.odometer);
+  if (odometer !== null) out.odometer = odometer;
+  if (typeof r.is_full === "boolean") out.is_full = r.is_full;
+  if (typeof r.missed_previous === "boolean") out.missed_previous = r.missed_previous;
+  if (isFuelType(r.fuel_type)) out.fuel_type = r.fuel_type;
+  const memo = sanitizeMemo(r.memo);
+  if (memo !== null) out.memo = memo;
+  return out;
 }
 
 function numberOrNull(v: unknown): number | null {
@@ -338,7 +379,7 @@ export function ensureUserRow(supabase: SupabaseClient, userId: string): Promise
 async function ensureDefaultVehicleUnlocked(
   supabase: SupabaseClient,
   userId: string,
-  seed?: { name: string; type: VehicleType }
+  seed?: VehicleSeed
 ): Promise<{ vehicles: Vehicle[]; created: boolean }> {
   const { data, error, status } = await supabase
     .from("vehicles")
@@ -356,7 +397,7 @@ async function ensureDefaultVehicleUnlocked(
 
   const { data: inserted, error: insertErr, status: insertStatus } = await supabase
     .from("vehicles")
-    .insert({ user_id: userId, name: seed?.name ?? DEFAULT_VEHICLE_NAME, type: seed?.type ?? "car" })
+    .insert(vehicleInsertRow(userId, seed ?? { name: DEFAULT_VEHICLE_NAME, type: "car" }))
     .select()
     .single();
   if (insertErr) throw withStatus(insertErr, insertStatus);
@@ -374,7 +415,7 @@ const ensureInflight = new Map<string, Promise<Vehicle[]>>();
 export function ensureDefaultVehicle(
   supabase: SupabaseClient,
   userId: string,
-  seed?: { name: string; type: VehicleType }
+  seed?: VehicleSeed
 ): Promise<Vehicle[]> {
   const existing = ensureInflight.get(userId);
   if (existing) return existing;
@@ -535,7 +576,9 @@ async function runMigration(supabase: SupabaseClient, userId: string): Promise<M
     const { vehicles: cloudVehicles, created: createdDefault } = await ensureDefaultVehicleUnlocked(
       supabase,
       userId,
-      seedVehicle ? { name: seedVehicle.name, type: seedVehicle.type } : undefined
+      seedVehicle
+        ? { name: seedVehicle.name, type: seedVehicle.type, ...vehicleSettingsColumns(seedVehicle) }
+        : undefined
     );
     const defaultCloudId = cloudVehicles[0].id;
     const cloudIds = new Set(cloudVehicles.map(v => v.id));
@@ -557,7 +600,7 @@ async function runMigration(supabase: SupabaseClient, userId: string): Promise<M
 
       const { data, error, status } = await supabase
         .from("vehicles")
-        .insert({ user_id: userId, name: v.name, type: v.type })
+        .insert(vehicleInsertRow(userId, v))
         .select()
         .single();
       if (error) throw withStatus(error, status);
@@ -594,6 +637,7 @@ async function runMigration(supabase: SupabaseClient, userId: string): Promise<M
         total_cost: numberOrNull(r.total_cost),
         fuel_efficiency: numberOrNull(r.fuel_efficiency),
         created_at,
+        ...recordFillChainColumns(r),
       };
     });
 

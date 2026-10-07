@@ -1,9 +1,15 @@
 "use client";
 
-import { useId, type Ref } from "react";
-import { X, Save, Lock, Loader2 } from "lucide-react";
-import type { DraftField, UseRecordFormReturn } from "@/lib/useRecordForm";
+import { useId, useState, type Ref } from "react";
+import { X, Save, Lock, Loader2, ChevronDown } from "lucide-react";
+import {
+  ODOMETER_REQUIRED_MESSAGE,
+  countChars,
+  type DraftField,
+  type UseRecordFormReturn,
+} from "@/lib/useRecordForm";
 import { formatPricePerUnit } from "@/lib/calculations";
+import { FUEL_TYPES, FUEL_TYPE_LABELS, MEMO_MAX_LENGTH, isFuelType } from "@/lib/fillChain";
 
 interface Props {
   /** useRecordForm() の戻り値 */
@@ -35,6 +41,10 @@ function inputClass(opts: { error?: string; highlight?: boolean }) {
   return `${BASE_INPUT} border-gray-600`;
 }
 
+function formatKm(value: number): string {
+  return value.toLocaleString("ja-JP", { maximumFractionDigits: 2 });
+}
+
 export default function EditFuelRecordForm({
   form,
   onCancel,
@@ -49,11 +59,21 @@ export default function EditFuelRecordForm({
   firstFieldRef,
 }: Props) {
   const uid = useId();
-  const { draft, setField, errors, metrics, pricePerUnitDisplay } = form;
+  const { draft, setField, errors, metrics, pricePerUnitDisplay, parsed, distanceMode, previousOdometer, efficiencyNote } =
+    form;
   const idFor = (field: DraftField) => `${uid}-${field}`;
   const errorIdFor = (field: DraftField) => `${uid}-${field}-error`;
   const inputsDisabled = disabled || saving;
   const saveDisabled = inputsDisabled || !form.isValid || !canSave;
+
+  // 詳細欄（記録漏れ・燃料種別・メモ）。記録漏れ・メモが入っている記録を開いたときは最初から開く
+  const [detailsOpen, setDetailsOpen] = useState(() => draft.missed_previous || draft.memo.trim() !== "");
+  // メモのエラーは折りたたみの中に隠さない
+  const showDetails = detailsOpen || !!errors.memo;
+  const detailsId = `${uid}-details`;
+
+  // オドメーターモードで未入力のときは「必須」の案内（赤いエラーではなく注意表示）にする
+  const odometerMissing = errors.odometer === ODOMETER_REQUIRED_MESSAGE;
 
   const renderLabel = (field: DraftField, text: string, extra?: React.ReactNode) => (
     <label htmlFor={idFor(field)} className="text-xs text-gray-500 block mb-1">
@@ -78,6 +98,21 @@ export default function EditFuelRecordForm({
     "aria-invalid": errors[field] ? true : undefined,
     "aria-describedby": errors[field] ? errorIdFor(field) : undefined,
   });
+
+  // オドメーターモードの「前回から ○○ km」の表示
+  const odometerDistanceText = (() => {
+    if (previousOdometer === null) return "前回のオドメーターが無いため区間は計算できません";
+    if (parsed.total_distance !== null) return `前回から ${formatKm(parsed.total_distance)} km（自動計算）`;
+    if (parsed.odometer === null) return `前回のオドメーター: ${formatKm(previousOdometer)} km`;
+    return `前回（${formatKm(previousOdometer)} km）より大きい値を入力すると区間を計算します`;
+  })();
+
+  const memoLength = countChars(draft.memo.trim());
+  const detailsSummary = [
+    draft.missed_previous ? "記録漏れ" : null,
+    isFuelType(draft.fuel_type) ? FUEL_TYPE_LABELS[draft.fuel_type] : null,
+    draft.memo.trim() ? "メモあり" : null,
+  ].filter(Boolean);
 
   return (
     <form
@@ -135,26 +170,64 @@ export default function EditFuelRecordForm({
           />
           {renderError("total_cost")}
         </div>
-        <div>
-          {renderLabel(
-            "total_distance",
-            "走行距離 (km)",
-            <span className="block text-[10px] text-gray-600 font-normal">前回給油からの区間距離（トリップメーター）</span>
-          )}
-          <input
-            id={idFor("total_distance")}
-            type="text"
-            inputMode="decimal"
-            autoComplete="off"
-            placeholder="例: 412.5"
-            value={draft.total_distance}
-            disabled={inputsDisabled}
-            onChange={(e) => setField("total_distance", e.target.value)}
-            className={inputClass({ error: errors.total_distance, highlight: highlightFields?.total_distance })}
-            {...ariaProps("total_distance")}
-          />
-          {renderError("total_distance")}
-        </div>
+        {distanceMode === "odometer" ? (
+          <div>
+            {renderLabel(
+              "odometer",
+              "オドメーター (km)",
+              <span className="block text-[10px] text-gray-600 font-normal">給油時の積算距離</span>
+            )}
+            <input
+              id={idFor("odometer")}
+              type="text"
+              inputMode="decimal"
+              autoComplete="off"
+              placeholder="例: 12345"
+              value={draft.odometer}
+              disabled={inputsDisabled}
+              onChange={(e) => setField("odometer", e.target.value)}
+              aria-required="true"
+              className={inputClass({
+                error: odometerMissing ? undefined : errors.odometer,
+                highlight: odometerMissing || highlightFields?.odometer,
+              })}
+              aria-invalid={errors.odometer && !odometerMissing ? true : undefined}
+              aria-describedby={`${errors.odometer ? `${errorIdFor("odometer")} ` : ""}${uid}-odometer-distance`}
+            />
+            {errors.odometer &&
+              (odometerMissing ? (
+                <p id={errorIdFor("odometer")} className="mt-1 text-[11px] text-amber-400">
+                  {errors.odometer}
+                </p>
+              ) : (
+                renderError("odometer")
+              ))}
+            <p id={`${uid}-odometer-distance`} className="mt-1 text-[11px] text-gray-400" aria-live="polite">
+              {odometerDistanceText}
+            </p>
+          </div>
+        ) : (
+          <div>
+            {renderLabel(
+              "total_distance",
+              "走行距離 (km)",
+              <span className="block text-[10px] text-gray-600 font-normal">前回給油からの区間距離（トリップメーター）</span>
+            )}
+            <input
+              id={idFor("total_distance")}
+              type="text"
+              inputMode="decimal"
+              autoComplete="off"
+              placeholder="例: 412.5"
+              value={draft.total_distance}
+              disabled={inputsDisabled}
+              onChange={(e) => setField("total_distance", e.target.value)}
+              className={inputClass({ error: errors.total_distance, highlight: highlightFields?.total_distance })}
+              {...ariaProps("total_distance")}
+            />
+            {renderError("total_distance")}
+          </div>
+        )}
         <div>
           <label htmlFor={`${uid}-price_per_unit`} className="text-xs text-gray-500 flex items-center gap-1 mb-1">
             単価 (円/L) <Lock className="w-3 h-3 opacity-50" aria-hidden="true" />
@@ -183,6 +256,120 @@ export default function EditFuelRecordForm({
         />
       </div>
 
+      {/* 満タン給油（既定 on）。off は部分給油 */}
+      <div className="flex items-center justify-between gap-3">
+        <div className="min-w-0">
+          <p id={`${uid}-is_full-label`} className="text-sm text-gray-300">
+            満タン給油
+          </p>
+          <p id={`${uid}-is_full-hint`} className="text-[10px] text-gray-500">
+            {draft.is_full ? "満タンまで給油した" : "部分給油として記録します（燃費は次の満タン給油でまとめて計算）"}
+          </p>
+        </div>
+        <button
+          type="button"
+          aria-pressed={draft.is_full}
+          aria-labelledby={`${uid}-is_full-label`}
+          aria-describedby={`${uid}-is_full-hint`}
+          disabled={inputsDisabled}
+          onClick={() => setField("is_full", !draft.is_full)}
+          className={`relative inline-flex h-6 w-11 flex-shrink-0 items-center rounded-full border transition focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 disabled:opacity-60 disabled:cursor-not-allowed ${
+            draft.is_full ? "bg-blue-600 border-blue-500" : "bg-gray-700 border-gray-600"
+          }`}
+        >
+          <span
+            aria-hidden="true"
+            className={`inline-block h-4 w-4 rounded-full bg-white shadow transition-transform ${
+              draft.is_full ? "translate-x-6" : "translate-x-1"
+            }`}
+          />
+        </button>
+      </div>
+
+      {/* 詳細（記録漏れ・燃料種別・メモ） */}
+      <div className="rounded-lg border border-gray-700/70">
+        <button
+          type="button"
+          aria-expanded={showDetails}
+          aria-controls={detailsId}
+          onClick={() => setDetailsOpen((open) => !open)}
+          className="w-full flex items-center justify-between gap-2 px-3 py-2 text-xs text-gray-400 hover:text-gray-200 transition rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
+        >
+          <span className="flex items-center gap-2 min-w-0">
+            <span className="font-semibold">詳細</span>
+            {!showDetails && detailsSummary.length > 0 && (
+              <span className="truncate text-[10px] text-gray-500">{detailsSummary.join("・")}</span>
+            )}
+          </span>
+          <ChevronDown
+            className={`w-4 h-4 flex-shrink-0 transition-transform ${showDetails ? "rotate-180" : ""}`}
+            aria-hidden="true"
+          />
+        </button>
+        <div id={detailsId} hidden={!showDetails} className="space-y-4 px-3 pb-3 pt-1">
+          <div className="flex items-start gap-2">
+            <input
+              id={idFor("missed_previous")}
+              type="checkbox"
+              checked={draft.missed_previous}
+              disabled={inputsDisabled}
+              onChange={(e) => setField("missed_previous", e.target.checked)}
+              aria-describedby={`${uid}-missed_previous-hint`}
+              className="mt-0.5 h-4 w-4 flex-shrink-0 accent-blue-500 disabled:opacity-60"
+            />
+            <div>
+              <label htmlFor={idFor("missed_previous")} className="text-sm text-gray-300">
+                前回の給油を記録し忘れた
+              </label>
+              <p id={`${uid}-missed_previous-hint`} className="text-[10px] text-gray-500">
+                この給油までの区間は燃費の計算から外します
+              </p>
+            </div>
+          </div>
+
+          <div>
+            {renderLabel("fuel_type", "燃料種別")}
+            <select
+              id={idFor("fuel_type")}
+              value={draft.fuel_type ?? ""}
+              disabled={inputsDisabled}
+              onChange={(e) => setField("fuel_type", isFuelType(e.target.value) ? e.target.value : null)}
+              className={`${inputClass({ highlight: highlightFields?.fuel_type })} text-sm font-sans`}
+            >
+              <option value="">未指定</option>
+              {FUEL_TYPES.map((t) => (
+                <option key={t} value={t}>
+                  {FUEL_TYPE_LABELS[t]}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <div className="flex items-baseline justify-between">
+              {renderLabel("memo", "メモ（任意）")}
+              <span
+                id={`${uid}-memo-count`}
+                className={`text-[10px] font-mono ${memoLength > MEMO_MAX_LENGTH ? "text-red-400" : "text-gray-500"}`}
+              >
+                {memoLength}/{MEMO_MAX_LENGTH}
+              </span>
+            </div>
+            <textarea
+              id={idFor("memo")}
+              value={draft.memo}
+              rows={2}
+              disabled={inputsDisabled}
+              onChange={(e) => setField("memo", e.target.value)}
+              aria-invalid={errors.memo ? true : undefined}
+              aria-describedby={`${uid}-memo-count${errors.memo ? ` ${errorIdFor("memo")}` : ""}`}
+              className={`${inputClass({ error: errors.memo })} text-sm font-sans resize-y`}
+            />
+            {renderError("memo")}
+          </div>
+        </div>
+      </div>
+
       {/* ライブ表示: 燃費 */}
       <p className="text-xs text-gray-500" aria-live="polite">
         燃費:{" "}
@@ -190,6 +377,7 @@ export default function EditFuelRecordForm({
           {metrics.fuel_efficiency != null ? metrics.fuel_efficiency.toFixed(2) : "--.--"}
         </span>{" "}
         km/L
+        {efficiencyNote && <span className="ml-1 text-amber-300/90">（{efficiencyNote}）</span>}
       </p>
 
       {!canSave && saveHint && (

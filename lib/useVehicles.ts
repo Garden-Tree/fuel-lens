@@ -33,6 +33,16 @@ import {
   useSupabaseOutage,
   writeCache,
 } from "./supabaseHealth";
+import {
+  isDistanceMode,
+  isFuelType,
+  normalizeVehicle,
+  type DistanceMode,
+  type FuelType,
+} from "./fillChain";
+
+export type { DistanceMode } from "./fillChain";
+export { normalizeVehicle } from "./fillChain";
 
 export type Vehicle = {
   id: string;
@@ -40,14 +50,41 @@ export type Vehicle = {
   name: string;
   type: "car" | "bike";
   created_at?: string;
+  /**
+   * 距離の入力方式（0004 で追加）。省略・不明は "trip"（トリップメーターの区間距離）。
+   * "odometer" なら記録の odometer の差分から区間距離を出す（lib/fillChain.ts）。
+   */
+  distance_mode?: DistanceMode;
+  /** 新規記録の燃料種別の初期値（0004 で追加）。null / 省略は未指定 */
+  default_fuel_type?: FuelType | null;
 };
 
-const DEFAULT_VEHICLE: Vehicle = {
+/** 車両の設定（距離の入力方式・既定の燃料種別）。省略したキーは変更しない／既定値 */
+export type VehicleSettings = {
+  distance_mode?: DistanceMode;
+  default_fuel_type?: FuelType | null;
+};
+
+/**
+ * 呼び出し側から受け取った設定を検証し、既知の値だけを残す（不明な値のキーは捨てる）。
+ * Supabase へは定義済みのキーだけを送る（未指定なら DB の既定値 / 変更なし）。
+ */
+export function sanitizeVehicleSettings(settings: VehicleSettings | null | undefined): VehicleSettings {
+  const out: VehicleSettings = {};
+  if (!settings) return out;
+  if (isDistanceMode(settings.distance_mode)) out.distance_mode = settings.distance_mode;
+  if (settings.default_fuel_type === null || isFuelType(settings.default_fuel_type)) {
+    out.default_fuel_type = settings.default_fuel_type;
+  }
+  return out;
+}
+
+const DEFAULT_VEHICLE: Vehicle = normalizeVehicle({
   id: LOCAL_DEFAULT_VEHICLE_ID,
   user_id: "local",
   name: DEFAULT_VEHICLE_NAME,
   type: "car",
-};
+});
 
 const SELECTED_VEHICLE_KEY = "fuel_lens_selected_vehicle_id";
 
@@ -67,10 +104,12 @@ function parseLocalVehicles(raw: string | null): Vehicle[] {
   try {
     const parsed: unknown = JSON.parse(raw);
     if (!Array.isArray(parsed)) return [];
-    return parsed.filter(
-      (v): v is Vehicle =>
-        !!v && typeof v === "object" && typeof (v as Vehicle).id === "string" && typeof (v as Vehicle).name === "string"
-    );
+    return parsed
+      .filter(
+        (v): v is Vehicle =>
+          !!v && typeof v === "object" && typeof (v as Vehicle).id === "string" && typeof (v as Vehicle).name === "string"
+      )
+      .map(v => normalizeVehicle(v));
   } catch {
     return [];
   }
@@ -197,7 +236,8 @@ export function useVehicles() {
       if (fetchId !== fetchCounter.current) return;
 
       // クラウドから車両一覧を取得（1 台もなければ既定車両を自動生成）
-      const fetchedVehicles = await ensureDefaultVehicle(supabase, userId);
+      // 0004 適用前の DB でも新しい列は既定値で補う
+      const fetchedVehicles = (await ensureDefaultVehicle(supabase, userId)).map(v => normalizeVehicle(v));
       if (fetchId !== fetchCounter.current) return;
 
       clearOutage();
@@ -216,7 +256,7 @@ export function useVehicles() {
       // 最後に同期した一覧があればそれを閲覧専用で表示する（キャッシュは上書きしない）。
       cacheOwnerRef.current = null;
       const cached = readCache<Vehicle[]>(vehiclesCacheKey(userId));
-      const list = Array.isArray(cached) ? cached : [];
+      const list = Array.isArray(cached) ? cached.map(v => normalizeVehicle(v)) : [];
       setVehicles(list);
       if (list.length > 0) applySelection(list);
       else setSelectedVehicleIdState(DEFAULT_VEHICLE.id);
@@ -251,14 +291,19 @@ export function useVehicles() {
     if (readOnly) throw readOnlyError(outage);
   };
 
-  const addVehicle = async (name: string, type: "car" | "bike") => {
+  /**
+   * 車両を追加して選択する。settings（距離の入力方式・既定の燃料種別）は省略可（トリップ / 未指定）。
+   */
+  const addVehicle = async (name: string, type: "car" | "bike", settings?: VehicleSettings) => {
+    const extra = sanitizeVehicleSettings(settings);
     if (!isSignedIn) {
-      const newVehicle: Vehicle = {
+      const newVehicle: Vehicle = normalizeVehicle({
         id: `local-vehicle-${Date.now()}`,
         user_id: "local",
         name,
         type,
-      };
+        ...extra,
+      });
       const updated = [...vehicles, newVehicle];
       setVehicles(updated);
       setSelectedVehicleId(newVehicle.id);
@@ -272,7 +317,7 @@ export function useVehicles() {
     const supabase = getSupabaseClient(userId, getToken);
     const { data, error: insertError, status } = await supabase
       .from("vehicles")
-      .insert({ user_id: userId, name, type })
+      .insert({ user_id: userId, name, type, ...extra })
       .select()
       .single();
 
@@ -282,7 +327,7 @@ export function useVehicles() {
       throw normalizeError(insertError, status);
     }
 
-    const added = data as Vehicle;
+    const added = normalizeVehicle(data as Vehicle);
     setVehicles(prev => [...prev, added]);
     setSelectedVehicleId(added.id);
     return added;
@@ -292,17 +337,22 @@ export function useVehicles() {
    * 車両をまとめて追加する（バックアップの復元用）。選択中の車両は変更しない。
    * 戻り値は items と同じ順序の作成済み車両。
    */
-  const addVehicles = async (items: { name: string; type: "car" | "bike" }[]): Promise<Vehicle[]> => {
+  const addVehicles = async (
+    items: ({ name: string; type: "car" | "bike" } & VehicleSettings)[]
+  ): Promise<Vehicle[]> => {
     if (items.length === 0) return [];
 
     if (!isSignedIn) {
       const base = Date.now();
-      const created: Vehicle[] = items.map((item, i) => ({
-        id: `local-vehicle-${base}-${i}`,
-        user_id: "local",
-        name: item.name,
-        type: item.type,
-      }));
+      const created: Vehicle[] = items.map((item, i) =>
+        normalizeVehicle({
+          id: `local-vehicle-${base}-${i}`,
+          user_id: "local",
+          name: item.name,
+          type: item.type,
+          ...sanitizeVehicleSettings(item),
+        })
+      );
       const updated = [...vehicles, ...created];
       if (typeof window !== "undefined") {
         try {
@@ -325,11 +375,11 @@ export function useVehicles() {
       for (const item of items) {
         const { data, error: insertError, status } = await supabase
           .from("vehicles")
-          .insert({ user_id: userId, name: item.name, type: item.type })
+          .insert({ user_id: userId, name: item.name, type: item.type, ...sanitizeVehicleSettings(item) })
           .select()
           .single();
         if (insertError) throw withStatus(insertError, status);
-        created.push(data as Vehicle);
+        created.push(normalizeVehicle(data as Vehicle));
       }
     } catch (e) {
       const kind = classify((e as { status?: number })?.status, e);
@@ -417,9 +467,14 @@ export function useVehicles() {
     }
   };
 
-  const updateVehicle = async (id: string, name: string, type: "car" | "bike") => {
+  /**
+   * 車両の名前・種別を更新する。settings を渡すと距離の入力方式・既定の燃料種別も同じ 1 回の更新で保存する
+   * （省略したキーは変更しない）。方式を切り替えても既存の記録は変更しない（表示は読み取り時に再計算される）。
+   */
+  const updateVehicle = async (id: string, name: string, type: "car" | "bike", settings?: VehicleSettings) => {
+    const extra = sanitizeVehicleSettings(settings);
     if (!isSignedIn) {
-      const updated = vehicles.map(v => v.id === id ? { ...v, name, type } : v);
+      const updated = vehicles.map(v => (v.id === id ? normalizeVehicle({ ...v, name, type, ...extra }) : v));
       setVehicles(updated);
       if (typeof window !== "undefined") {
         localStorage.setItem(LOCAL_VEHICLES_KEY, JSON.stringify(updated));
@@ -432,12 +487,12 @@ export function useVehicles() {
       const supabase = getSupabaseClient(userId, getToken);
       const { error: updateError, status } = await supabase
         .from("vehicles")
-        .update({ name, type })
+        .update({ name, type, ...extra })
         .eq("id", id);
 
       if (updateError) throw withStatus(updateError, status);
 
-      setVehicles(prev => prev.map(v => v.id === id ? { ...v, name, type } : v));
+      setVehicles(prev => prev.map(v => (v.id === id ? normalizeVehicle({ ...v, name, type, ...extra }) : v)));
     } catch (e) {
       const kind = classify((e as { status?: number })?.status, e);
       if (kind) setOutage(kind);

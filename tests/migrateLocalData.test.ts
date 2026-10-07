@@ -513,3 +513,67 @@ describe("ensureDefaultVehicle", () => {
     await expect(ensureDefaultVehicle(client, nextUser())).rejects.toMatchObject({ message: "paused", status: 540 });
   });
 });
+
+describe("migrateLocalData — fill chain columns (0004)", () => {
+  it("sends the new record / vehicle columns only when they hold valid values", async () => {
+    localStorageStub.setItem(
+      LOCAL_VEHICLES_KEY,
+      JSON.stringify([
+        { id: LOCAL_DEFAULT_VEHICLE_ID, name: "メインカー", type: "car", distance_mode: "odometer", default_fuel_type: "premium" },
+        { id: "local-vehicle-1", name: "バイク", type: "bike", distance_mode: "gps", default_fuel_type: null },
+      ])
+    );
+    localStorageStub.setItem(
+      LOCAL_RECORDS_KEY,
+      JSON.stringify([
+        {
+          date: "2026-09-01",
+          vehicle_id: LOCAL_DEFAULT_VEHICLE_ID,
+          fuel_amount: 10,
+          odometer: 12345.6,
+          is_full: false,
+          missed_previous: true,
+          fuel_type: "premium",
+          memo: "  旅行  ",
+          created_at: "2026-09-01T10:00:00.000Z",
+        },
+        // 旧データ（新しい列なし）と不正な値: キーを送らず列の既定値に任せる
+        {
+          date: "2026-09-02",
+          vehicle_id: "local-vehicle-1",
+          fuel_amount: 5,
+          odometer: -1,
+          is_full: "no",
+          fuel_type: "gasoline",
+          memo: "   ",
+          created_at: "2026-09-02T10:00:00.000Z",
+        },
+      ])
+    );
+
+    const { handler, insertedVehicles, insertedRecords } = cloudEmptyHandler();
+    const { client, queries } = makeSupabase(handler);
+    const userId = nextUser();
+    await migrateLocalData(client, userId);
+
+    // 既定車両（ローカルの default-car を種に作成）には設定を引き継ぐ。不正な distance_mode は送らない
+    expect(insertedVehicles[0]).toMatchObject({ name: "メインカー", distance_mode: "odometer", default_fuel_type: "premium" });
+    expect(insertedVehicles[1]).toMatchObject({ name: "バイク", type: "bike" });
+    expect(insertedVehicles[1]).not.toHaveProperty("distance_mode");
+    expect(insertedVehicles[1]).not.toHaveProperty("default_fuel_type");
+
+    expect(insertedRecords[0]).toMatchObject({
+      odometer: 12345.6,
+      is_full: false,
+      missed_previous: true,
+      fuel_type: "premium",
+      memo: "旅行",
+    });
+    for (const key of ["odometer", "is_full", "missed_previous", "fuel_type", "memo"]) {
+      expect(insertedRecords[1]).not.toHaveProperty(key);
+    }
+    // キーの無い行に null ではなく列の既定値が入るよう defaultToNull: false で送る
+    const recordInsert = queries.find((q) => q.table === "fuel_records")!;
+    expect(op(recordInsert, "insert")!.args[1]).toEqual({ defaultToNull: false });
+  });
+});

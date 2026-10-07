@@ -2,6 +2,7 @@ import { GoogleGenAI, Type, type Schema } from "@google/genai";
 import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import {
+  FUEL_TYPES,
   MAX_BODY_BYTES,
   derivePricePerUnit,
   hasAnyCoreValue,
@@ -103,6 +104,7 @@ const USER_PROMPT = [
   "  トリップメーターが写っていない・判別できない場合は null にしてください（オドメーターで代用しないこと）。",
   "- odometer: オドメーター（ODO、積算距離）の値（km）。写っていれば。なければ null。",
   "- gas_station: 店舗名またはブランド名。なければ null。",
+  "- fuel_type: レシートの油種。レギュラー→regular、ハイオク→premium、軽油→diesel、それ以外→other、判別できなければ null。",
   "- confidence: 各項目の読み取り確信度（0〜1）。",
   "",
   "読み取れない項目は推測せず null にしてください。",
@@ -134,6 +136,13 @@ const RESPONSE_SCHEMA: Schema = {
       nullable: true,
       description: "店舗名またはブランド名",
     },
+    fuel_type: {
+      type: Type.STRING,
+      nullable: true,
+      enum: [...FUEL_TYPES],
+      description:
+        "レシートの油種。レギュラー→regular、ハイオク→premium、軽油→diesel、それ以外→other、不明→null",
+    },
     confidence: {
       type: Type.OBJECT,
       nullable: true,
@@ -146,10 +155,20 @@ const RESPONSE_SCHEMA: Schema = {
         total_distance: confidenceNumber,
         odometer: confidenceNumber,
         gas_station: confidenceNumber,
+        fuel_type: confidenceNumber,
       },
     },
   },
-  required: ["date", "fuel_amount", "total_cost", "price_per_unit", "total_distance", "odometer", "gas_station"],
+  required: [
+    "date",
+    "fuel_amount",
+    "total_cost",
+    "price_per_unit",
+    "total_distance",
+    "odometer",
+    "gas_station",
+    "fuel_type",
+  ],
   propertyOrdering: [
     "date",
     "fuel_amount",
@@ -158,6 +177,7 @@ const RESPONSE_SCHEMA: Schema = {
     "total_distance",
     "odometer",
     "gas_station",
+    "fuel_type",
     "confidence",
   ],
 };

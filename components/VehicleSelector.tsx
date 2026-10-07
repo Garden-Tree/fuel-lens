@@ -2,16 +2,16 @@
 
 import { useState } from "react";
 import { Car, Bike, Settings } from "lucide-react";
-import { Vehicle } from "@/lib/useVehicles";
+import type { Vehicle, VehicleSettings } from "@/lib/useVehicles";
 import ManageVehiclesModal from "./ManageVehiclesModal";
 
 interface VehicleSelectorProps {
   vehicles: Vehicle[];
   selectedVehicleId: string;
   onSelect: (id: string) => void;
-  onAddVehicle: (name: string, type: "car" | "bike") => Promise<Vehicle>;
+  onAddVehicle: (name: string, type: "car" | "bike", settings?: VehicleSettings) => Promise<Vehicle>;
   onDeleteVehicle: (id: string) => Promise<void>;
-  onUpdateVehicle: (id: string, name: string, type: "car" | "bike") => Promise<void>;
+  onUpdateVehicle: (id: string, name: string, type: "car" | "bike", settings?: VehicleSettings) => Promise<void>;
   /** 閲覧専用（クラウド障害中）。車両の追加・編集・削除を無効化する（切り替えは可能） */
   readOnly?: boolean;
   className?: string;
@@ -79,8 +79,8 @@ export default function VehicleSelector({
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
         vehicles={vehicles}
-        onAdd={async (name, type) => {
-          return await onAddVehicle(name, type);
+        onAdd={async (name, type, settings) => {
+          return await onAddVehicle(name, type, settings);
         }}
         onDelete={async (id) => {
           await onDeleteVehicle(id);

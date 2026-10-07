@@ -7,7 +7,8 @@ supabase/
 ├── migrations/
 │   ├── 0001_schema_and_rls.sql                  # users / vehicles / fuel_records + RLS ポリシー
 │   ├── 0002_keepalive.sql                       # keepalive テーブル + keepalive_ping() 関数
-│   └── 0003_fuel_records_vehicle_ownership.sql  # fuel_records の insert/update ポリシー強化（適用済み DB 向け）
+│   ├── 0003_fuel_records_vehicle_ownership.sql  # fuel_records の insert/update ポリシー強化（適用済み DB 向け）
+│   └── 0004_fill_chain.sql                      # オドメーター・部分給油・記録漏れ・燃料種別・メモ・車両の距離の入力方式
 └── README.md                                    # このファイル
 ```
 
@@ -28,6 +29,7 @@ supabase/
 | `0001_schema_and_rls.sql` | テーブル・インデックス・外部キー・CHECK 制約の作成、RLS の有効化、anon 権限の revoke、12 本のポリシーの作り直し |
 | `0002_keepalive.sql` | `keepalive` テーブル（1 行のみ、ポリシーなし）と `security definer` 関数 `keepalive_ping()`（10 分スロットル） |
 | `0003_fuel_records_vehicle_ownership.sql` | `fuel_records_insert_own` / `fuel_records_update_own` を「`vehicle_id` は null か自分の車両に限る」定義へ更新（`0001` の該当部分と同一） |
+| `0004_fill_chain.sql` | `fuel_records` に `odometer` / `is_full`（既定 true）/ `missed_previous`（既定 false）/ `fuel_type` / `memo`、`vehicles` に `distance_mode`（既定 `'trip'`）/ `default_fuel_type` を追加。CHECK 制約 4 本を `NOT VALID` で追加（仕様は [docs/design-fill-chain.md](../docs/design-fill-chain.md)） |
 
 `0001` は列の型の変更や行の削除は行いませんが、既存のデータ・制約に対して次の変更を行います。
 
@@ -41,11 +43,16 @@ supabase/
 
 `0003` は、`0001` を適用済みの本番 DB にポリシーの強化だけを適用するためのファイルです（新規プロジェクトで実行しても無害）。
 
+`0004` は列の追加と CHECK 制約の追加だけを行い、既存行は書き換えません（既定値は定数なので PostgreSQL 11 以降はテーブルの再書き込みも起きない）。
+既存の記録は「満タン・記録漏れなし・オドメーターなし」、既存の車両は「トリップ」として読まれ、表示も計算も変わりません。
+**アプリが新しい列を送るリリースより前に適用してください**（未適用の DB に新しい列を送ると PostgREST が `PGRST204` で拒否します）。
+
 ### 方法 A: SQL Editor（推奨）
 
 1. Supabase Dashboard → **SQL Editor** → **New query**
 2. `migrations/0001_schema_and_rls.sql` の内容を貼り付けて **Run**
-3. 同様に `migrations/0002_keepalive.sql` → `migrations/0003_fuel_records_vehicle_ownership.sql` を **Run**
+3. 同様に `migrations/0002_keepalive.sql` → `migrations/0003_fuel_records_vehicle_ownership.sql` → `migrations/0004_fill_chain.sql` を **Run**
+   （必ず `0001` → `0002` → `0003` → `0004` の順）
 4. 続けて [2 章](#2-rls-が有効か確認する) の確認とポリシー監査を行う
 
 ### 方法 B: Supabase CLI
@@ -74,6 +81,11 @@ npx supabase db push
 alter table public.vehicles     validate constraint vehicles_type_check;
 alter table public.vehicles     validate constraint vehicles_user_id_fkey;
 alter table public.fuel_records validate constraint fuel_records_user_id_fkey;
+-- 0004
+alter table public.fuel_records validate constraint fuel_records_fuel_type_check;
+alter table public.fuel_records validate constraint fuel_records_memo_length_check;
+alter table public.vehicles     validate constraint vehicles_distance_mode_check;
+alter table public.vehicles     validate constraint vehicles_default_fuel_type_check;
 ```
 
 ---

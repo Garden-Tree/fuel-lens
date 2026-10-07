@@ -9,6 +9,7 @@ import {
   hostFromUrl,
   isAllowedOrigin,
   isValidCalendarDate,
+  normalizeFuelType,
   parseImagePayload,
   plausibilityWarnings,
   sanitizeAIResponse,
@@ -244,6 +245,7 @@ describe("sanitizeAIResponse", () => {
       total_distance: 512,
       odometer: 123456,
       gas_station: "ENEOS 本町",
+      fuel_type: null,
       confidence: { fuel_amount: 0.9, date: 1, gas_station: 0 },
     });
   });
@@ -252,7 +254,16 @@ describe("sanitizeAIResponse", () => {
     const r = sanitizeAIResponse({ fuel_amount: 10, foo: "bar", __proto__: { evil: true }, user_id: "x" });
     expect(r).not.toBeNull();
     expect(Object.keys(r!).sort()).toEqual(
-      ["date", "fuel_amount", "total_cost", "price_per_unit", "total_distance", "odometer", "gas_station"].sort()
+      [
+        "date",
+        "fuel_amount",
+        "total_cost",
+        "price_per_unit",
+        "total_distance",
+        "odometer",
+        "gas_station",
+        "fuel_type",
+      ].sort()
     );
   });
 
@@ -291,6 +302,40 @@ describe("sanitizeAIResponse", () => {
     expect(sanitizeAIResponse({ gas_station: "   " })!.gas_station).toBeNull();
     expect(sanitizeAIResponse({ gas_station: 123 })!.gas_station).toBeNull();
     expect(sanitizeAIResponse({})!.gas_station).toBeNull();
+  });
+
+  it("maps fuel_type strings to the four allowed values", () => {
+    const ft = (v: unknown) => sanitizeAIResponse({ fuel_type: v })!.fuel_type;
+    expect(ft("regular")).toBe("regular");
+    expect(ft("premium")).toBe("premium");
+    expect(ft("diesel")).toBe("diesel");
+    expect(ft("other")).toBe("other");
+    expect(ft("レギュラー")).toBe("regular");
+    expect(ft("レギュラーガソリン")).toBe("regular");
+    expect(ft("ハイオク")).toBe("premium");
+    expect(ft("high-octane")).toBe("premium");
+    expect(ft("軽油")).toBe("diesel");
+    expect(ft("DIESEL")).toBe("diesel");
+    expect(ft("  Premium ")).toBe("premium");
+    expect(ft("LPG")).toBe("other");
+    expect(ft("灯油")).toBe("other");
+  });
+
+  it("maps empty / non-string fuel_type to null", () => {
+    const ft = (v: unknown) => sanitizeAIResponse({ fuel_type: v })!.fuel_type;
+    expect(ft("")).toBeNull();
+    expect(ft("   ")).toBeNull();
+    expect(ft(123)).toBeNull();
+    expect(ft(null)).toBeNull();
+    expect(ft({})).toBeNull();
+    expect(sanitizeAIResponse({})!.fuel_type).toBeNull();
+    expect(normalizeFuelType(undefined)).toBeNull();
+  });
+
+  it("keeps fuel_type confidence and still drops unknown keys", () => {
+    const r = sanitizeAIResponse({ fuel_type: "軽油", fuel_types: "x", confidence: { fuel_type: 0.8 } });
+    expect(r).toMatchObject({ fuel_type: "diesel", confidence: { fuel_type: 0.8 } });
+    expect(r).not.toHaveProperty("fuel_types");
   });
 
   it("clamps confidence to [0, 1], keeps only known fields and omits it when empty", () => {
