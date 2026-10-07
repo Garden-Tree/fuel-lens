@@ -841,6 +841,35 @@ describe("FuelLens CSV", () => {
     });
   });
 
+  it("オドメーターのある記録を含む車両はオドメーター入力方式で作る（無ければトリップ）", () => {
+    const vehicleCsv =
+      "給油日,走行距離(km),給油量(L),単価(円/L),支払総額(円),燃費(km/L),ガソリンスタンド名,オドメーター(km)\n" +
+      '"2024/3/1",,20,170,3400,,"Shell",\n' +
+      '"2024/3/9",,20,170,3400,,"Shell",12300\n';
+    const one = fuelLensCsvToBackup(parseLensOk(vehicleCsv), { vehicleName: "マイカー" });
+    expect(one.vehicles).toEqual([expect.objectContaining({ name: "マイカー", distance_mode: "odometer" })]);
+    const noOdo = fuelLensCsvToBackup(parseLensOk(vehicleCsv.replace(",12300", ",")), { vehicleName: "マイカー" });
+    expect(noOdo.vehicles[0].distance_mode).toBe("trip");
+
+    // 全車両 CSV: 車両ごとに判定する
+    const allCsv = buildRecordsCsv(
+      [
+        record({ id: "o1", date: "2024-01-10", vehicle_id: "v-car", fuel_amount: 30, total_cost: 5000, odometer: 12000 }),
+        record({ id: "o2", date: "2024-01-20", vehicle_id: "v-bike", fuel_amount: 5, total_cost: 800 }),
+      ],
+      new Map(vehicles.map(v => [v.id, v]))
+    );
+    const all = fuelLensCsvToBackup(parseLensOk(allCsv));
+    expect(all.vehicles.map(v => [v.name, v.distance_mode])).toEqual([
+      ["マイカー", "odometer"],
+      ["カブ", "trip"],
+    ]);
+    const restored = parseBackup(JSON.stringify(all));
+    expect(restored.ok).toBe(true);
+    if (!restored.ok) return;
+    expect(restored.backup.vehicles.map(v => v.distance_mode)).toEqual(["odometer", "trip"]);
+  });
+
   it("FuelLens の CSV でなければエラー", () => {
     expect(detectFuelLensCsv("a,b,c\n1,2,3")).toBeNull();
     expect(parseFuelLensCsv("a,b,c\n1,2,3").ok).toBe(false);

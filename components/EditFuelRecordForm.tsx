@@ -3,6 +3,7 @@
 import { useId, useState, type Ref } from "react";
 import { X, Save, Lock, Loader2, ChevronDown } from "lucide-react";
 import {
+  AFTER_MISSED_DISTANCE_NOTE,
   MISSED_PREVIOUS_DISTANCE_NOTE,
   ODOMETER_REQUIRED_MESSAGE,
   countChars,
@@ -70,6 +71,7 @@ export default function EditFuelRecordForm({
     parsed,
     distanceMode,
     previousOdometer,
+    previousOdometerStale,
     efficiencyNote,
     mergedRunCount,
     odometerRequired,
@@ -118,7 +120,10 @@ export default function EditFuelRecordForm({
   // オドメーターモードの「前回から ○○ km」の表示
   const odometerDistanceText = (() => {
     if (draft.missed_previous) return MISSED_PREVIOUS_DISTANCE_NOTE;
-    if (previousOdometer === null) return "前回のオドメーターが無いため区間は計算できません";
+    if (previousOdometer === null) {
+      // 直前の記録漏れで基準が無い（連鎖計算でもこの記録から基準がやり直しになる）か、そもそも前回の記録が無い
+      return previousOdometerStale ? AFTER_MISSED_DISTANCE_NOTE : "前回のオドメーターが無いため区間は計算できません";
+    }
     if (parsed.total_distance !== null) return `前回から ${formatKm(parsed.total_distance)} km（自動計算）`;
     if (parsed.odometer === null) return `前回のオドメーター: ${formatKm(previousOdometer)} km`;
     return `前回（${formatKm(previousOdometer)} km）より大きい値を入力すると区間を計算します`;

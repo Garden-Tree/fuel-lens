@@ -192,15 +192,15 @@ export default function HistoryPage() {
   // フォーム内で日付を変えたときの「前回のオドメーター」（編集中の記録自身は除く）。
   // records は年・月フィルタ前の、この車両（と表示する未分類）の全記録
   const getPreviousOdometer = useCallback(
-    (date: string, excludeRecordId?: string) =>
-      previousOdometer(excludeRecordId ? records.filter(r => r.id !== excludeRecordId) : records, { date }),
+    (date: string, excludeRecordId?: string, odometer?: number | null) =>
+      previousOdometer(excludeRecordId ? records.filter(r => r.id !== excludeRecordId) : records, { date, odometer }),
     [records]
   );
 
   // フォーム内で日付を変えたときの「直前に開いている run」（部分給油の合算用。編集中の記録自身は除く）
   const getOpenRun = useCallback(
-    (date: string, excludeRecordId?: string) =>
-      openRunBefore(excludeRecordId ? records.filter(r => r.id !== excludeRecordId) : records, selectedVehicle, { date }),
+    (date: string, excludeRecordId?: string, odometer?: number | null) =>
+      openRunBefore(excludeRecordId ? records.filter(r => r.id !== excludeRecordId) : records, selectedVehicle, { date, odometer }),
     [records, selectedVehicle]
   );
 
