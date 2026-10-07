@@ -29,6 +29,16 @@ const DISTANCE_MODE_SHORT_LABELS: Readonly<Record<DistanceMode, string>> = {
 const ODOMETER_SWITCH_NOTE =
   "オドメーターが入っていない既存の記録は、区間距離と燃費が「不明」になります（記録は消えません）。";
 
+/** オドメーターからトリップメーターへ戻すときの注意（区間距離はオドメーター差分の導出値で、保存値を使わなくなるため） */
+const TRIP_SWITCH_NOTE =
+  "トリップメーター方式に切り替えると、オドメーターから自動計算していた区間距離は表示されなくなります（走行距離を入力した記録のみ表示）";
+
+/** 既存の車両の方式を from → to に切り替えるときの注意。切り替えないなら null */
+function modeSwitchNote(from: DistanceMode, to: DistanceMode): string | null {
+  if (from === to) return null;
+  return to === "odometer" ? ODOMETER_SWITCH_NOTE : TRIP_SWITCH_NOTE;
+}
+
 /** 距離の入力方式・既定の燃料種別の入力欄（編集行と追加フォームで共通） */
 function VehicleSettingsFields({
   idPrefix,
@@ -37,7 +47,7 @@ function VehicleSettingsFields({
   onModeChange,
   onFuelTypeChange,
   disabled,
-  showOdometerNote,
+  switchNote,
 }: {
   idPrefix: string;
   mode: DistanceMode;
@@ -45,7 +55,8 @@ function VehicleSettingsFields({
   onModeChange: (mode: DistanceMode) => void;
   onFuelTypeChange: (fuelType: FuelType | null) => void;
   disabled?: boolean;
-  showOdometerNote?: boolean;
+  /** 方式を切り替えるときの注意（modeSwitchNote）。null・省略なら出さない */
+  switchNote?: string | null;
 }) {
   const modeLabelId = `${idPrefix}-mode-label`;
   const fuelId = `${idPrefix}-fuel-type`;
@@ -80,9 +91,9 @@ function VehicleSettingsFields({
             );
           })}
         </div>
-        {showOdometerNote && (
+        {switchNote && (
           <p role="status" className="mt-1 text-[11px] text-amber-400">
-            {ODOMETER_SWITCH_NOTE}
+            {switchNote}
           </p>
         )}
       </div>
@@ -387,7 +398,7 @@ export default function ManageVehiclesModal({
                       onModeChange={setEditMode}
                       onFuelTypeChange={setEditFuelType}
                       disabled={updateLoading}
-                      showOdometerNote={editMode === "odometer" && distanceModeOf(v) !== "odometer"}
+                      switchNote={modeSwitchNote(distanceModeOf(v), editMode)}
                     />
                     <div className="flex justify-end gap-2 text-xs font-bold pt-1">
                       <button

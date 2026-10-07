@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useCallback } from "react";
 import Link from "next/link";
 import { SignedIn, SignedOut, SignInButton, UserButton } from "@clerk/nextjs";
 import { ArrowLeft, Trash2, MapPin, Calendar, BarChart3, Edit2, Download, Car } from "lucide-react";
@@ -14,7 +14,15 @@ import { useRecordForm } from "@/lib/useRecordForm";
 import { distanceModeOf, previousOdometer } from "@/lib/fillChain";
 import RecordBadges, { efficiencyNullReason, formatOdometer } from "@/components/RecordBadges";
 import { normalizeDateString } from "@/lib/stats";
-import { buildCsv, downloadTextFile, escapeCsvField, formatCsvNumber, toSafeFilenamePart } from "@/lib/csv";
+import {
+  RECORD_CSV_EXTRA_HEADERS,
+  buildCsv,
+  downloadTextFile,
+  escapeCsvField,
+  formatCsvNumber,
+  formatRecordExtraCsvFields,
+  toSafeFilenamePart,
+} from "@/lib/csv";
 
 /** created_at（ISO 日時）をミリ秒に変換する。欠落・解析不能なら 0（最も古い扱い） */
 function createdAtMs(createdAt: string | null | undefined): number {
@@ -181,11 +189,20 @@ export default function HistoryPage() {
     }
   };
 
+  // フォーム内で日付を変えたときの「前回のオドメーター」（編集中の記録自身は除く）。
+  // records は年・月フィルタ前の、この車両（と表示する未分類）の全記録
+  const getPreviousOdometer = useCallback(
+    (date: string, excludeRecordId?: string) =>
+      previousOdometer(excludeRecordId ? records.filter(r => r.id !== excludeRecordId) : records, { date }),
+    [records]
+  );
+
   const startEditing = (record: FuelRecord) => {
     if (readOnly) return;
     form.reset(record, {
       vehicle: selectedVehicle,
       previousOdometer: previousOdometer(records, { recordId: record.id }),
+      getPreviousOdometer,
     });
     setEditingId(record.id);
     setMovingId(null);
@@ -213,7 +230,22 @@ export default function HistoryPage() {
   const exportToCsv = () => {
     if (sortedRecords.length === 0) return;
 
-    const headers = ["給油日", "走行距離(km)", "給油量(L)", "単価(円/L)", "支払総額(円)", "燃費(km/L)", "ガソリンスタンド名"];
+    // 0004 で追加した列（オドメーター・満タン・記録漏れ・燃料種別・メモ）も書き出し、FuelLens CSV の取り込みで往復できるようにする
+    // （lib/importers/fuellensCsv.ts は車両別 CSV でも追加列を読む）
+    const headers = [
+      "給油日",
+      "走行距離(km)",
+      "給油量(L)",
+      "単価(円/L)",
+      "支払総額(円)",
+      "燃費(km/L)",
+      "ガソリンスタンド名",
+      RECORD_CSV_EXTRA_HEADERS.odometer,
+      RECORD_CSV_EXTRA_HEADERS.isFull,
+      RECORD_CSV_EXTRA_HEADERS.missedPrevious,
+      RECORD_CSV_EXTRA_HEADERS.fuelType,
+      RECORD_CSV_EXTRA_HEADERS.memo,
+    ];
     const rows = sortedRecords.map(rec => [
       escapeCsvField(rec.date),
       formatCsvNumber(rec.total_distance),
@@ -222,6 +254,7 @@ export default function HistoryPage() {
       formatCsvNumber(rec.total_cost),
       formatCsvNumber(rec.fuel_efficiency),
       escapeCsvField(rec.gas_station),
+      ...formatRecordExtraCsvFields(rec),
     ]);
 
     const currentVehicleName = vehicles.find(v => v.id === selectedVehicleId)?.name || "vehicle";

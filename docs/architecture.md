@@ -81,7 +81,7 @@ FuelLens の構成、データの流れ、主要なモジュールの役割を�
 
 | テーブル | 列 | 型 | 既定 | 意味 |
 |---|---|---|---|---|
-| `fuel_records` | `odometer` | numeric null | null | 給油時の積算距離（km）。オドメーターモードの車両では必須入力 |
+| `fuel_records` | `odometer` | numeric null | null | 給油時の積算距離（km）。オドメーターモードの新規手動入力では必須。編集・スキャン保存では未入力可（持ち越し行になる） |
 | `fuel_records` | `is_full` | boolean | `true` | 満タン給油か。`false` は部分給油 |
 | `fuel_records` | `missed_previous` | boolean | `false` | この給油の前に記録し忘れた給油がある。`true` なら連鎖を切る |
 | `fuel_records` | `fuel_type` | text null | null | `regular` / `premium` / `diesel` / `other`。null は未指定 |
@@ -341,8 +341,14 @@ CSV を `lib/importers/` の純粋関数でバックアップ形式（`FuelLensB
 車両ごとに、記録を **日付昇順 → オドメーター昇順 → `created_at` 昇順 → `id`** で並べ（`sortForChain`）、先頭から順に決めます。
 
 - **区間距離**: トリップモードは入力された `total_distance`。オドメーターモードは `odometer − それまでの記録の odometer の最大値`（running max）
-  （基準が無い、`odometer` が null、基準以下のとき（打ち間違いで値が戻った記録。基準は更新しない）は null）。どちらのモードでも `missed_previous` が true なら null（区間が信頼できない）。
-- **燃費**: 直前の満タン給油の次の記録から数えた「走行区間（run）」を単位にします。`missed_previous` の記録や区間距離が null の記録で run は切れ、その記録から新しい run が始まります。
+  （基準が無い、`odometer` が null、基準以下のとき（打ち間違いで値が戻った記録。基準は更新しない）は null）。
+  オドメーターモードで `missed_previous` が true なら null（区間が信頼できない）。基準は `odometer` が基準より大きければ進みます。
+  進められなかった（`odometer` が null か基準以下の）ときは、次に基準を進める記録を先頭扱い（距離 null、基準をその値にする）にします（間の持ち越し行はそのまま持ち越し行）。
+  トリップモードの `missed_previous` の記録は入力した `total_distance` を保持し（編集で消さない）、燃費だけ null にします（run は切れる）。
+- **持ち越し行（carry row）**: オドメーターモードで、`odometer` が null か基準以下のために区間が出せなかった記録（`missed_previous` ではない）。
+  基準が進まないので、次に区間が出た記録の距離に持ち越し行の分も含まれます。そのため持ち越し行は **run を切らず**、燃費は null、給油量は run に積み上げます（部分給油と同じ扱い。満タン給油でも run を閉じない）。
+  例: A(1000 km, 30 L) → B(オドメーターなし, 20 L) → C(1600 km, 20 L) は C が 600 km、600 ÷ (20 + 20) = 15.00。1000 → 1300 → 130 → 1600（各 20 L）は null / 15.00 / null / 7.50。
+- **燃費**: 直前の満タン給油の次の記録から数えた「走行区間（run）」を単位にします。run が切れるのは `missed_previous` の記録と、トリップモードで区間距離が null の記録だけで、その記録から新しい run が始まります（その記録の給油量は次の満タン給油に持ち越さない）。
   - 部分給油（`is_full = false`）: 燃費は null。距離と給油量は run に積み上がり、**次の満タン給油でまとめて計算**します。
   - 満タン給油: run 内のすべての記録で距離と給油量が分かり、Σ給油量 > 0 のとき `Σ距離 / Σ給油量`（小数第 2 位）。それ以外は null。
   - 全件が満タンで記録漏れも無いトリップモードでは、従来の `距離 / 給油量` と一致します。
@@ -354,6 +360,9 @@ CSV を `lib/importers/` の純粋関数でバックアップ形式（`FuelLensB
   UI・統計・CSV・バックアップが見る値は常に導出値です。`lib/stats.ts` の Σkm/ΣL は導出済みの `total_distance` と `fuel_amount` を使い、部分給油も合計に含めます。
 - **書き込み**: フォームは自分の記録について導出できる値（トリップモードの `fuel_efficiency`、単価）を計算して保存します。
   隣の記録の保存値が古くなっても、読み取り時の再計算で正しく表示されるため、DB を追いかけて更新しません。
+- **フォームのオドメーター**: オドメーターモードでオドメーターが必須なのは手動の新規記録だけです（`useRecordForm` の `odometerRequiredFor`）。
+  既存の記録の編集とスキャン結果は未入力でも保存でき、「オドメーターを入力すると区間距離を自動計算します」と注意を出します（保存される区間距離は null で、連鎖計算では持ち越し行）。
+  「前回のオドメーター」は開いたときの日付で渡し、フォーム内で日付を変えたら `getPreviousOdometer`（編集中の記録自身を除いた `previousOdometer`）で取り直します。
 - **互換性**: 既存の記録は `is_full = true`・`missed_previous = false`・`odometer = null` として扱われ、トリップモードの車両の表示と計算は変わりません。
 - **補助関数**: `previousOdometer`（フォームの「前回から ○○ km」表示用に、連鎖計算が基準にするオドメーター（それまでの最大値）を返す）、`normalizeRecord` / `normalizeVehicle`（新しい列の既定値補完）、
   `FUEL_TYPES` / `FUEL_TYPE_LABELS`（燃料種別の一覧と表示名）、`MEMO_MAX_LENGTH`（200）。

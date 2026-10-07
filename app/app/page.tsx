@@ -403,10 +403,18 @@ export default function Home() {
     setPreview(null);
   };
 
+  // フォーム内で日付を変えたときの「前回のオドメーター」（編集中の記録自身は除く）
+  const getPreviousOdometer = useCallback(
+    (date: string, excludeRecordId?: string) =>
+      previousOdometer(excludeRecordId ? records.filter(r => r.id !== excludeRecordId) : records, { date }),
+    [records]
+  );
+
   const startEditing = (record: FuelRecord) => {
     form.reset(record, {
       vehicle: selectedVehicle,
       previousOdometer: previousOdometer(records, { recordId: record.id }),
+      getPreviousOdometer,
     });
     setEditingRecordId(record.id);
     setIsManualEntry(false);
@@ -417,7 +425,7 @@ export default function Home() {
     const today = todayLocalISO();
     form.reset(
       { date: today },
-      { vehicle: selectedVehicle, previousOdometer: previousOdometer(records, { date: today }) }
+      { vehicle: selectedVehicle, previousOdometer: previousOdometer(records, { date: today }), getPreviousOdometer }
     );
     setEditingRecordId(null);
     setIsManualEntry(true);
@@ -878,6 +886,7 @@ export default function Home() {
           imageSrc={scanResult.image}
           vehicle={selectedVehicle}
           previousOdometer={previousOdometer(records, { date: scanResult.data.date ?? todayLocalISO() })}
+          getPreviousOdometer={getPreviousOdometer}
           readOnly={readOnly}
           onSave={handleScanSave}
           onDiscard={handleScanDiscard}

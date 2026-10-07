@@ -184,7 +184,8 @@ describe("applyFillChain — trip mode", () => {
     // 1: 部分 → null / 2: 記録漏れ（満タン）→ null（区間不明）/ 3: 新しい run → 15
     // 4: 記録漏れの部分 → null、run は不明のまま / 5: 4 と同じ run → null / 6: 15
     expect(out.map(r => r.fuel_efficiency)).toEqual([null, null, 15, null, null, 15]);
-    expect(out[1].total_distance).toBe(300); // トリップモードの保存値は残す
+    // トリップモードでは missed_previous の記録も入力した区間距離を保持する（編集で消さない）。燃費だけ null
+    expect(out.map(r => r.total_distance)).toEqual([300, 300, 300, 300, 300, 450]);
   });
 
   it("a null distance in the middle of a run makes the closing full fill unknown", () => {
@@ -217,17 +218,52 @@ describe("applyFillChain — odometer mode", () => {
     expect(out.map(r => r.fuel_efficiency)).toEqual([null, 15.02, 17.99]);
   });
 
-  it("non-positive difference and missing odometers give null distance and break the run (a missing odometer does not lose the base)", () => {
+  it("non-positive difference and missing odometers are carry rows: null distance, but their fuel stays in the run", () => {
     const list = [
       rec({ id: "o1", date: "2026-07-01", odometer: 5000, fuel_amount: 30 }),
-      rec({ id: "o2", date: "2026-07-02", odometer: 5000, fuel_amount: 5 }), // 差 0
-      rec({ id: "o3", date: "2026-07-03", odometer: null, fuel_amount: 20 }), // オドメーターなし
-      rec({ id: "o4", date: "2026-07-04", odometer: 5600, fuel_amount: 30 }), // 直前に無くても基準（最大値 5000）との差
+      rec({ id: "o2", date: "2026-07-02", odometer: 5000, fuel_amount: 5 }), // 差 0 → 持ち越し
+      rec({ id: "o3", date: "2026-07-03", odometer: null, fuel_amount: 20 }), // オドメーターなし → 持ち越し
+      rec({ id: "o4", date: "2026-07-04", odometer: 5600, fuel_amount: 30 }), // 基準（最大値 5000）との差 600
       rec({ id: "o5", date: "2026-07-05", odometer: 6000, fuel_amount: 20 }),
     ];
     const out = applyFillChain(list, ODO);
     expect(distById(out)).toEqual({ o1: null, o2: null, o3: null, o4: 600, o5: 400 });
-    expect(effById(out)).toEqual({ o1: null, o2: null, o3: null, o4: 20, o5: 20 });
+    // o4: 600 ÷ (5 + 20 + 30) = 10.91（持ち越し行の給油量も含める）。o5 は新しい run
+    expect(effById(out)).toEqual({ o1: null, o2: null, o3: null, o4: 10.91, o5: 20 });
+  });
+
+  it("spec example: A(1000 km, 30 L) → B(no odometer, 20 L) → C(1600 km, 20 L) gives C 600 km and 15.00", () => {
+    const list = [
+      rec({ id: "A", date: "2026-07-10", odometer: 1000, fuel_amount: 30 }),
+      rec({ id: "B", date: "2026-07-11", odometer: null, fuel_amount: 20 }),
+      rec({ id: "C", date: "2026-07-12", odometer: 1600, fuel_amount: 20 }),
+    ];
+    const out = applyFillChain(list, ODO);
+    expect(distById(out)).toEqual({ A: null, B: null, C: 600 });
+    expect(effById(out)).toEqual({ A: null, B: null, C: 15 });
+  });
+
+  it("a carry row with unknown fuel makes the closing full fill unknown", () => {
+    const list = [
+      rec({ id: "x1", date: "2026-07-10", odometer: 1000, fuel_amount: 30 }),
+      rec({ id: "x2", date: "2026-07-11", odometer: null, fuel_amount: null }),
+      rec({ id: "x3", date: "2026-07-12", odometer: 1600, fuel_amount: 20 }),
+      rec({ id: "x4", date: "2026-07-13", odometer: 1900, fuel_amount: 20 }),
+    ];
+    expect(effById(applyFillChain(list, ODO))).toEqual({ x1: null, x2: null, x3: null, x4: 15 });
+  });
+
+  it("carry rows combine with partial fills in the same run", () => {
+    const list = [
+      rec({ id: "y1", date: "2026-07-20", odometer: 2000, fuel_amount: 40 }),
+      rec({ id: "y2", date: "2026-07-21", odometer: 2300, fuel_amount: 10, is_full: false }),
+      rec({ id: "y3", date: "2026-07-22", odometer: null, fuel_amount: 10 }),
+      rec({ id: "y4", date: "2026-07-23", odometer: 2800, fuel_amount: 20 }),
+    ];
+    const out = applyFillChain(list, ODO);
+    expect(distById(out)).toEqual({ y1: null, y2: 300, y3: null, y4: 500 });
+    // (300 + 500) ÷ (10 + 10 + 20) = 20
+    expect(effById(out)).toEqual({ y1: null, y2: null, y3: null, y4: 20 });
   });
 
   it("missed_previous nulls the distance even when odometers are known", () => {
@@ -241,7 +277,7 @@ describe("applyFillChain — odometer mode", () => {
     expect(effById(out)).toEqual({ m1: null, m2: null, m3: 15 });
   });
 
-  it("a decreased odometer does not move the base: 1000 → 1300 → 130 → 1600 gives null / 300 / null / 300", () => {
+  it("a decreased odometer does not move the base: 1000 → 1300 → 130 → 1600 gives null / 300 / null / 300 (15.00 / 7.50)", () => {
     const list = [
       rec({ id: "d1", date: "2026-10-01", odometer: 1000, fuel_amount: 20 }),
       rec({ id: "d2", date: "2026-10-02", odometer: 1300, fuel_amount: 20 }),
@@ -250,7 +286,8 @@ describe("applyFillChain — odometer mode", () => {
     ];
     const out = applyFillChain(list, ODO);
     expect(distById(out)).toEqual({ d1: null, d2: 300, d3: null, d4: 300 });
-    expect(effById(out)).toEqual({ d1: null, d2: 15, d3: null, d4: 15 });
+    // d3 は持ち越し行: 給油量 20 L は d4 の run に入る → 300 ÷ (20 + 20) = 7.50
+    expect(effById(out)).toEqual({ d1: null, d2: 15, d3: null, d4: 7.5 });
   });
 
   it("missed_previous with a higher odometer still advances the base (distance stays null)", () => {
@@ -266,6 +303,73 @@ describe("applyFillChain — odometer mode", () => {
       rec({ id: "f2", date: "2026-10-02", odometer: 800, fuel_amount: 20 }),
     ];
     expect(distById(applyFillChain(first, ODO))).toEqual({ f1: null, f2: 300 });
+  });
+
+  it("missed_previous restarts the run from itself; its fuel is not carried into the next full fill", () => {
+    const list = [
+      rec({ id: "n1", date: "2026-10-01", odometer: 1000, fuel_amount: 20 }),
+      rec({ id: "n2", date: "2026-10-02", odometer: null, fuel_amount: 10 }), // 持ち越し（n3 で run が切れて捨てられる）
+      rec({ id: "n3", date: "2026-10-03", odometer: 1600, fuel_amount: 20, missed_previous: true }),
+      rec({ id: "n4", date: "2026-10-04", odometer: 1900, fuel_amount: 20 }),
+    ];
+    const out = applyFillChain(list, ODO);
+    expect(distById(out)).toEqual({ n1: null, n2: null, n3: null, n4: 300 });
+    expect(effById(out)).toEqual({ n1: null, n2: null, n3: null, n4: 15 });
+
+    // 記録漏れの部分給油: その記録から始まる run は不明なので、次の満タン給油も null
+    const partial = [
+      rec({ id: "w1", date: "2026-10-01", odometer: 1000, fuel_amount: 20 }),
+      rec({ id: "w2", date: "2026-10-02", odometer: 1600, fuel_amount: 10, missed_previous: true, is_full: false }),
+      rec({ id: "w3", date: "2026-10-03", odometer: 1900, fuel_amount: 20 }),
+      rec({ id: "w4", date: "2026-10-04", odometer: 2200, fuel_amount: 20 }),
+    ];
+    expect(effById(applyFillChain(partial, ODO))).toEqual({ w1: null, w2: null, w3: null, w4: 15 });
+  });
+
+  it("missed_previous rows are never carry rows; one that cannot advance the base makes the next record a first record", () => {
+    const list = [
+      rec({ id: "z1", date: "2026-10-01", odometer: 1000, fuel_amount: 20 }),
+      rec({ id: "z2", date: "2026-10-02", odometer: 900, fuel_amount: 50, missed_previous: true }),
+      rec({ id: "z3", date: "2026-10-03", odometer: 1300, fuel_amount: 20 }),
+      rec({ id: "z4", date: "2026-10-04", odometer: 1600, fuel_amount: 20 }),
+    ];
+    const out = applyFillChain(list, ODO);
+    // z3 は先頭扱い（距離 null、基準 1300）。z2 の 50 L はどこの run にも入らない
+    expect(distById(out)).toEqual({ z1: null, z2: null, z3: null, z4: 300 });
+    expect(effById(out)).toEqual({ z1: null, z2: null, z3: null, z4: 15 });
+  });
+
+  it.each([
+    ["no odometer", null, null],
+    ["an odometer below the base", 900, null],
+    ["an odometer above the base (advances it: unchanged behaviour)", 1300, 300],
+  ])("A(1000) → M(missed, %s) → C(1600): C distance", (_label, mOdo, expected) => {
+    const list = [
+      rec({ id: "A", date: "2026-10-01", odometer: 1000, fuel_amount: 20 }),
+      rec({ id: "M", date: "2026-10-02", odometer: mOdo, fuel_amount: 20, missed_previous: true }),
+      rec({ id: "C", date: "2026-10-03", odometer: 1600, fuel_amount: 20 }),
+    ];
+    const out = applyFillChain(list, ODO);
+    expect(distById(out)).toEqual({ A: null, M: null, C: expected });
+    expect(effById(out).C).toBe(expected === null ? null : 15);
+  });
+
+  it("the stale base survives carry rows until a record advances it", () => {
+    const list = [
+      rec({ id: "s1", date: "2026-10-01", odometer: 1000, fuel_amount: 20 }),
+      rec({ id: "s2", date: "2026-10-02", odometer: null, fuel_amount: 20, missed_previous: true }),
+      rec({ id: "s3", date: "2026-10-03", odometer: null, fuel_amount: 20 }), // 持ち越し行
+      rec({ id: "s4", date: "2026-10-04", odometer: 1600, fuel_amount: 20 }), // 先頭扱い
+      rec({ id: "s5", date: "2026-10-05", odometer: 1900, fuel_amount: 20 }),
+    ];
+    const out = applyFillChain(list, ODO);
+    expect(distById(out)).toEqual({ s1: null, s2: null, s3: null, s4: null, s5: 300 });
+    expect(effById(out)).toEqual({ s1: null, s2: null, s3: null, s4: null, s5: 15 });
+    // フォームの「前回のオドメーター」も同じく、基準が進むまでは無い
+    expect(previousOdometer(list, { recordId: "s3" })).toBeNull();
+    expect(previousOdometer(list, { recordId: "s4" })).toBeNull();
+    expect(previousOdometer(list, { recordId: "s5" })).toBe(1600);
+    expect(previousOdometer(list.slice(0, 3), { date: "2026-10-30" })).toBeNull();
   });
 
   it("partial fills accumulate odometer distances", () => {

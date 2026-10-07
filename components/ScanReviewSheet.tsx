@@ -3,7 +3,14 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, ScanLine } from "lucide-react";
 import type { AnalyzeSuccessResponse, ConfidenceField } from "@/lib/analyze";
-import { useRecordForm, todayLocalISO, type DraftField, type RecordInput } from "@/lib/useRecordForm";
+import {
+  useRecordForm,
+  todayLocalISO,
+  visibleScanWarnings,
+  type DraftField,
+  type RecordFormContext,
+  type RecordInput,
+} from "@/lib/useRecordForm";
 import { distanceModeOf } from "@/lib/fillChain";
 import type { Vehicle } from "@/lib/useVehicles";
 import { useBackdropClose } from "@/lib/useBackdropClose";
@@ -23,6 +30,8 @@ interface Props {
   vehicle?: Pick<Vehicle, "distance_mode" | "default_fuel_type"> | null;
   /** 連鎖計算で直前になる記録のオドメーター（オドメーターモードの「前回から ○○ km」に使う） */
   previousOdometer?: number | null;
+  /** 確認シートで日付を直したときに、その日付での前回のオドメーターを返す（lib/fillChain.ts の previousOdometer） */
+  getPreviousOdometer?: RecordFormContext["getPreviousOdometer"];
   /** 閲覧専用（クラウド障害中）なら保存を無効化する */
   readOnly?: boolean;
   /**
@@ -44,13 +53,16 @@ export default function ScanReviewSheet({
   imageSrc,
   vehicle = null,
   previousOdometer = null,
+  getPreviousOdometer,
   readOnly = false,
   onSave,
   onDiscard,
 }: Props) {
   const mode = distanceModeOf(vehicle);
   // オドメーターモードでは読み取ったオドメーターを主入力に入れる（トリップモードでは参考表示のみで保存しない）。
-  // 燃料種別が読めなければ車両の既定値になる（useRecordForm の recordToDraft）
+  // 燃料種別が読めなければ車両の既定値になる（useRecordForm の recordToDraft）。
+  // スキャン結果はオドメーター未入力でも保存できる（odometerOptional。メーターが写っていない・読めないことがあるため）。
+  // 未入力なら注意を出し、区間距離は null のまま保存する（連鎖計算では持ち越し行として次の区間にまとめて計算される）
   const form = useRecordForm(
     {
       date: result.date ?? todayLocalISO(),
@@ -62,7 +74,7 @@ export default function ScanReviewSheet({
       price_per_unit: result.price_per_unit,
       fuel_type: result.fuel_type,
     },
-    { vehicle, previousOdometer }
+    { vehicle, previousOdometer, getPreviousOdometer, odometerOptional: true }
   );
 
   const [saving, setSaving] = useState(false);
@@ -88,7 +100,8 @@ export default function ScanReviewSheet({
     return h;
   }, [result, mode]);
 
-  const warnings = Array.isArray(result.warnings) ? result.warnings : [];
+  // オドメーターモードでは、区間距離（トリップメーター）の読み取り値についての注意は出さない（保存に使わないため）
+  const warnings = visibleScanWarnings(result.warnings, mode);
 
   // 先頭の入力欄へフォーカスし、シート内でフォーカスを循環させる（背面の車両タブ等へ Tab で出られないように）。
   // 閉じたら開く前にフォーカスされていた要素へ戻す

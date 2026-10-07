@@ -59,8 +59,19 @@ export default function EditFuelRecordForm({
   firstFieldRef,
 }: Props) {
   const uid = useId();
-  const { draft, setField, errors, metrics, pricePerUnitDisplay, parsed, distanceMode, previousOdometer, efficiencyNote } =
-    form;
+  const {
+    draft,
+    setField,
+    errors,
+    metrics,
+    pricePerUnitDisplay,
+    parsed,
+    distanceMode,
+    previousOdometer,
+    efficiencyNote,
+    odometerRequired,
+    odometerHint,
+  } = form;
   const idFor = (field: DraftField) => `${uid}-${field}`;
   const errorIdFor = (field: DraftField) => `${uid}-${field}-error`;
   const inputsDisabled = disabled || saving;
@@ -72,8 +83,10 @@ export default function EditFuelRecordForm({
   const showDetails = detailsOpen || !!errors.memo;
   const detailsId = `${uid}-details`;
 
-  // オドメーターモードで未入力のときは「必須」の案内（赤いエラーではなく注意表示）にする
+  // オドメーターモードで未入力のときは「必須」の案内（赤いエラーではなく注意表示）にする。
+  // 必須なのは手動の新規記録だけ。編集・スキャン結果では odometerHint（保存はできる）を出す（useRecordForm の odometerRequiredFor）
   const odometerMissing = errors.odometer === ODOMETER_REQUIRED_MESSAGE;
+  const odometerHintId = `${uid}-odometer-hint`;
 
   const renderLabel = (field: DraftField, text: string, extra?: React.ReactNode) => (
     <label htmlFor={idFor(field)} className="text-xs text-gray-500 block mb-1">
@@ -186,13 +199,15 @@ export default function EditFuelRecordForm({
               value={draft.odometer}
               disabled={inputsDisabled}
               onChange={(e) => setField("odometer", e.target.value)}
-              aria-required="true"
+              aria-required={odometerRequired ? "true" : undefined}
               className={inputClass({
                 error: odometerMissing ? undefined : errors.odometer,
-                highlight: odometerMissing || highlightFields?.odometer,
+                highlight: odometerMissing || !!odometerHint || highlightFields?.odometer,
               })}
               aria-invalid={errors.odometer && !odometerMissing ? true : undefined}
-              aria-describedby={`${errors.odometer ? `${errorIdFor("odometer")} ` : ""}${uid}-odometer-distance`}
+              aria-describedby={`${errors.odometer ? `${errorIdFor("odometer")} ` : ""}${
+                odometerHint ? `${odometerHintId} ` : ""
+              }${uid}-odometer-distance`}
             />
             {errors.odometer &&
               (odometerMissing ? (
@@ -202,6 +217,11 @@ export default function EditFuelRecordForm({
               ) : (
                 renderError("odometer")
               ))}
+            {odometerHint && (
+              <p id={odometerHintId} className="mt-1 text-[11px] text-amber-400">
+                {odometerHint}
+              </p>
+            )}
             <p id={`${uid}-odometer-distance`} className="mt-1 text-[11px] text-gray-400" aria-live="polite">
               {odometerDistanceText}
             </p>

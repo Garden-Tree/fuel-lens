@@ -17,7 +17,11 @@ import {
  * 給油記録の入力フォーム状態を一元管理するフック。
  *
  * - 数値・文字の入力値は文字列のまま保持する（"4." や "4.78" のような途中入力で小数点が消えないようにするため）
- * - 検証（0 以上・有限の数値、メモの文字数、オドメーターモードのオドメーター必須）とエラー文言を提供する
+ * - 検証（0 以上・有限の数値、メモの文字数、オドメーターモードのオドメーター必須）とエラー文言を提供する。
+ *   オドメーターが必須なのは「手動で新規に記録するとき」だけ（odometerRequiredFor を参照）。
+ *   既存の記録の編集とスキャン結果では未入力でも保存でき、注意表示（ODOMETER_OPTIONAL_HINT）を出す。
+ *   オドメーターの無い記録は連鎖計算で「持ち越し行」になり、区間距離は null のまま次の区間にまとめて計算される
+ * - 前回のオドメーターは、フォーム内で日付を変えたら getPreviousOdometer で取り直す（resolvePreviousOdometer）
  * - 単価・燃費は calculateFuelMetrics で派生させ、入力に追従してライブ更新する
  * - 車両の距離の入力方式（コンテキスト）に応じて区間距離を決める:
  *   トリップモードは入力値、オドメーターモードは「オドメーター − 前回のオドメーター」（docs/design-fill-chain.md 4 章）
@@ -49,12 +53,31 @@ export type RecordInput = Omit<FuelRecord, "id" | "vehicle_id" | "created_at">;
 /**
  * フォームの前提となる車両の情報。
  * - vehicle: 記録の車両。distance_mode で入力方式を、default_fuel_type で新規記録の燃料種別の初期値を決める。省略はトリップモード
- * - previousOdometer: 連鎖計算で直前になる記録のオドメーター（lib/fillChain.ts の previousOdometer）。オドメーターモードでのみ使う
+ * - previousOdometer: 連鎖計算で直前になる記録のオドメーター（lib/fillChain.ts の previousOdometer）。オドメーターモードでのみ使う。
+ *   フォームを開いたときの日付での値
+ * - getPreviousOdometer: フォーム内で日付を変えたときに、その日付での前回のオドメーターを返す関数。
+ *   excludeRecordId は編集中の記録の ID（自分自身を前回として数えないため）。省略時は previousOdometer を使い続ける
+ * - odometerOptional: 新規でもオドメーター未入力の保存を許す（スキャン結果。メーターが写っていない・読めないことがあるため）
  */
 export type RecordFormContext = {
   vehicle?: Pick<Vehicle, "distance_mode" | "default_fuel_type"> | null;
   previousOdometer?: number | null;
+  getPreviousOdometer?: (date: string, excludeRecordId?: string) => number | null;
+  odometerOptional?: boolean;
 };
+
+/** フォームで編集している記録の位置（オドメーター必須の判定と、日付変更時の前回のオドメーターの取り直しに使う） */
+export type RecordFormTarget = {
+  /** 既存の記録の ID。新規（手動入力・スキャン結果）なら null */
+  recordId: string | null;
+  /** フォームを開いたときの日付（previousOdometer はこの日付での値） */
+  initialDate: string;
+};
+
+/** 記録（の部分オブジェクト）からフォームの対象を作る */
+export function formTargetOf(record?: Partial<FuelRecord> | null): RecordFormTarget {
+  return { recordId: record?.id ? record.id : null, initialDate: record?.date ?? "" };
+}
 
 /** 部分給油のときの燃費欄の説明 */
 export const PARTIAL_FILL_EFFICIENCY_NOTE = "次の満タン給油でまとめて計算";
@@ -167,15 +190,58 @@ function resolveContext(context?: RecordFormContext | null): ResolvedContext {
   };
 }
 
-/** オドメーターモードでオドメーターが空のときのエラー文言 */
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+/**
+ * 現在の日付での「前回のオドメーター」。
+ * 日付が開いたときのまま（または不正・空）なら context.previousOdometer を使う。日付を変えていて
+ * getPreviousOdometer があれば、その日付で取り直す（編集中の記録自身は除く）。
+ * 開いたときの日付では、編集時の値（連鎖順でその記録の直前。同じ日付の記録もオドメーター順に考慮済み）の方が正確なので取り直さない。
+ */
+export function resolvePreviousOdometer(
+  context: RecordFormContext | null | undefined,
+  date: string,
+  target: RecordFormTarget
+): number | null {
+  const d = date.trim();
+  if (context?.getPreviousOdometer && DATE_RE.test(d) && d !== target.initialDate) {
+    return sanitizeOdometer(context.getPreviousOdometer(d, target.recordId ?? undefined));
+  }
+  return sanitizeOdometer(context?.previousOdometer);
+}
+
+/**
+ * オドメーターが必須か。オドメーターモードで、手動で新規に記録するとき（記録 ID なし・odometerOptional でない）だけ必須。
+ * - 既存の記録の編集: 任意。オドメーター導入前の記録やトリップモードから切り替えた車両の記録を、
+ *   オドメーターを調べ直さなくても編集・保存できるようにする（区間距離は null のまま。連鎖計算では持ち越し行）
+ * - スキャン結果: 任意（メーターが写っていない・読めないことがある）。未入力なら注意を出して保存を許す
+ */
+export function odometerRequiredFor(
+  context: RecordFormContext | null | undefined,
+  target: Pick<RecordFormTarget, "recordId">
+): boolean {
+  return distanceModeOf(context?.vehicle) === "odometer" && target.recordId === null && context?.odometerOptional !== true;
+}
+
+/** オドメーターモードでオドメーターが空のときのエラー文言（必須のとき） */
 export const ODOMETER_REQUIRED_MESSAGE = "オドメーターを入力してください";
+/** オドメーターモードでオドメーターが空のときの注意（任意のとき。保存はできる） */
+export const ODOMETER_OPTIONAL_HINT = "オドメーターを入力すると区間距離を自動計算します";
+
+/** 解析オプション */
+export type ParseDraftOptions = {
+  /** オドメーターモードでオドメーターを必須にするか（既定 true。フックでは odometerRequiredFor で決める） */
+  odometerRequired?: boolean;
+};
 
 /** ドラフト全体を解析し、数値と検証エラーをまとめて返す（フック外からも使える純粋関数） */
 export function parseDraft(
   draft: RecordDraft,
-  context?: RecordFormContext | null
+  context?: RecordFormContext | null,
+  options?: ParseDraftOptions
 ): { parsed: ParsedDraft; errors: RecordFormErrors } {
   const { mode, previousOdometer } = resolveContext(context);
+  const odometerRequired = options?.odometerRequired !== false;
   const errors: RecordFormErrors = {};
   const fuel = parseDraftNumber(draft.fuel_amount);
   const cost = parseDraftNumber(draft.total_cost);
@@ -188,7 +254,7 @@ export function parseDraft(
     if (dist.error) errors.total_distance = dist.error;
   } else if (odo.error) {
     errors.odometer = odo.error;
-  } else if (odo.value === null) {
+  } else if (odo.value === null && odometerRequired) {
     errors.odometer = ODOMETER_REQUIRED_MESSAGE;
   }
 
@@ -196,7 +262,7 @@ export function parseDraft(
   if (date === "") {
     // 空のまま保存すると（編集時に）記録の日付が黙って今日に変わってしまうため、必須にする
     errors.date = "日付を入力してください";
-  } else if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+  } else if (!DATE_RE.test(date)) {
     errors.date = "日付の形式が正しくありません";
   }
 
@@ -221,6 +287,21 @@ export function parseDraft(
     },
     errors,
   };
+}
+
+/** 区間距離（トリップメーター）の読み取り値についての注意か（「走行距離」「トリップ」を含む） */
+const DISTANCE_WARNING_RE = /走行距離|トリップ/;
+
+/**
+ * スキャン結果の確認シートに出す注意（/api/analyze の warnings）。
+ * オドメーターモードの車両では、区間距離（トリップメーター）の読み取り値は保存に使わない（区間はオドメーターの差分）ので、
+ * 走行距離・トリップメーターに関する注意（走行距離が大きすぎる・走行距離 ÷ 給油量の燃費が非現実的）は出さない。
+ * 文字列以外の要素は捨てる。
+ */
+export function visibleScanWarnings(warnings: unknown, mode: DistanceMode): string[] {
+  if (!Array.isArray(warnings)) return [];
+  const list = warnings.filter((w): w is string => typeof w === "string");
+  return mode === "odometer" ? list.filter((w) => !DISTANCE_WARNING_RE.test(w)) : list;
 }
 
 /**
@@ -249,7 +330,7 @@ export function findDuplicateRecord(
 /**
  * 元の記録から引き継ぐ燃費。`null` は「引き継がない（再計算する）」、`{ value }` は保存値（null を含む）をそのまま使う。
  * 部分給油の後の満タン給油の行（前回の満タンからの距離合計 ÷ 給油量合計）などは、行の距離 ÷ 給油量で
- * 再計算すると値が変わってしまうため、区間距離・オドメーター・給油量・満タン・記録漏れを編集するまでは元の値を保つ。
+ * 再計算すると値が変わってしまうため、日付・区間距離・オドメーター・給油量・満タン・記録漏れを編集するまでは元の値を保つ。
  */
 export type EfficiencyFallback = { value: number | null } | null;
 
@@ -258,8 +339,12 @@ export function efficiencyFallbackOf(record?: Partial<FuelRecord> | null): Effic
   return record && record.fuel_efficiency !== undefined ? { value: record.fuel_efficiency ?? null } : null;
 }
 
-/** 変更したら燃費の引き継ぎを破棄する（燃費の算出元の）入力欄 */
+/**
+ * 変更したら燃費の引き継ぎを破棄する（燃費の算出元の）入力欄。
+ * 日付も含める（連鎖の位置が変わり、オドメーターモードでは前回のオドメーター＝区間距離も変わるため）
+ */
 const EFFICIENCY_SOURCE_FIELDS: ReadonlySet<DraftField> = new Set<DraftField>([
+  "date",
   "fuel_amount",
   "total_distance",
   "odometer",
@@ -310,6 +395,18 @@ export function buildRecordInput(
   };
 }
 
+/**
+ * オドメーター未入力の注意（ODOMETER_OPTIONAL_HINT）を出すか。オドメーターモードで、未入力でもエラーにならない
+ * （編集・スキャン結果）ときだけ。必須のときはエラー文言（ODOMETER_REQUIRED_MESSAGE）の方を出す
+ */
+export function odometerHintOf(
+  mode: DistanceMode,
+  parsed: Pick<ParsedDraft, "odometer">,
+  errors: RecordFormErrors
+): string | null {
+  return mode === "odometer" && parsed.odometer === null && !errors.odometer ? ODOMETER_OPTIONAL_HINT : null;
+}
+
 /** 燃費が null になる理由（部分給油・記録漏れ）の短い説明。それ以外は null */
 export function efficiencyNoteOf(parsed: Pick<ParsedDraft, "is_full" | "missed_previous">): string | null {
   if (!parsed.is_full) return PARTIAL_FILL_EFFICIENCY_NOTE;
@@ -329,8 +426,15 @@ export type UseRecordFormReturn = {
   reset: (record?: Partial<FuelRecord> | null, context?: RecordFormContext | null) => void;
   /** 距離の入力方式（reset で渡した車両の方式） */
   distanceMode: DistanceMode;
-  /** 前回の記録のオドメーター（reset で渡した値。オドメーターモードの区間距離の計算に使う） */
+  /**
+   * 前回の記録のオドメーター（オドメーターモードの区間距離の計算に使う）。
+   * reset で渡した値。フォーム内で日付を変えたら context.getPreviousOdometer で取り直した値
+   */
   previousOdometer: number | null;
+  /** オドメーターが必須か（オドメーターモードの手動の新規記録のみ。odometerRequiredFor） */
+  odometerRequired: boolean;
+  /** オドメーター未入力の注意（必須でないときだけ。ODOMETER_OPTIONAL_HINT）。それ以外は null */
+  odometerHint: string | null;
   /** 数値に変換済みの値（total_distance はオドメーターモードでは導出値） */
   parsed: ParsedDraft;
   /** フィールドごとの検証エラー */
@@ -368,6 +472,8 @@ export function useRecordForm(
 ): UseRecordFormReturn {
   const [draft, setDraft] = useState<RecordDraft>(() => recordToDraft(initial, initialContext));
   const [context, setContext] = useState<RecordFormContext | null>(initialContext ?? null);
+  // 編集中の記録の ID と開いたときの日付（オドメーター必須の判定・日付変更時の前回のオドメーターの取り直し）
+  const [target, setTarget] = useState<RecordFormTarget>(() => formTargetOf(initial));
   // 単価が再計算できないとき（OCR で給油量が読めなかった等）に保持しておく元の単価。
   // 単価の算出元（給油量・支払総額）をユーザーが触った時点で破棄し、以後は再計算値のみを使う
   // （例: 編集中に支払総額を消したのに古い単価が残り、total_cost=null・単価=160 の不整合な行になるのを防ぐ）
@@ -385,12 +491,28 @@ export function useRecordForm(
   const reset = useCallback((record?: Partial<FuelRecord> | null, nextContext?: RecordFormContext | null) => {
     setDraft(recordToDraft(record, nextContext));
     setContext(nextContext ?? null);
+    setTarget(formTargetOf(record));
     setFallbackPrice(record?.price_per_unit ?? null);
     setFallbackEfficiency(efficiencyFallbackOf(record));
   }, []);
 
-  const { parsed, errors } = useMemo(() => parseDraft(draft, context), [draft, context]);
-  const resolved = useMemo(() => resolveContext(context), [context]);
+  // 日付に追従する前回のオドメーター（日付を変えていなければ reset で渡した値）
+  const previousOdometer = useMemo(
+    () => resolvePreviousOdometer(context, draft.date, target),
+    [context, draft.date, target]
+  );
+  // 解析・保存に使うコンテキスト（previousOdometer を現在の日付での値に差し替えたもの）
+  const effectiveContext = useMemo<RecordFormContext>(
+    () => ({ ...context, previousOdometer }),
+    [context, previousOdometer]
+  );
+  const odometerRequired = odometerRequiredFor(context, target);
+  const { parsed, errors } = useMemo(
+    () => parseDraft(draft, effectiveContext, { odometerRequired }),
+    [draft, effectiveContext, odometerRequired]
+  );
+  const distanceMode = distanceModeOf(context?.vehicle);
+  const odometerHint = odometerHintOf(distanceMode, parsed, errors);
 
   const metrics = useMemo(() => {
     const m = calculateFuelMetrics(parsed.total_distance, parsed.fuel_amount, parsed.total_cost);
@@ -406,16 +528,18 @@ export function useRecordForm(
   const pricePerUnitDisplay = metrics.price_per_unit ?? fallbackPrice;
 
   const toRecord = useCallback(
-    (): RecordInput => buildRecordInput(draft, fallbackPrice, fallbackEfficiency, context),
-    [draft, fallbackPrice, fallbackEfficiency, context]
+    (): RecordInput => buildRecordInput(draft, fallbackPrice, fallbackEfficiency, effectiveContext),
+    [draft, fallbackPrice, fallbackEfficiency, effectiveContext]
   );
 
   return {
     draft,
     setField,
     reset,
-    distanceMode: resolved.mode,
-    previousOdometer: resolved.previousOdometer,
+    distanceMode,
+    previousOdometer,
+    odometerRequired,
+    odometerHint,
     parsed,
     errors,
     isValid,

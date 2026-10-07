@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 import type { FuelRecord } from "@/lib/useFuelRecords";
+import { previousOdometer } from "@/lib/fillChain";
+import { plausibilityWarnings } from "@/lib/analyze";
 import {
   MISSED_PREVIOUS_EFFICIENCY_NOTE,
+  ODOMETER_OPTIONAL_HINT,
   ODOMETER_REQUIRED_MESSAGE,
   PARTIAL_FILL_EFFICIENCY_NOTE,
   buildRecordInput,
@@ -10,10 +13,15 @@ import {
   efficiencyFallbackOf,
   efficiencyNoteOf,
   findDuplicateRecord,
+  formTargetOf,
   normalizeNumericInput,
+  odometerHintOf,
+  odometerRequiredFor,
   parseDraft,
   parseDraftNumber,
   recordToDraft,
+  resolvePreviousOdometer,
+  visibleScanWarnings,
   type RecordDraft,
   type RecordFormContext,
 } from "@/lib/useRecordForm";
@@ -322,5 +330,108 @@ describe("efficiencyNoteOf", () => {
     expect(efficiencyNoteOf({ is_full: false, missed_previous: false })).toBe(PARTIAL_FILL_EFFICIENCY_NOTE);
     expect(efficiencyNoteOf({ is_full: true, missed_previous: true })).toBe(MISSED_PREVIOUS_EFFICIENCY_NOTE);
     expect(efficiencyNoteOf({ is_full: true, missed_previous: false })).toBeNull();
+  });
+});
+
+describe("odometer requirement (new manual records only)", () => {
+  const NEW = formTargetOf({ date: "2025-01-05" });
+  const EDIT = formTargetOf(rec({ id: "r9" }));
+
+  it("formTargetOf: records without an id are new", () => {
+    expect(NEW).toEqual({ recordId: null, initialDate: "2025-01-05" });
+    expect(EDIT).toEqual({ recordId: "r9", initialDate: "2025-01-05" });
+    expect(formTargetOf(null)).toEqual({ recordId: null, initialDate: "" });
+  });
+
+  it("is required only for new manual records in odometer mode", () => {
+    expect(odometerRequiredFor({ vehicle: ODO_VEHICLE }, NEW)).toBe(true);
+    expect(odometerRequiredFor({ vehicle: ODO_VEHICLE }, EDIT)).toBe(false); // 既存の記録の編集
+    expect(odometerRequiredFor({ vehicle: ODO_VEHICLE, odometerOptional: true }, NEW)).toBe(false); // スキャン結果
+    expect(odometerRequiredFor({ vehicle: TRIP_VEHICLE }, NEW)).toBe(false);
+    expect(odometerRequiredFor(null, NEW)).toBe(false);
+  });
+
+  it("an optional odometer may be empty: no error, null distance, and an amber hint instead", () => {
+    const ctx = { vehicle: ODO_VEHICLE, previousOdometer: 12000 };
+    const { parsed, errors } = parseDraft(draft(), ctx, { odometerRequired: false });
+    expect(errors).toEqual({});
+    expect(parsed.odometer).toBeNull();
+    expect(parsed.total_distance).toBeNull();
+    expect(odometerHintOf("odometer", parsed, errors)).toBe(ODOMETER_OPTIONAL_HINT);
+    // 保存値: 区間距離 null（連鎖計算では持ち越し行）・燃費 null
+    const out = buildRecordInput(draft(), null, null, ctx);
+    expect(out).toMatchObject({ odometer: null, total_distance: null, fuel_efficiency: null });
+    // 不正な値はエラーのまま
+    expect(parseDraft(draft({ odometer: "abc" }), ctx, { odometerRequired: false }).errors.odometer).toBe(
+      "数値を入力してください"
+    );
+  });
+
+  it("the hint is not shown when required (the error is), when filled, or in trip mode", () => {
+    const required = parseDraft(draft(), { vehicle: ODO_VEHICLE });
+    expect(required.errors.odometer).toBe(ODOMETER_REQUIRED_MESSAGE);
+    expect(odometerHintOf("odometer", required.parsed, required.errors)).toBeNull();
+    expect(odometerHintOf("odometer", { odometer: 100 }, {})).toBeNull();
+    expect(odometerHintOf("trip", { odometer: null }, {})).toBeNull();
+  });
+});
+
+describe("resolvePreviousOdometer (date changed inside the form)", () => {
+  const records: FuelRecord[] = [
+    rec({ id: "a", date: "2025-01-01", odometer: 1000 }),
+    rec({ id: "b", date: "2025-02-01", odometer: 1500 }),
+    rec({ id: "c", date: "2025-03-01", odometer: 2000 }),
+  ];
+  const getPreviousOdometer = (date: string, excludeRecordId?: string) =>
+    previousOdometer(excludeRecordId ? records.filter(r => r.id !== excludeRecordId) : records, { date });
+
+  it("uses the fixed value while the date is unchanged, and recomputes when it changes", () => {
+    const target = formTargetOf({ date: "2025-03-10" });
+    const ctx: RecordFormContext = { vehicle: ODO_VEHICLE, previousOdometer: 2000, getPreviousOdometer };
+    expect(resolvePreviousOdometer(ctx, "2025-03-10", target)).toBe(2000);
+    expect(resolvePreviousOdometer(ctx, "2025-02-10", target)).toBe(1500);
+    expect(resolvePreviousOdometer(ctx, "2024-12-31", target)).toBeNull();
+    // 入力途中・空の日付では取り直さない
+    expect(resolvePreviousOdometer(ctx, "", target)).toBe(2000);
+    // getPreviousOdometer が無ければ固定値
+    expect(resolvePreviousOdometer({ previousOdometer: 2000 }, "2025-02-10", target)).toBe(2000);
+  });
+
+  it("excludes the record being edited", () => {
+    const target = formTargetOf(records[2]); // c（2025-03-01、2000）
+    const ctx: RecordFormContext = {
+      vehicle: ODO_VEHICLE,
+      previousOdometer: previousOdometer(records, { recordId: "c" }),
+      getPreviousOdometer,
+    };
+    expect(resolvePreviousOdometer(ctx, "2025-03-01", target)).toBe(1500);
+    // 後ろの日付へ動かしても、自分自身（2000）は前回として数えない
+    expect(resolvePreviousOdometer(ctx, "2025-04-01", target)).toBe(1500);
+    expect(resolvePreviousOdometer(ctx, "2025-01-15", target)).toBe(1000);
+  });
+
+  it("the parsed distance follows the recomputed previous odometer", () => {
+    const target = formTargetOf({ date: "2025-03-10" });
+    const ctx: RecordFormContext = { vehicle: ODO_VEHICLE, previousOdometer: 2000, getPreviousOdometer };
+    const prev = resolvePreviousOdometer(ctx, "2025-02-10", target);
+    const { parsed } = parseDraft(draft({ date: "2025-02-10", odometer: "1800" }), { ...ctx, previousOdometer: prev });
+    expect(parsed.total_distance).toBe(300);
+  });
+});
+
+describe("visibleScanWarnings", () => {
+  it("hides distance / trip meter warnings in odometer mode and keeps the others", () => {
+    const warnings = plausibilityWarnings({ fuel_amount: 250, total_distance: 20000 });
+    expect(warnings).toHaveLength(3);
+    expect(visibleScanWarnings(warnings, "trip")).toEqual(warnings);
+    const odo = visibleScanWarnings(warnings, "odometer");
+    expect(odo).toHaveLength(1);
+    expect(odo[0]).toContain("給油量");
+    expect(odo.some(w => /走行距離|トリップ/.test(w))).toBe(false);
+  });
+
+  it("ignores non-array input and non-string items", () => {
+    expect(visibleScanWarnings(undefined, "trip")).toEqual([]);
+    expect(visibleScanWarnings(["a", 1, null], "trip")).toEqual(["a"]);
   });
 });

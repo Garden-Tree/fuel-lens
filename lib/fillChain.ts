@@ -5,10 +5,16 @@
  * 仕様の正本は docs/design-fill-chain.md の 2 章。要点:
  * - 車両ごとに、記録を 日付昇順 → オドメーター昇順 → created_at 昇順 → id で並べる（sortForChain）
  * - 区間距離: トリップモードは入力値（total_distance）、オドメーターモードは
- *   それまでの記録で見た最大のオドメーター（running max）との差分。
- *   どちらのモードでも missed_previous なら null
+ *   それまでの記録で見た最大のオドメーター（running max）との差分。missed_previous なら null。
+ *   missed_previous の記録が基準を進められなかった（オドメーターが null か基準以下）ときは基準が信頼できないので、
+ *   次に基準を進める記録を先頭扱い（距離 null、基準をその値にする）にする。
+ *   トリップモードの missed_previous は入力した区間距離を保持し（編集で消さない）、燃費だけ null にする
  * - 燃費: 直前の満タン給油の次の記録から満タン給油までを「走行区間（run）」として Σ距離 / Σ給油量。
- *   部分給油は null。missed_previous や区間距離 null の記録で run は切れ、その記録から新しい run が始まる
+ *   部分給油は null。run が切れるのは missed_previous の記録（その記録から新しい run が始まる）と、
+ *   トリップモードで区間距離が null の記録だけ
+ * - 持ち越し行（carry row）: オドメーターモードで、オドメーターが null か基準以下のため区間が出せなかった記録
+ *   （missed_previous ではない）。基準が進まないので次に区間が出た記録の距離に持ち越し行の分も含まれる。
+ *   したがって run を切らず、燃費は null、給油量は run に積み上げる（部分給油と同じ扱い。満タン給油でも run を閉じない）
  *
  * applyFillChain は 1 台分の記録を受け取る前提。複数車両の記録を混ぜて渡さないこと（呼び出し側でグループ化する。
  * 未分類の記録は既定車両のグループに入れる。useFuelRecords の fetchAllRecords を参照）。
@@ -170,7 +176,8 @@ function roundDistance(value: number): number {
 
 /**
  * 1 台分の記録に連鎖計算を適用し、入力と **同じ順序** の新しい配列を返す（入力は変更しない）。
- * - total_distance: オドメーターモードのときだけ、オドメーター差分（null 可）で上書きする
+ * - total_distance: オドメーターモードのときだけ、オドメーター差分（null 可）で上書きする。
+ *   トリップモードでは入力値のまま（missed_previous の記録も保持する。燃費の計算では区間不明として扱う）
  * - fuel_efficiency: 常に連鎖計算の結果で上書きする
  * 他のキーはそのまま（新しい列の既定値補完はしない。必要なら先に normalizeRecord を通す）。
  *
@@ -189,43 +196,74 @@ export function applyFillChain<T extends FuelRecord>(
 
   // オドメーターモードの基準: それまでの記録で見た最大のオドメーター（値が戻った記録では更新しない）
   let maxOdometer: number | null = null;
+  // 基準が信頼できないか（missed_previous の記録が基準を進められなかった）。次に基準を進める記録を先頭扱いにする
+  let baseStale = false;
   // 走行区間（run）の累計。valid=false なら run 内に距離か給油量が不明な記録がある
   let runDistance = 0;
   let runFuel = 0;
   let runValid = true;
 
+  const resetRun = () => {
+    runDistance = 0;
+    runFuel = 0;
+    runValid = true;
+  };
+
   for (const i of order) {
     const r = records[i];
     const missed = r.missed_previous === true;
     const odometer = sanitizeOdometer(r.odometer);
+    const fuel = finiteOrNull(r.fuel_amount);
 
     let distance: number | null;
+    // 持ち越し行（オドメーターモードのみ）: 区間が出せないが run は切らない記録
+    let carry = false;
     if (mode === "odometer") {
+      let advanced = false;
       if (odometer === null) {
         distance = null;
-      } else if (maxOdometer === null) {
+        carry = true;
+      } else if (maxOdometer === null || (baseStale && odometer > maxOdometer)) {
+        // 先頭（基準が無い）、または記録漏れの後で基準が信頼できない: 区間は出せないが、ここから基準が始まる。持ち越し行ではない
         distance = null;
         maxOdometer = odometer;
+        advanced = true;
       } else if (odometer <= maxOdometer) {
-        distance = null;
+        distance = null; // 値が戻った・同じ値の記録は基準を更新しない
+        carry = true;
       } else {
         distance = roundDistance(odometer - maxOdometer);
         maxOdometer = odometer; // missed_previous でも基準は更新する（距離だけ null にする）
+        advanced = true;
       }
+      if (advanced) baseStale = false;
+      // 記録漏れの記録が基準を進められなかったら、基準と次の区間の間に記録されていない給油がある。
+      // 基準を進める記録が現れるまで（間の持ち越し行を挟んでも）基準を信頼しない
+      else if (missed) baseStale = true;
     } else {
       distance = finiteOrNull(r.total_distance);
     }
-    if (missed) distance = null;
+    // missed_previous の区間は信頼できない（持ち越し行にもしない）。
+    // トリップモードでは表示用の total_distance は入力値を保持し、ここでは燃費の計算上だけ null として run を切る
+    if (missed) {
+      distance = null;
+      carry = false;
+    }
     distances[i] = distance;
 
-    // missed_previous / 区間距離 null の記録で run を切り、その記録から新しい run を始める
-    if (missed || distance === null) {
-      runDistance = 0;
-      runFuel = 0;
-      runValid = true;
+    if (carry) {
+      // 給油量だけを run に積み上げる（距離は次に区間が出た記録の差分に含まれる）。燃費は null で run は閉じない
+      if (fuel === null) runValid = false;
+      else runFuel += fuel;
+      efficiencies[i] = null;
+      continue;
     }
 
-    const fuel = finiteOrNull(r.fuel_amount);
+    // run を切るのは missed_previous の記録と、トリップモードで区間距離 null の記録だけ。その記録から新しい run を始める
+    // （その記録自身の距離は null なので、新しい run は次の満タン給油で閉じるまで計算できない）。
+    // オドメーターモードの先頭（基準が無い）記録は run を切らないが、距離 null なので run は不明になる
+    if (missed || (mode === "trip" && distance === null)) resetRun();
+
     if (distance === null || fuel === null) runValid = false;
     else {
       runDistance += distance;
@@ -236,16 +274,13 @@ export function applyFillChain<T extends FuelRecord>(
       efficiencies[i] = null; // 部分給油: 次の満タン給油でまとめて計算する
     } else {
       efficiencies[i] = runValid && runFuel > 0 ? roundFuelEfficiency(runDistance / runFuel) : null;
-      // 満タン給油で run を閉じる
-      runDistance = 0;
-      runFuel = 0;
-      runValid = true;
+      resetRun(); // 満タン給油で run を閉じる
     }
-
   }
 
   return records.map((r, i) => ({
     ...r,
+    // オドメーターモードは導出値。トリップモードは入力値（missed_previous の記録も保持する）
     total_distance: mode === "odometer" ? distances[i] : r.total_distance,
     fuel_efficiency: efficiencies[i],
   }));
@@ -254,6 +289,7 @@ export function applyFillChain<T extends FuelRecord>(
 /**
  * 連鎖計算がその位置で基準にするオドメーター（フォームの「前回から ○○ km」表示用）。
  * applyFillChain と同じく、連鎖順でその位置より前の記録のオドメーターの最大値（running max）。無ければ null。
+ * 記録漏れ（missed_previous）の記録が基準を進められず、その後まだ基準が進んでいない位置でも null（連鎖計算でも区間は null になる）。
  *
  * @param records 1 台分の記録（順不同。useFuelRecords の records をそのまま渡せる）
  * @param at
@@ -279,10 +315,17 @@ export function previousOdometer(
       end += 1;
     }
   }
+  // applyFillChain と同じく、記録漏れの記録が基準を進められなかったら、次に基準を進める記録まで基準は無いものとする
   let max: number | null = null;
+  let stale = false;
   for (let i = 0; i < end; i++) {
     const o = sanitizeOdometer(sorted[i].odometer);
-    if (o !== null && (max === null || o > max)) max = o;
+    if (o !== null && (max === null || o > max)) {
+      max = o;
+      stale = false;
+    } else if (sorted[i].missed_previous === true) {
+      stale = true;
+    }
   }
-  return max;
+  return stale ? null : max;
 }

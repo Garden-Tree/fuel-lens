@@ -39,11 +39,25 @@
   次のいずれかなら null: 先頭の記録、`odometer_i` が null、`base` が無い、`odometer_i ≤ base`、`missed_previous_i` が true。
   `odometer_i ≤ base` の記録（打ち間違いで値が戻った行）は base を更新しない。これにより 1000 → 1300 → 130 → 1600 の並びは
   null / 300 / null / 300 になり、戻った行の次の区間が膨らまない。
-- どちらのモードでも `missed_previous_i` が true なら `distance_i = null`（区間が信頼できない）。
+- オドメーターモードで `missed_previous_i` が true なら `distance_i = null`（区間が信頼できない）。base は `odometer_i > base` なら進む。
+  進められなかった（odometer が null か base 以下の）場合、次の記録は先頭扱い（距離 null、base をその値にする）。
+- トリップモードで `missed_previous_i` が true のときは、入力した `total_distance_i` は **保持**し（編集時に消さない）、燃費だけ null にする。
+- オドメーターモードで記録の編集・スキャン保存時はオドメーター未入力を許容する（距離 null の持ち越し行になる）。
+  必須なのは新規の手動入力のみ。
+
+### 持ち越し行（carry row）
+
+オドメーターモードで、`odometer_i` が null か `odometer_i ≤ base` のために区間が出せなかった記録（`missed_previous` ではない）を
+「持ち越し行」と呼ぶ。base は進まないので、次に区間が出た記録の距離は持ち越し行の分も含んでいる。したがって持ち越し行は
+**run を切らず**、自身の燃費は null、給油量は run に積み上げる（部分給油と同じ扱い）。
+例: A(1000 km, 30 L) → B(odometer なし, 20 L) → C(1600 km, 20 L) は、C の区間 600 km、燃費 600 ÷ (20 + 20) = 15.00。
+1000 → 1300 → 130 → 1600（各 20 L）は null / 15.00 / null / 300 ÷ 40 = 7.50。
 
 ### 燃費 `fuel_efficiency_i`
 
-「走行区間（run）」= 直前の満タン給油の次の記録から i まで。ただし `missed_previous` が true の記録、または区間距離が null の記録があれば run はそこで切れ、その記録自身から新しい run が始まる。
+「走行区間（run）」= 直前の満タン給油の次の記録から i まで。run が切れるのは次の 2 つだけ:
+`missed_previous` が true の記録（その記録自身から新しい run が始まる）、トリップモードで区間距離が null の記録。
+持ち越し行では run は切れない。
 
 - `is_full_i` が false（部分給油）: `fuel_efficiency_i = null`。距離と給油量は run に積み上がる。
 - `is_full_i` が true: run 内のすべての記録で `distance` が非 null かつ `fuel_amount` が非 null かつ Σfuel > 0 のとき

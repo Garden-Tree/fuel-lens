@@ -280,7 +280,9 @@ function parseRecord(r: unknown, index: number): BackupRecord | string {
   const fuelType = r.fuel_type === undefined ? null : r.fuel_type;
   if (fuelType !== null && !isFuelType(fuelType)) return `${at}の燃料種別が正しくありません。`;
   const memo = r.memo === undefined ? null : r.memo;
-  if (memo !== null && (typeof memo !== "string" || memo.length > MEMO_MAX_LENGTH)) {
+  // 文字数はコードポイントで数える（DB の char_length・sanitizeMemo と同じ）。UTF-16 の length だと
+  // buildBackup が書き出した絵文字入りのメモ（200 コードポイント = 400 UTF-16 単位）を復元できなくなる
+  if (memo !== null && (typeof memo !== "string" || Array.from(memo.trim()).length > MEMO_MAX_LENGTH)) {
     return `${at}のメモが正しくありません（${MEMO_MAX_LENGTH} 文字まで）。`;
   }
 

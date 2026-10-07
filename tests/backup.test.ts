@@ -398,6 +398,18 @@ describe("version 2 fields (fill chain)", () => {
     if (res.ok) expect(res.backup.records[0].memo).toHaveLength(200);
   });
 
+  it("counts the memo in code points: an emoji memo written by buildBackup restores", () => {
+    const memo = "😀".repeat(150); // 150 コードポイント = 300 UTF-16 単位
+    const backup = buildBackup([vehicle(UUID_A, "A")], [record({ memo })]);
+    expect(backup.records[0].memo).toBe(memo);
+    const res = parseBackup(serializeBackup(backup));
+    expect(res.ok).toBe(true);
+    if (res.ok) expect(res.backup.records[0].memo).toBe(memo);
+    // 201 コードポイントは拒否する
+    const tooLong = parseObj(validBackup({ records: [record({ memo: "😀".repeat(201) })] }));
+    expect(tooLong.ok).toBe(false);
+  });
+
   it.each([
     ["distance_mode", "gps", "距離の入力方式"],
     ["distance_mode", 1, "距離の入力方式"],
