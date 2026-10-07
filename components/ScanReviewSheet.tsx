@@ -2,8 +2,17 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, ScanLine } from "lucide-react";
-import type { AnalyzeSuccessResponse } from "@/lib/analyze";
-import { useRecordForm, todayLocalISO, type DraftField, type RecordInput } from "@/lib/useRecordForm";
+import type { AnalyzeSuccessResponse, ConfidenceField } from "@/lib/analyze";
+import {
+  useRecordForm,
+  todayLocalISO,
+  visibleScanWarnings,
+  type DraftField,
+  type RecordFormContext,
+  type RecordInput,
+} from "@/lib/useRecordForm";
+import { distanceModeOf } from "@/lib/fillChain";
+import type { Vehicle } from "@/lib/useVehicles";
 import { useBackdropClose } from "@/lib/useBackdropClose";
 import { useFocusTrap } from "@/lib/useFocusTrap";
 import { formatPricePerUnit } from "@/lib/calculations";
@@ -17,6 +26,12 @@ interface Props {
   result: AnalyzeSuccessResponse;
   /** 解析に使った画像（data URL）。サムネイルとして表示する */
   imageSrc: string | null;
+  /** 記録先の車両（距離の入力方式・既定の燃料種別）。省略はトリップモード */
+  vehicle?: Pick<Vehicle, "distance_mode" | "default_fuel_type"> | null;
+  /** 連鎖計算で直前になる記録のオドメーター（オドメーターモードの「前回から ○○ km」に使う） */
+  previousOdometer?: number | null;
+  /** 確認シートで日付を直したときに、その日付での前回のオドメーターを返す（lib/fillChain.ts の previousOdometer） */
+  getPreviousOdometer?: RecordFormContext["getPreviousOdometer"];
   /** 閲覧専用（クラウド障害中）なら保存を無効化する */
   readOnly?: boolean;
   /**
@@ -33,15 +48,34 @@ interface Props {
  * OCR 結果をフォームに流し込み、ユーザーが確認・修正してから保存する。
  * 読み取れなかった項目・確信度の低い項目は「要確認」として強調する。
  */
-export default function ScanReviewSheet({ result, imageSrc, readOnly = false, onSave, onDiscard }: Props) {
-  const form = useRecordForm({
-    date: result.date ?? todayLocalISO(),
-    fuel_amount: result.fuel_amount,
-    total_cost: result.total_cost,
-    total_distance: result.total_distance,
-    gas_station: result.gas_station,
-    price_per_unit: result.price_per_unit,
-  });
+export default function ScanReviewSheet({
+  result,
+  imageSrc,
+  vehicle = null,
+  previousOdometer = null,
+  getPreviousOdometer,
+  readOnly = false,
+  onSave,
+  onDiscard,
+}: Props) {
+  const mode = distanceModeOf(vehicle);
+  // オドメーターモードでは読み取ったオドメーターを主入力に入れる（トリップモードでは参考表示のみで保存しない）。
+  // 燃料種別が読めなければ車両の既定値になる（useRecordForm の recordToDraft）。
+  // スキャン結果はオドメーター未入力でも保存できる（odometerOptional。メーターが写っていない・読めないことがあるため）。
+  // 未入力なら注意を出し、区間距離は null のまま保存する（連鎖計算では持ち越し行として次の区間にまとめて計算される）
+  const form = useRecordForm(
+    {
+      date: result.date ?? todayLocalISO(),
+      fuel_amount: result.fuel_amount,
+      total_cost: result.total_cost,
+      total_distance: result.total_distance,
+      odometer: mode === "odometer" ? result.odometer : null,
+      gas_station: result.gas_station,
+      price_per_unit: result.price_per_unit,
+      fuel_type: result.fuel_type,
+    },
+    { vehicle, previousOdometer, getPreviousOdometer, odometerOptional: true }
+  );
 
   const [saving, setSaving] = useState(false);
   const firstFieldRef = useRef<HTMLInputElement>(null);
@@ -51,7 +85,7 @@ export default function ScanReviewSheet({ result, imageSrc, readOnly = false, on
   // 要確認: 読み取れなかった（null）または確信度が低い項目
   const highlightFields = useMemo(() => {
     const conf = result.confidence ?? {};
-    const low = (field: DraftField, value: unknown) => {
+    const low = (field: DraftField & ConfidenceField, value: unknown) => {
       const c = conf[field];
       return value == null || (typeof c === "number" && c < LOW_CONFIDENCE);
     };
@@ -59,12 +93,15 @@ export default function ScanReviewSheet({ result, imageSrc, readOnly = false, on
     if (low("date", result.date)) h.date = true;
     if (low("fuel_amount", result.fuel_amount)) h.fuel_amount = true;
     if (low("total_cost", result.total_cost)) h.total_cost = true;
-    if (low("total_distance", result.total_distance)) h.total_distance = true;
+    // 区間距離・オドメーターは、その方式で画面に出す欄だけを強調する
+    if (mode === "trip" && low("total_distance", result.total_distance)) h.total_distance = true;
+    if (mode === "odometer" && low("odometer", result.odometer)) h.odometer = true;
     if (low("gas_station", result.gas_station)) h.gas_station = true;
     return h;
-  }, [result]);
+  }, [result, mode]);
 
-  const warnings = Array.isArray(result.warnings) ? result.warnings : [];
+  // オドメーターモードでは、区間距離（トリップメーター）の読み取り値についての注意は出さない（保存に使わないため）
+  const warnings = visibleScanWarnings(result.warnings, mode);
 
   // 先頭の入力欄へフォーカスし、シート内でフォーカスを循環させる（背面の車両タブ等へ Tab で出られないように）。
   // 閉じたら開く前にフォーカスされていた要素へ戻す
@@ -149,7 +186,7 @@ export default function ScanReviewSheet({ result, imageSrc, readOnly = false, on
                   </>
                 )}
               </p>
-              {result.odometer != null && (
+              {mode === "trip" && result.odometer != null && (
                 <p className="text-[11px] text-gray-500 mt-1 font-mono">
                   ODO: {result.odometer.toLocaleString()} km（参考）
                 </p>
@@ -182,6 +219,7 @@ export default function ScanReviewSheet({ result, imageSrc, readOnly = false, on
                 {metrics.fuel_efficiency != null ? metrics.fuel_efficiency.toFixed(2) : "--.--"}
                 <span className="ml-1 text-xs text-blue-400">km/L</span>
               </p>
+              {form.efficiencyNote && <p className="text-[10px] text-amber-300/90">{form.efficiencyNote}</p>}
             </div>
             <div>
               <p className="text-[10px] text-gray-500 uppercase">単価</p>

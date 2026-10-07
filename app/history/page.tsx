@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useCallback } from "react";
 import Link from "next/link";
 import { SignedIn, SignedOut, SignInButton, UserButton } from "@clerk/nextjs";
 import { ArrowLeft, Trash2, MapPin, Calendar, BarChart3, Edit2, Download, Car } from "lucide-react";
@@ -11,8 +11,18 @@ import { useVehicles } from "@/lib/useVehicles";
 import VehicleSelector from "@/components/VehicleSelector";
 import { useToast } from "@/components/Toast";
 import { useRecordForm } from "@/lib/useRecordForm";
+import { distanceModeOf, previousOdometer } from "@/lib/fillChain";
+import RecordBadges, { efficiencyNullReason, formatOdometer } from "@/components/RecordBadges";
 import { normalizeDateString } from "@/lib/stats";
-import { buildCsv, downloadTextFile, escapeCsvField, formatCsvNumber, toSafeFilenamePart } from "@/lib/csv";
+import {
+  RECORD_CSV_EXTRA_HEADERS,
+  buildCsv,
+  downloadTextFile,
+  escapeCsvField,
+  formatCsvNumber,
+  formatRecordExtraCsvFields,
+  toSafeFilenamePart,
+} from "@/lib/csv";
 
 /** created_at（ISO 日時）をミリ秒に変換する。欠落・解析不能なら 0（最も古い扱い） */
 function createdAtMs(createdAt: string | null | undefined): number {
@@ -37,7 +47,8 @@ export default function HistoryPage() {
     error: vehiclesError,
     readOnly: vehiclesReadOnly,
   } = useVehicles();
-  // 車両一覧の読み込みが終わるまでレコードの読み込みは保留する
+  // 車両一覧の読み込みが終わるまでレコードの読み込みは保留する。
+  // vehicles は連鎖計算（オドメーターモードの区間距離・部分給油の燃費）で各車両の方式を知るために渡す
   const {
     records,
     deleteRecord,
@@ -45,7 +56,9 @@ export default function HistoryPage() {
     loading: recordsLoading,
     error: recordsError,
     readOnly,
-  } = useFuelRecords(selectedVehicleId, vehicles[0]?.id, { enabled: !vehiclesLoading });
+  } = useFuelRecords(selectedVehicleId, vehicles[0]?.id, { enabled: !vehiclesLoading, vehicles });
+  const selectedVehicle = vehicles.find(v => v.id === selectedVehicleId) ?? null;
+  const distanceMode = distanceModeOf(selectedVehicle);
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const form = useRecordForm();
@@ -71,6 +84,12 @@ export default function HistoryPage() {
     setMovingId(null);
     setFilterYear("all");
     setFilterMonth("all");
+  }
+  // 距離の入力方式を切り替えたら、開いている編集フォームを閉じる（入力欄が走行距離 / オドメーターで合わなくなるため）
+  const [formDistanceMode, setFormDistanceMode] = useState(distanceMode);
+  if (formDistanceMode !== distanceMode) {
+    setFormDistanceMode(distanceMode);
+    setEditingId(null);
   }
 
   const availableYears = useMemo(() => {
@@ -170,9 +189,21 @@ export default function HistoryPage() {
     }
   };
 
+  // フォーム内で日付を変えたときの「前回のオドメーター」（編集中の記録自身は除く）。
+  // records は年・月フィルタ前の、この車両（と表示する未分類）の全記録
+  const getPreviousOdometer = useCallback(
+    (date: string, excludeRecordId?: string) =>
+      previousOdometer(excludeRecordId ? records.filter(r => r.id !== excludeRecordId) : records, { date }),
+    [records]
+  );
+
   const startEditing = (record: FuelRecord) => {
     if (readOnly) return;
-    form.reset(record);
+    form.reset(record, {
+      vehicle: selectedVehicle,
+      previousOdometer: previousOdometer(records, { recordId: record.id }),
+      getPreviousOdometer,
+    });
     setEditingId(record.id);
     setMovingId(null);
   };
@@ -199,7 +230,22 @@ export default function HistoryPage() {
   const exportToCsv = () => {
     if (sortedRecords.length === 0) return;
 
-    const headers = ["給油日", "走行距離(km)", "給油量(L)", "単価(円/L)", "支払総額(円)", "燃費(km/L)", "ガソリンスタンド名"];
+    // 0004 で追加した列（オドメーター・満タン・記録漏れ・燃料種別・メモ）も書き出し、FuelLens CSV の取り込みで往復できるようにする
+    // （lib/importers/fuellensCsv.ts は車両別 CSV でも追加列を読む）
+    const headers = [
+      "給油日",
+      "走行距離(km)",
+      "給油量(L)",
+      "単価(円/L)",
+      "支払総額(円)",
+      "燃費(km/L)",
+      "ガソリンスタンド名",
+      RECORD_CSV_EXTRA_HEADERS.odometer,
+      RECORD_CSV_EXTRA_HEADERS.isFull,
+      RECORD_CSV_EXTRA_HEADERS.missedPrevious,
+      RECORD_CSV_EXTRA_HEADERS.fuelType,
+      RECORD_CSV_EXTRA_HEADERS.memo,
+    ];
     const rows = sortedRecords.map(rec => [
       escapeCsvField(rec.date),
       formatCsvNumber(rec.total_distance),
@@ -208,6 +254,7 @@ export default function HistoryPage() {
       formatCsvNumber(rec.total_cost),
       formatCsvNumber(rec.fuel_efficiency),
       escapeCsvField(rec.gas_station),
+      ...formatRecordExtraCsvFields(rec),
     ]);
 
     const currentVehicleName = vehicles.find(v => v.id === selectedVehicleId)?.name || "vehicle";
@@ -500,6 +547,9 @@ export default function HistoryPage() {
                             </span>
                             <span className="text-xs font-bold text-blue-500">km/L</span>
                           </div>
+                          {efficiencyNullReason(rec) && (
+                            <p className="text-[10px] text-gray-500">{efficiencyNullReason(rec)}</p>
+                          )}
                         </div>
                         
                         <div className="text-right">
@@ -510,16 +560,27 @@ export default function HistoryPage() {
                         </div>
                       </div>
 
+                      <RecordBadges record={rec} className="mb-2" />
+
                       <div className="grid grid-cols-2 gap-2 text-sm bg-black/20 p-3 rounded-lg">
                         <div className="flex justify-between border-r border-gray-800 pr-2">
                           <span className="text-gray-500 text-xs">給油量</span>
-                          <span className="font-mono text-gray-300">{rec.fuel_amount} L</span>
+                          <span className="font-mono text-gray-300">{rec.fuel_amount ?? "--"} L</span>
                         </div>
                         <div className="flex justify-between pl-2">
-                          <span className="text-gray-500 text-xs">走行</span>
+                          <span className="text-gray-500 text-xs">{distanceMode === "odometer" ? "区間" : "走行"}</span>
                           <span className="font-mono text-gray-300">{rec.total_distance ?? "--"} km</span>
                         </div>
+                        {distanceMode === "odometer" && (
+                          <p className="col-span-2 text-xs font-mono text-gray-400">{formatOdometer(rec.odometer)}</p>
+                        )}
                       </div>
+
+                      {rec.memo && (
+                        <p className="mt-2 text-xs text-gray-400 truncate" title={rec.memo}>
+                          <span className="sr-only">メモ: </span>{rec.memo}
+                        </p>
+                      )}
 
                       <div className="mt-3 flex items-center gap-2 text-xs text-gray-500 pr-24">
                         <MapPin className="w-3 h-3 flex-shrink-0" />

@@ -20,13 +20,14 @@ export default function SettingsPage() {
     error: vehiclesError,
     readOnly: vehiclesReadOnly,
   } = useVehicles();
-  // 一覧表示はしないが、全件取得・一括追加と閲覧専用判定のためにフックを使う
+  // 一覧表示はしないが、全件取得・一括追加と閲覧専用判定のためにフックを使う。
+  // vehicles を渡し、fetchAllRecords（全車両 CSV・データ概要）が車両ごとの距離の入力方式で連鎖計算するようにする
   const {
     fetchAllRecords,
     addRecords,
     error: recordsError,
     readOnly: recordsReadOnly,
-  } = useFuelRecords(selectedVehicleId, vehicles[0]?.id, { enabled: !vehiclesLoading });
+  } = useFuelRecords(selectedVehicleId, vehicles[0]?.id, { enabled: !vehiclesLoading, vehicles });
 
   // インポート後に BackupPanel のデータ概要（記録数）を読み込み直す。
   // key で作り直すと処理中の復元がアンマウントされるため、refreshToken で再取得だけさせる

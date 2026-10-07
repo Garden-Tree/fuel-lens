@@ -7,6 +7,7 @@
  * - Excel での文字化けを防ぐため、先頭に UTF-8 の BOM を付ける。
  */
 
+import { FUEL_TYPE_LABELS, isFuelType } from "./fillChain";
 import type { FuelRecord } from "./useFuelRecords";
 import type { Vehicle } from "./useVehicles";
 
@@ -35,7 +36,8 @@ export function buildCsv(headers: readonly string[], rows: readonly (readonly st
   return CSV_BOM + [headers.join(","), ...rows.map(r => r.join(","))].join("\n");
 }
 
-export const RECORDS_CSV_HEADERS = [
+/** 全車両 CSV の基本の列（FuelLens CSV の取り込みでは、これがすべてあれば全車両 CSV とみなす） */
+export const RECORDS_CSV_BASE_HEADERS = [
   "車両",
   "日付",
   "給油量(L)",
@@ -47,8 +49,61 @@ export const RECORDS_CSV_HEADERS = [
 ] as const;
 
 /**
+ * 0004（連鎖計算）で追加した列。全車両 CSV では基本の列の後ろに並ぶ。
+ * 取り込み時は任意（無ければ既定値: オドメーターなし・満タン・記録漏れなし・燃料種別なし・メモなし）。
+ */
+export const RECORD_CSV_EXTRA_HEADERS = {
+  odometer: "オドメーター(km)",
+  isFull: "満タン",
+  missedPrevious: "記録漏れ",
+  fuelType: "燃料種別",
+  memo: "メモ",
+} as const;
+
+export const RECORDS_CSV_HEADERS = [
+  ...RECORDS_CSV_BASE_HEADERS,
+  RECORD_CSV_EXTRA_HEADERS.odometer,
+  RECORD_CSV_EXTRA_HEADERS.isFull,
+  RECORD_CSV_EXTRA_HEADERS.missedPrevious,
+  RECORD_CSV_EXTRA_HEADERS.fuelType,
+  RECORD_CSV_EXTRA_HEADERS.memo,
+] as const;
+
+/** 真偽値の列（満タン・記録漏れ）の表記 */
+export const CSV_YES = "はい";
+export const CSV_NO = "いいえ";
+
+/** 真偽値を「はい / いいえ」にする（エスケープ済み） */
+export function formatCsvBoolean(value: boolean): string {
+  return escapeCsvField(value ? CSV_YES : CSV_NO);
+}
+
+/** 燃料種別を表示名にする（エスケープ済み）。未指定・不明は `""` */
+export function formatCsvFuelType(value: unknown): string {
+  return escapeCsvField(isFuelType(value) ? FUEL_TYPE_LABELS[value] : null);
+}
+
+/**
+ * 記録の 0004 で追加した列（RECORD_CSV_EXTRA_HEADERS の順）をエスケープ済みの値にする。
+ * 既定値の扱いは normalizeRecord と同じ（is_full は false 以外「はい」、missed_previous は true のときだけ「はい」）。
+ * メモの改行はダブルクォートの中にそのまま入る。
+ */
+export function formatRecordExtraCsvFields(
+  rec: Pick<FuelRecord, "odometer" | "is_full" | "missed_previous" | "fuel_type" | "memo">
+): string[] {
+  return [
+    formatCsvNumber(rec.odometer),
+    formatCsvBoolean(rec.is_full !== false),
+    formatCsvBoolean(rec.missed_previous === true),
+    formatCsvFuelType(rec.fuel_type),
+    escapeCsvField(typeof rec.memo === "string" ? rec.memo : null),
+  ];
+}
+
+/**
  * 全車両の給油記録を CSV にする（設定画面の「全車両を CSV で書き出し」用）。
  * 車両名は vehiclesById から引く。見つからない（未分類など）場合は fallbackVehicleName。
+ * 走行距離・燃費は渡された値をそのまま書く（連鎖計算を適用済みの記録を渡すこと。useFuelRecords の fetchAllRecords）。
  */
 export function buildRecordsCsv(
   records: readonly FuelRecord[],
@@ -71,6 +126,7 @@ export function buildRecordsCsv(
     formatCsvNumber(rec.total_distance),
     formatCsvNumber(rec.fuel_efficiency),
     escapeCsvField(rec.gas_station),
+    ...formatRecordExtraCsvFields(rec),
   ]);
   return buildCsv(RECORDS_CSV_HEADERS, rows);
 }

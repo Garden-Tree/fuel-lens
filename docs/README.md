@@ -2,7 +2,8 @@
 
 | ドキュメント | 内容 |
 |---|---|
-| [architecture.md](./architecture.md) | ディレクトリ構成、データフロー、データモデル、フック、ローカル→クラウド移行、障害時の動作、認証、バックアップと復元、PWA |
+| [architecture.md](./architecture.md) | ディレクトリ構成、データフロー、データモデル、フック、ローカル→クラウド移行、障害時の動作、認証、バックアップと復元、PWA、給油の連鎖計算 |
+| [design-fill-chain.md](./design-fill-chain.md) | 設計: オドメーターモード・部分給油・記録漏れ・燃料種別・メモ。追加する列、連鎖計算（fill chain）の規則、UI と周辺機能の仕様 |
 | [api-analyze.md](./api-analyze.md) | AI 解析 API `/api/analyze` の仕様（認証、制限、検証、レスポンスコード） |
 | [operations.md](./operations.md) | デプロイ構成、Supabase 自動停止対策、CI、セットアップチェックリスト、トラブルシューティング |
 | [roadmap.md](./roadmap.md) | 今後の候補と既知の制約 |

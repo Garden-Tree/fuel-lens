@@ -7,15 +7,24 @@
  *
  * バックアップファイルは利用者が編集・差し替えできる「信頼できない入力」として扱い、
  * parseBackup で形・型・値域・件数を厳密に検証し、既知のキーだけを取り出した新しいオブジェクトを返す。
+ *
+ * バージョン:
+ * - 1: 車両 id / name / type / created_at、記録は 0004 以前の列
+ * - 2: 車両に distance_mode / default_fuel_type、記録に odometer / is_full / missed_previous / fuel_type / memo を追加
+ * parseBackup は 1 と 2 を受け付け、欠けたフィールドは既定値（トリップ・満タン・記録漏れなし・null）で補って
+ * 常に version 2 の形で返す。
  */
 
 import { isValidCalendarDate } from "./analyze";
+import { MEMO_MAX_LENGTH, isFuelType, sanitizeMemo } from "./fillChain";
 import { isUnclassifiedRecord } from "./recordFilters";
 import type { FuelRecord } from "./useFuelRecords";
 import type { Vehicle } from "./useVehicles";
 
 export const BACKUP_APP_ID = "fuel-lens";
-export const BACKUP_VERSION = 1;
+export const BACKUP_VERSION = 2;
+/** parseBackup が読み込める最も古いバージョン */
+export const BACKUP_MIN_SUPPORTED_VERSION = 1;
 
 /** 受け付ける最大件数・サイズ（悪意のある巨大ファイルでタブが固まらないように） */
 export const BACKUP_MAX_VEHICLES = 500;
@@ -131,6 +140,8 @@ export function buildBackup(
       id: v.id,
       name: trimmed || FALLBACK_VEHICLE_NAME,
       type: v.type === "bike" ? "bike" : "car",
+      distance_mode: v.distance_mode === "odometer" ? "odometer" : "trip",
+      default_fuel_type: isFuelType(v.default_fuel_type) ? v.default_fuel_type : null,
     };
     const vehicleCreatedAt = normalizeTimestamp(v.created_at);
     if (vehicleCreatedAt) out.created_at = vehicleCreatedAt;
@@ -157,6 +168,11 @@ export function buildBackup(
       fuel_efficiency: sanitizeNumber(r.fuel_efficiency),
       vehicle_id: isValidId(r.vehicle_id) ? r.vehicle_id : null,
       created_at: createdAt,
+      odometer: sanitizeNumber(r.odometer),
+      is_full: r.is_full !== false,
+      missed_previous: r.missed_previous === true,
+      fuel_type: isFuelType(r.fuel_type) ? r.fuel_type : null,
+      memo: sanitizeMemo(r.memo),
     });
   }
 
@@ -199,7 +215,12 @@ function parseVehicle(v: unknown, index: number): BackupVehicle | string {
     return `${at}の名前は 1〜${MAX_VEHICLE_NAME_LENGTH} 文字にしてください。`;
   }
   if (v.type !== "car" && v.type !== "bike") return `${at}の種別が正しくありません。`;
-  const out: BackupVehicle = { id: v.id, name, type: v.type };
+  // version 1 には無い。欠けていればトリップ / 未指定
+  const mode = v.distance_mode === undefined || v.distance_mode === null ? "trip" : v.distance_mode;
+  if (mode !== "trip" && mode !== "odometer") return `${at}の距離の入力方式が正しくありません。`;
+  const fuelType = v.default_fuel_type === undefined ? null : v.default_fuel_type;
+  if (fuelType !== null && !isFuelType(fuelType)) return `${at}の既定の燃料種別が正しくありません。`;
+  const out: BackupVehicle = { id: v.id, name, type: v.type, distance_mode: mode, default_fuel_type: fuelType };
   if (v.created_at !== undefined && v.created_at !== null) {
     const createdAt = normalizeTimestamp(v.created_at);
     if (!createdAt) return `${at}の作成日時が正しくありません。`;
@@ -214,6 +235,7 @@ const NUMBER_FIELDS = [
   ["price_per_unit", "単価"],
   ["total_cost", "支払総額"],
   ["fuel_efficiency", "燃費"],
+  ["odometer", "オドメーター"],
 ] as const;
 
 function parseRecord(r: unknown, index: number): BackupRecord | string {
@@ -228,6 +250,7 @@ function parseRecord(r: unknown, index: number): BackupRecord | string {
     price_per_unit: null,
     total_cost: null,
     fuel_efficiency: null,
+    odometer: null,
   };
   for (const [key, label] of NUMBER_FIELDS) {
     const value = r[key] === undefined ? null : r[key];
@@ -249,6 +272,20 @@ function parseRecord(r: unknown, index: number): BackupRecord | string {
     if (!created) return `${at}の作成日時が正しくありません。`;
   }
 
+  // 以下は version 2 で追加。欠けていれば既定値（満タン・記録漏れなし・未指定・メモなし）
+  const isFull = r.is_full === undefined ? true : r.is_full;
+  if (typeof isFull !== "boolean") return `${at}の満タン給油の値が正しくありません（true / false が必要です）。`;
+  const missed = r.missed_previous === undefined ? false : r.missed_previous;
+  if (typeof missed !== "boolean") return `${at}の記録漏れの値が正しくありません（true / false が必要です）。`;
+  const fuelType = r.fuel_type === undefined ? null : r.fuel_type;
+  if (fuelType !== null && !isFuelType(fuelType)) return `${at}の燃料種別が正しくありません。`;
+  const memo = r.memo === undefined ? null : r.memo;
+  // 文字数はコードポイントで数える（DB の char_length・sanitizeMemo と同じ）。UTF-16 の length だと
+  // buildBackup が書き出した絵文字入りのメモ（200 コードポイント = 400 UTF-16 単位）を復元できなくなる
+  if (memo !== null && (typeof memo !== "string" || Array.from(memo.trim()).length > MEMO_MAX_LENGTH)) {
+    return `${at}のメモが正しくありません（${MEMO_MAX_LENGTH} 文字まで）。`;
+  }
+
   return {
     id: r.id,
     date: r.date,
@@ -256,6 +293,11 @@ function parseRecord(r: unknown, index: number): BackupRecord | string {
     gas_station: gas,
     vehicle_id: vid,
     created_at: created,
+    is_full: isFull,
+    missed_previous: missed,
+    fuel_type: fuelType,
+    // 空白だけのメモは null（buildBackup・保存時と同じ正規化）
+    memo: sanitizeMemo(memo),
   };
 }
 
@@ -282,7 +324,7 @@ export function parseBackup(text: string): ParseBackupResult {
   if (data.version > BACKUP_VERSION) {
     return fail("新しいバージョンのアプリで作成されたバックアップのため読み込めません。アプリを更新してください。");
   }
-  if (data.version !== BACKUP_VERSION) return fail("対応していないバージョンのバックアップファイルです。");
+  if (data.version < BACKUP_MIN_SUPPORTED_VERSION) return fail("対応していないバージョンのバックアップファイルです。");
   const exportedAt = normalizeTimestamp(data.exportedAt);
   if (!exportedAt) return fail("バックアップファイルの書き出し日時が正しくありません。");
 
@@ -337,6 +379,10 @@ export type RestoreVehicleToCreate = {
   backupId: string;
   name: string;
   type: "car" | "bike";
+  /** 距離の入力方式（version 1 のバックアップ・インポートでは省略 = トリップ） */
+  distance_mode?: Vehicle["distance_mode"];
+  /** 既定の燃料種別（省略 = 未指定） */
+  default_fuel_type?: Vehicle["default_fuel_type"];
 };
 
 /** 復元で挿入する記録。vehicle_id はまだ「バックアップ内の車両ID」（null = 既存の既定車両 / 未分類） */
@@ -431,7 +477,10 @@ export function planRestore(
       vehiclesMatched += 1;
       continue;
     }
-    vehiclesToCreate.push({ backupId: bv.id, name, type: bv.type });
+    const toCreate: RestoreVehicleToCreate = { backupId: bv.id, name, type: bv.type };
+    if (bv.distance_mode !== undefined) toCreate.distance_mode = bv.distance_mode;
+    if (bv.default_fuel_type !== undefined) toCreate.default_fuel_type = bv.default_fuel_type;
+    vehiclesToCreate.push(toCreate);
   }
 
   const backupVehicleIds = new Set(backup.vehicles.map(v => v.id));
@@ -490,6 +539,11 @@ export function planRestore(
       total_cost: r.total_cost,
       fuel_efficiency: r.fuel_efficiency,
       created_at: normalizeTimestamp(r.created_at),
+      odometer: r.odometer,
+      is_full: r.is_full,
+      missed_previous: r.missed_previous,
+      fuel_type: r.fuel_type,
+      memo: r.memo,
       backupVehicleId,
     });
   }

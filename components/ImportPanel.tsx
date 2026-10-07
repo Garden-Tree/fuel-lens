@@ -5,7 +5,7 @@ import { Bike, Car, FileInput, FileSpreadsheet, Loader2 } from "lucide-react";
 
 import { useToast } from "@/components/Toast";
 import type { FuelRecord } from "@/lib/useFuelRecords";
-import type { Vehicle } from "@/lib/useVehicles";
+import type { Vehicle, VehicleSettings } from "@/lib/useVehicles";
 import {
   BACKUP_MAX_TEXT_LENGTH,
   finalizeRestoreRecords,
@@ -32,7 +32,7 @@ export interface ImportPanelProps {
   /** 車両一覧の読み込みエラー（あれば取り込みを無効化する） */
   vehiclesError: string | null;
   fetchAllRecords: () => Promise<FuelRecord[]>;
-  addVehicles: (items: { name: string; type: "car" | "bike" }[]) => Promise<Vehicle[]>;
+  addVehicles: (items: ({ name: string; type: "car" | "bike" } & VehicleSettings)[]) => Promise<Vehicle[]>;
   addRecords: (
     items: Omit<FuelRecord, "id">[],
     options?: { onProgress?: (done: number, total: number) => void }
@@ -253,7 +253,15 @@ export default function ImportPanel({
       const createdIdMap = Object.create(null) as Record<string, string>;
       if (plan.vehiclesToCreate.length > 0) {
         setProgress(`車両を追加中…（${plan.vehiclesToCreate.length} 台）`);
-        const created = await addVehicles(plan.vehiclesToCreate.map(v => ({ name: v.name, type: v.type })));
+        // 距離の入力方式・既定の燃料種別も引き継ぐ（未指定のキーは addVehicles が既定値にする）
+        const created = await addVehicles(
+          plan.vehiclesToCreate.map(v => ({
+            name: v.name,
+            type: v.type,
+            distance_mode: v.distance_mode,
+            default_fuel_type: v.default_fuel_type,
+          }))
+        );
         changed = true;
         plan.vehiclesToCreate.forEach((v, i) => {
           const c = created[i];
@@ -298,7 +306,18 @@ export default function ImportPanel({
 
   const notes: string[] = [];
   if (source?.kind === "fuelio") {
-    const { partial, missed, skippedInvalid, skippedOtherTank } = source.parsed.stats;
+    const { partial, missed, odometerNotIncreasing, skippedInvalid, skippedOtherTank } = source.parsed.stats;
+    if (willMatchExisting && matchedVehicle) {
+      if (matchedVehicle.distance_mode === "odometer") {
+        notes.push("取り込み先の車両はオドメーター入力方式です。区間距離と燃費は保存後に自動計算されます");
+      } else {
+        notes.push(
+          `既存の車両「${matchedVehicle.name}」はトリップ入力方式のため、取り込んだ記録の区間距離と燃費は計算されません。取り込み後に車両の設定でオドメーター入力方式に切り替えると計算されます`
+        );
+      }
+    } else {
+      notes.push("取り込み先の車両はオドメーター入力方式になります。区間距離と燃費は保存後に自動計算されます");
+    }
     if (source.parsed.tankCount > 1) {
       notes.push(
         `燃料タンクが ${source.parsed.tankCount} つの車両です。1 本目のタンクの記録だけを取り込みます（走行距離には他の燃料で走った分も含まれます）`
@@ -307,8 +326,11 @@ export default function ImportPanel({
     if (skippedOtherTank > 0) notes.push(`2本目のタンクの記録 ${skippedOtherTank} 件は対象外`);
     if (partial > 0) notes.push(`部分給油 ${partial} 件は燃費なし（次の満タン給油でまとめて計算）`);
     if (missed > 0) notes.push(`給油の記録漏れ（Missed）${missed} 件は走行距離・燃費なし`);
+    if (odometerNotIncreasing > 0) {
+      notes.push(`積算距離が前回以下の記録 ${odometerNotIncreasing} 件は走行距離・燃費なし`);
+    }
     if (skippedInvalid > 0) notes.push(`日付・給油量が読めない ${skippedInvalid} 行は読み飛ばし`);
-    notes.push("走行距離は積算距離（Odo）の差から計算します（最初の 1 件は走行距離なし）");
+    notes.push("最初の 1 件は走行距離・燃費なし（前回の積算距離が無いため）");
   } else if (source?.kind === "fuellens") {
     if (source.parsed.stats.skippedInvalid > 0) {
       notes.push(`日付・給油量が読めない ${source.parsed.stats.skippedInvalid} 行は読み飛ばし`);

@@ -2,15 +2,22 @@
  * FuelLens 自身が書き出した CSV を読み込む純粋関数。React・保存先には依存しない。
  *
  * - 全車両 CSV（設定画面）: 車両,日付,給油量(L),支払総額(円),単価(円/L),走行距離(km),燃費(km/L),店舗名
+ *   （+ オドメーター(km),満タン,記録漏れ,燃料種別,メモ）
  * - 車両別 CSV（履歴画面）: 給油日,走行距離(km),給油量(L),単価(円/L),支払総額(円),燃費(km/L),ガソリンスタンド名
+ *   （+ 同じ追加列）
+ *
+ * 追加列（lib/csv.ts の RECORD_CSV_EXTRA_HEADERS）はどちらの形式でも任意。無い列・読めない値は既定値
+ * （オドメーターなし・満タン・記録漏れなし・燃料種別なし・メモなし）。古い CSV もそのまま読める。
  *
  * 列はヘッダー名で探す。lib/csv.ts の CSV インジェクション対策で付けた先頭の `'` は外す。
  * 取り込みは lib/backup.ts のバックアップ形式（FuelLensBackup）に変換し、復元と同じ planRestore で追記する。
  */
 
+import { normalizeFuelType } from "../analyze";
 import { BACKUP_APP_ID, BACKUP_MAX_RECORDS, BACKUP_VERSION, type FuelLensBackup } from "../backup";
 import { calculateFuelMetrics } from "../calculations";
-import { RECORDS_CSV_HEADERS } from "../csv";
+import { CSV_NO, CSV_YES, RECORD_CSV_EXTRA_HEADERS, RECORDS_CSV_BASE_HEADERS } from "../csv";
+import { FUEL_TYPES, FUEL_TYPE_LABELS, sanitizeMemo, sanitizeOdometer, type FuelType } from "../fillChain";
 import type { FuelRecord } from "../useFuelRecords";
 import { hashString, isBlankRow, parseCsvNumber, parseCsvRows, parseFlexibleDate, type VehicleType } from "./fuelio";
 
@@ -25,7 +32,11 @@ export const HISTORY_CSV_HEADERS = [
   "ガソリンスタンド名",
 ] as const;
 
-export type FuelLensCsvRecord = Omit<FuelRecord, "vehicle_id" | "created_at"> & {
+export type FuelLensCsvRecord = Omit<
+  FuelRecord,
+  "vehicle_id" | "created_at" | "odometer" | "is_full" | "missed_previous" | "fuel_type" | "memo"
+> &
+  Required<Pick<FuelRecord, "odometer" | "is_full" | "missed_previous" | "fuel_type" | "memo">> & {
   /** 全車両 CSV の車両名。車両別 CSV では null */
   vehicleName: string | null;
 };
@@ -52,12 +63,28 @@ function unescapeField(value: string): string {
   return /^'[=+\-@\t\r]/.test(value) ? value.slice(1) : value;
 }
 
+/** 「はい / いいえ」（と true / false / 1 / 0）を真偽値にする。空・不明は null（呼び出し側で既定値） */
+function parseCsvBoolean(raw: string): boolean | null {
+  const s = raw.trim().toLowerCase();
+  if (s === CSV_YES || s === "true" || s === "1") return true;
+  if (s === CSV_NO || s === "false" || s === "0") return false;
+  return null;
+}
+
+/** 燃料種別の表示名（レギュラー など）・内部値（regular など）を FuelType にする。空は null */
+function parseCsvFuelType(raw: string): FuelType | null {
+  const s = raw.trim();
+  if (s === "") return null;
+  const byLabel = FUEL_TYPES.find(t => FUEL_TYPE_LABELS[t] === s);
+  return byLabel ?? normalizeFuelType(s);
+}
+
 /** 先頭の空でない行が FuelLens の CSV のヘッダーか */
 export function detectFuelLensCsv(text: string): "all" | "vehicle" | null {
   const rows = parseCsvRows(text.slice(0, 4096));
   const header = rows.find(r => !isBlankRow(r))?.map(h => h.trim());
   if (!header) return null;
-  if (RECORDS_CSV_HEADERS.every(h => header.includes(h))) return "all";
+  if (RECORDS_CSV_BASE_HEADERS.every(h => header.includes(h))) return "all";
   if (HISTORY_CSV_HEADERS.every(h => header.includes(h))) return "vehicle";
   return null;
 }
@@ -72,7 +99,7 @@ export function parseFuelLensCsv(text: string): ParseFuelLensCsvResult {
 
   const rows = parseCsvRows(text).filter(r => !isBlankRow(r));
   const header = (rows[0] ?? []).map(h => h.trim());
-  const format = RECORDS_CSV_HEADERS.every(h => header.includes(h))
+  const format = RECORDS_CSV_BASE_HEADERS.every(h => header.includes(h))
     ? "all"
     : HISTORY_CSV_HEADERS.every(h => header.includes(h))
       ? "vehicle"
@@ -102,6 +129,14 @@ export function parseFuelLensCsv(text: string): ParseFuelLensCsvResult {
           efficiency: idx("燃費(km/L)"),
           station: idx("ガソリンスタンド名"),
         };
+  // 追加列（任意）。両方の形式で同じ名前
+  const extra = {
+    odometer: idx(RECORD_CSV_EXTRA_HEADERS.odometer),
+    isFull: idx(RECORD_CSV_EXTRA_HEADERS.isFull),
+    missedPrevious: idx(RECORD_CSV_EXTRA_HEADERS.missedPrevious),
+    fuelType: idx(RECORD_CSV_EXTRA_HEADERS.fuelType),
+    memo: idx(RECORD_CSV_EXTRA_HEADERS.memo),
+  };
 
   const dataRows = rows.slice(1);
   if (dataRows.length > BACKUP_MAX_RECORDS) {
@@ -149,6 +184,12 @@ export function parseFuelLensCsv(text: string): ParseFuelLensCsvResult {
       price_per_unit: parseCsvNumber(cell(col.price)) ?? computed.price_per_unit,
       total_cost: cost,
       fuel_efficiency: parseCsvNumber(cell(col.efficiency)) ?? computed.fuel_efficiency,
+      odometer: sanitizeOdometer(parseCsvNumber(cell(extra.odometer))),
+      is_full: parseCsvBoolean(cell(extra.isFull)) ?? true,
+      missed_previous: parseCsvBoolean(cell(extra.missedPrevious)) ?? false,
+      fuel_type: parseCsvFuelType(cell(extra.fuelType)),
+      // メモは改行も含めてそのまま（前後の空白を除き 200 文字まで）
+      memo: sanitizeMemo(cell(extra.memo)),
       vehicleName,
     });
   }
@@ -157,7 +198,7 @@ export function parseFuelLensCsv(text: string): ParseFuelLensCsvResult {
 }
 
 /**
- * 読み込んだ FuelLens CSV をバックアップ（version 1）に変換する。
+ * 読み込んだ FuelLens CSV をバックアップ（version 2）に変換する。
  * - 全車両 CSV: 車両名ごとに 1 台。種別は CSV に無いので typeByName（既存車両の種別など）→ 無ければ car
  * - 車両別 CSV: vehicleName / vehicleType の 1 台
  * 車両 ID は `fuellens-csv-v-<車両名のハッシュ>`、記録 ID は `fuellens-csv-<車両名と各列のハッシュ>`（同じ行が続けば `-2` …）。
@@ -206,6 +247,11 @@ export function fuelLensCsvToBackup(
       fuel_efficiency: r.fuel_efficiency,
       vehicle_id: vehicleIdForRecord(r),
       created_at: null,
+      odometer: r.odometer,
+      is_full: r.is_full,
+      missed_previous: r.missed_previous,
+      fuel_type: r.fuel_type,
+      memo: r.memo,
     })),
   };
 }

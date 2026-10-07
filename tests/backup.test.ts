@@ -44,7 +44,7 @@ const record = (overrides: Partial<FuelRecord> = {}): FuelRecord => ({
 
 const validBackup = (overrides: Partial<FuelLensBackup> = {}): FuelLensBackup => ({
   app: "fuel-lens",
-  version: 1,
+  version: BACKUP_VERSION,
   exportedAt: "2026-02-01T00:00:00.000Z",
   vehicles: [{ id: UUID_A, name: "メインカー", type: "car" }],
   records: [record()],
@@ -170,6 +170,11 @@ describe("parseBackup", () => {
       gas_station: null,
       vehicle_id: null,
       created_at: null,
+      odometer: null,
+      is_full: true,
+      missed_previous: false,
+      fuel_type: null,
+      memo: null,
     });
   });
 
@@ -199,11 +204,13 @@ describe("parseBackup", () => {
   });
 
   it("rejects wrong / future versions", () => {
-    const future = parseObj({ ...validBackup(), version: 2 });
+    expect(BACKUP_VERSION).toBe(2);
+    const future = parseObj({ ...validBackup(), version: 3 });
     expect(future.ok).toBe(false);
     if (!future.ok) expect(future.error).toContain("新しいバージョン");
     expect(parseObj({ ...validBackup(), version: 0 }).ok).toBe(false);
     expect(parseObj({ ...validBackup(), version: "1" }).ok).toBe(false);
+    expect(parseObj({ ...validBackup(), version: 1.5 }).ok).toBe(false);
   });
 
   it("rejects a bad exportedAt", () => {
@@ -273,6 +280,169 @@ describe("parseBackup", () => {
     if (!tooManyRecords.ok) expect(tooManyRecords.error).toContain("記録が多すぎます");
     const tooManyVehicles = parseObj({ ...validBackup(), vehicles: new Array(BACKUP_MAX_VEHICLES + 1).fill(0) });
     expect(tooManyVehicles.ok).toBe(false);
+  });
+});
+
+describe("version 2 fields (fill chain)", () => {
+  /** version 1 で書き出された実際のファイルの形（新しいフィールドを持たない） */
+  const v1File = () => ({
+    app: "fuel-lens",
+    version: 1,
+    exportedAt: "2025-12-01T00:00:00.000Z",
+    vehicles: [{ id: UUID_A, name: "メインカー", type: "car", created_at: "2025-01-01T00:00:00.000Z" }],
+    records: [
+      {
+        id: "r1",
+        date: "2025-11-01",
+        total_distance: 500,
+        fuel_amount: 30,
+        gas_station: "ENEOS",
+        price_per_unit: 170,
+        total_cost: 5100,
+        fuel_efficiency: 16.67,
+        vehicle_id: UUID_A,
+        created_at: "2025-11-01T03:00:00.000Z",
+      },
+    ],
+  });
+
+  it("reads a version 1 file and fills the new fields with defaults (returned as version 2)", () => {
+    const res = parseObj(v1File());
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    expect(res.backup.version).toBe(2);
+    expect(res.backup.vehicles[0]).toEqual({
+      id: UUID_A,
+      name: "メインカー",
+      type: "car",
+      created_at: "2025-01-01T00:00:00.000Z",
+      distance_mode: "trip",
+      default_fuel_type: null,
+    });
+    expect(res.backup.records[0]).toMatchObject({
+      id: "r1",
+      total_distance: 500,
+      odometer: null,
+      is_full: true,
+      missed_previous: false,
+      fuel_type: null,
+      memo: null,
+    });
+  });
+
+  it("buildBackup writes the new fields and they round-trip through parseBackup", () => {
+    const vehicles: Vehicle[] = [
+      { ...vehicle(UUID_A, "メインカー"), distance_mode: "odometer", default_fuel_type: "premium" },
+      vehicle(UUID_B, "バイク", "bike"), // 旧データ: 新しいフィールドなし
+    ];
+    const records: FuelRecord[] = [
+      record({ id: "p", odometer: 12345.6, is_full: false, missed_previous: true, fuel_type: "premium", memo: "  遠出  " }),
+      record({ id: "q", vehicle_id: UUID_B, date: "2026-01-16" }), // 旧データ
+    ];
+    const backup = buildBackup(vehicles, records, new Date("2026-02-01T00:00:00.000Z"));
+    expect(backup.version).toBe(2);
+    expect(backup.vehicles[0]).toMatchObject({ distance_mode: "odometer", default_fuel_type: "premium" });
+    expect(backup.vehicles[1]).toMatchObject({ distance_mode: "trip", default_fuel_type: null });
+    const byId = new Map(backup.records.map(r => [r.id, r]));
+    expect(byId.get("p")).toMatchObject({
+      odometer: 12345.6,
+      is_full: false,
+      missed_previous: true,
+      fuel_type: "premium",
+      memo: "遠出",
+    });
+    expect(byId.get("q")).toMatchObject({ odometer: null, is_full: true, missed_previous: false, fuel_type: null, memo: null });
+
+    const parsed = parseBackup(serializeBackup(backup));
+    expect(parsed.ok).toBe(true);
+    if (parsed.ok) expect(parsed.backup).toEqual(backup);
+  });
+
+  it("buildBackup sanitizes broken values of the new fields", () => {
+    const broken = {
+      ...record(),
+      odometer: -1,
+      is_full: "no",
+      missed_previous: 1,
+      fuel_type: "kerosene",
+      memo: "x".repeat(250),
+    } as unknown as FuelRecord;
+    const v = { ...vehicle(UUID_A, "A"), distance_mode: "gps", default_fuel_type: "x" } as unknown as Vehicle;
+    const backup = buildBackup([v], [broken]);
+    expect(backup.vehicles[0]).toMatchObject({ distance_mode: "trip", default_fuel_type: null });
+    expect(backup.records[0]).toMatchObject({ odometer: null, is_full: true, missed_previous: false, fuel_type: null });
+    expect(backup.records[0].memo).toHaveLength(200);
+    expect(parseBackup(serializeBackup(backup)).ok).toBe(true);
+  });
+
+  it.each([
+    ["odometer", -5, "オドメーター"],
+    ["odometer", "12345", "オドメーター"],
+    ["is_full", "true", "満タン"],
+    ["is_full", null, "満タン"],
+    ["missed_previous", 1, "記録漏れ"],
+    ["fuel_type", "gasoline", "燃料種別"],
+    ["memo", 42, "メモ"],
+    ["memo", "x".repeat(201), "メモ"],
+  ])("rejects invalid record field %s=%j", (key, value, label) => {
+    const res = parseObj(validBackup({ records: [{ ...record(), [key]: value } as FuelRecord] }));
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.error).toContain(label);
+  });
+
+  it("accepts null for nullable new record fields and a 200-char memo", () => {
+    const res = parseObj(
+      validBackup({ records: [record({ odometer: null, fuel_type: null, memo: "あ".repeat(200) })] })
+    );
+    expect(res.ok).toBe(true);
+    if (res.ok) expect(res.backup.records[0].memo).toHaveLength(200);
+  });
+
+  it("counts the memo in code points: an emoji memo written by buildBackup restores", () => {
+    const memo = "😀".repeat(150); // 150 コードポイント = 300 UTF-16 単位
+    const backup = buildBackup([vehicle(UUID_A, "A")], [record({ memo })]);
+    expect(backup.records[0].memo).toBe(memo);
+    const res = parseBackup(serializeBackup(backup));
+    expect(res.ok).toBe(true);
+    if (res.ok) expect(res.backup.records[0].memo).toBe(memo);
+    // 201 コードポイントは拒否する
+    const tooLong = parseObj(validBackup({ records: [record({ memo: "😀".repeat(201) })] }));
+    expect(tooLong.ok).toBe(false);
+  });
+
+  it.each([
+    ["distance_mode", "gps", "距離の入力方式"],
+    ["distance_mode", 1, "距離の入力方式"],
+    ["default_fuel_type", "gasoline", "燃料種別"],
+  ])("rejects invalid vehicle field %s=%j", (key, value, label) => {
+    const res = parseObj(validBackup({ vehicles: [{ id: UUID_A, name: "A", type: "car", [key]: value }] }));
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.error).toContain(label);
+  });
+
+  it("planRestore passes the new fields through to the records and the vehicles to create", () => {
+    const backup = validBackup({
+      vehicles: [
+        { id: UUID_A, name: "メインカー", type: "car", distance_mode: "trip", default_fuel_type: null },
+        { id: UUID_C, name: "旧車", type: "car", distance_mode: "odometer", default_fuel_type: "diesel" },
+      ],
+      records: [
+        record({ id: "r1", vehicle_id: UUID_C, odometer: 1000, is_full: false, missed_previous: true, fuel_type: "diesel", memo: "m" }),
+      ],
+    });
+    const plan = planRestore(backup, [vehicle(UUID_B, "メインカー")], []);
+    expect(plan.vehiclesToCreate).toEqual([
+      { backupId: UUID_C, name: "旧車", type: "car", distance_mode: "odometer", default_fuel_type: "diesel" },
+    ]);
+    const [finalized] = finalizeRestoreRecords(plan, { [UUID_C]: UUID_X });
+    expect(finalized).toMatchObject({
+      vehicle_id: UUID_X,
+      odometer: 1000,
+      is_full: false,
+      missed_previous: true,
+      fuel_type: "diesel",
+      memo: "m",
+    });
   });
 });
 

@@ -35,10 +35,18 @@ export function calculateFuelMetrics(
   // 燃費の計算 (走行距離 / 給油量)
   if (distance != null && amount != null && amount > 0) {
     // 小数点第2位まで丸める
-    fuel_efficiency = parseFloat((distance / amount).toFixed(2));
+    fuel_efficiency = roundFuelEfficiency(distance / amount);
   }
 
   return { price_per_unit, fuel_efficiency };
+}
+
+/**
+ * 燃費 (km/L) の丸め。小数第 2 位（`toFixed(2)`）。
+ * calculateFuelMetrics と lib/fillChain.ts の applyFillChain（部分給油の合算）で共有する。
+ */
+export function roundFuelEfficiency(value: number): number {
+  return parseFloat(value.toFixed(2));
 }
 
 /**

@@ -5,7 +5,7 @@ import { Database, Download, FileJson, FileSpreadsheet, Loader2, Upload } from "
 
 import { useToast } from "@/components/Toast";
 import type { FuelRecord } from "@/lib/useFuelRecords";
-import type { Vehicle } from "@/lib/useVehicles";
+import type { Vehicle, VehicleSettings } from "@/lib/useVehicles";
 import {
   BACKUP_MAX_TEXT_LENGTH,
   backupFilename,
@@ -30,7 +30,7 @@ export interface BackupPanelProps {
   /** 車両一覧の読み込みエラー（あれば復元を無効化する） */
   vehiclesError: string | null;
   fetchAllRecords: () => Promise<FuelRecord[]>;
-  addVehicles: (items: { name: string; type: "car" | "bike" }[]) => Promise<Vehicle[]>;
+  addVehicles: (items: ({ name: string; type: "car" | "bike" } & VehicleSettings)[]) => Promise<Vehicle[]>;
   addRecords: (
     items: Omit<FuelRecord, "id">[],
     options?: { onProgress?: (done: number, total: number) => void }
@@ -211,7 +211,15 @@ export default function BackupPanel({
       const createdIdMap = Object.create(null) as Record<string, string>;
       if (plan.vehiclesToCreate.length > 0) {
         setProgress(`車両を追加中…（${plan.vehiclesToCreate.length} 台）`);
-        const created = await addVehicles(plan.vehiclesToCreate.map(v => ({ name: v.name, type: v.type })));
+        // 距離の入力方式・既定の燃料種別も引き継ぐ（未指定のキーは addVehicles が既定値にする）
+        const created = await addVehicles(
+          plan.vehiclesToCreate.map(v => ({
+            name: v.name,
+            type: v.type,
+            distance_mode: v.distance_mode,
+            default_fuel_type: v.default_fuel_type,
+          }))
+        );
         plan.vehiclesToCreate.forEach((v, i) => {
           const c = created[i];
           if (c) createdIdMap[v.backupId] = c.id;

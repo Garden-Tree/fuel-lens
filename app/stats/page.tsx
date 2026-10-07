@@ -118,7 +118,8 @@ export default function StatsPage() {
   const { records, loading: recordsLoading, error: recordsError } = useFuelRecords(
     selectedVehicleId,
     vehicles[0]?.id,
-    { enabled: !vehiclesLoading }
+    // vehicles は連鎖計算（オドメーターモードの区間距離・部分給油の燃費）で各車両の方式を知るために渡す
+    { enabled: !vehiclesLoading, vehicles }
   );
 
   // 期間フィルタ (全期間 / 1年 / 6ヶ月 / 3ヶ月)

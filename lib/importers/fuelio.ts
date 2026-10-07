@@ -5,32 +5,39 @@
  * 各セクションはヘッダー行 + データ行からなる。使うのは `## Vehicle`（1 行目の車両）と `## Log`（給油記録）だけ。
  * 列は位置ではなくヘッダー名で探す（Fuelio のバージョンで列が増減しても読めるように）。
  *
- * FuelLens は満タン法で「前回給油からの区間距離（トリップ）」を保存するが、Fuelio は積算距離（Odo）を記録する。
- * そのため日付 → 積算距離の順に並べ、前の行との差分を区間距離にする（先頭行・Missed=1 の行は null）。
- * 部分給油（Full=0）の行は燃費を null にし、次の満タン給油の燃費を「前回の満タン以降の距離合計 ÷ 給油量合計」で計算する。
- * 積算距離がそれまでの最大値以下の行（並びの乱れ・入力ミス）は区間距離を null にし、次の行の区間距離を水増ししない。
+ * Fuelio は積算距離（Odo）を記録するので、取り込み先の車両は「オドメーター入力方式」（distance_mode = "odometer"）にし、
+ * 記録には積算距離（Odo → odometer）・満タン（Full → is_full）・記録漏れ（Missed → missed_previous）・
+ * 燃料種別（FuelType → fuel_type）・メモ（Notes → memo）を入れる。店舗名は City だけ。
+ * 区間距離（total_distance）と燃費（fuel_efficiency）はインポータでは計算せず null にする。
+ * 表示・統計・CSV では lib/fillChain.ts の applyFillChain が積算距離の差分と満タン法の連鎖から計算する
+ * （部分給油・記録漏れの扱いもそちらに一本化する。docs/design-fill-chain.md の 5 章）。
  * 燃料タンクが 2 つある車両（TankCount > 1）は 1 本目のタンク（TankNumber が 0・1・空）の記録だけを取り込む。
+ *
+ * 燃料種別（FuelType 列）: Fuelio は番号で書き出すが、番号と油種の対応表はオフラインで確認できないため推測しない。
+ * - 空・`0`（手元の実データでは全行が 0。油種を選んでいない記録とみなす）→ null（未指定）
+ * - その他の番号 → `other`
+ * - 文字（Regular / Premium / Diesel / レギュラー など）なら lib/analyze.ts の normalizeFuelType の規則で寄せる
  *
  * 取り込みは lib/backup.ts のバックアップ形式（FuelLensBackup）に変換し、復元と同じ planRestore で追記する。
  * ID は入力から決まる（同じファイル → 同じ ID）。
  */
 
-import { isValidCalendarDate } from "../analyze";
+import { isValidCalendarDate, normalizeFuelType } from "../analyze";
 import { BACKUP_APP_ID, BACKUP_MAX_RECORDS, BACKUP_VERSION, type FuelLensBackup } from "../backup";
 import { calculateFuelMetrics } from "../calculations";
+import { sanitizeMemo, type FuelType } from "../fillChain";
 import type { FuelRecord } from "../useFuelRecords";
 
 export type VehicleType = "car" | "bike";
 
-/** 取り込む記録（FuelRecord の列 + Fuelio 固有の情報） */
-export type ImportedRecord = Omit<FuelRecord, "vehicle_id" | "created_at"> & {
-  /** 満タン給油か（Full=1）。false は部分給油 */
-  full: boolean;
-  /** 前回の給油が記録されていない（Missed=1）。区間距離は null */
-  missed: boolean;
-  /** 積算距離（参考。FuelLens には保存しない） */
-  odometer: number | null;
-};
+type NewRecordColumns = "odometer" | "is_full" | "missed_previous" | "fuel_type" | "memo";
+
+/**
+ * 取り込む記録。0004 で追加した列は必ず入れる。
+ * total_distance / fuel_efficiency は常に null（applyFillChain が積算距離から計算する）。
+ */
+export type ImportedRecord = Omit<FuelRecord, "vehicle_id" | "created_at" | NewRecordColumns> &
+  Required<Pick<FuelRecord, NewRecordColumns>>;
 
 export type FuelioImportStats = {
   /** 取り込み対象の記録数 */
@@ -39,6 +46,8 @@ export type FuelioImportStats = {
   partial: number;
   /** 前回の給油が記録されていない（区間距離なし）の件数 */
   missed: number;
+  /** 積算距離がそれまでの記録（日付順）の最大値以下の件数。その記録の区間距離・燃費は計算されない */
+  odometerNotIncreasing: number;
   /** 日付が読めない・給油量も金額も無いなどで読み飛ばした行数 */
   skippedInvalid: number;
   /** 2 本目以降の燃料タンク（TankNumber >= 2）の記録で、取り込み対象外にした行数 */
@@ -264,9 +273,6 @@ export function guessFuelioVehicleType(info: {
   return "car";
 }
 
-/** 日付だけのメモ（`2024/12/1` など）は店舗名として使わない */
-const DATE_ONLY_NOTE = /^\d{2,4}[-/.]\d{1,2}[-/.]\d{1,4}$/;
-
 type RawLogRow = {
   index: number;
   date: string;
@@ -277,6 +283,8 @@ type RawLogRow = {
   full: boolean;
   missed: boolean;
   station: string | null;
+  fuelType: FuelType | null;
+  memo: string | null;
   uniqueId: string;
 };
 
@@ -290,8 +298,18 @@ function isFalsyFlag(raw: string | undefined): boolean {
   return s === "0" || s === "0.0" || s === "false" || s === "no";
 }
 
-const round1 = (n: number) => Math.round(n * 10) / 10;
 const round2 = (n: number) => Math.round(n * 100) / 100;
+
+/**
+ * Fuelio の FuelType 列を FuelType にする（番号の対応表は未確認のため推測しない。ファイル先頭のコメント参照）。
+ * 空・0 → null、その他の番号 → other、文字 → normalizeFuelType（レギュラー / premium / diesel など）
+ */
+export function parseFuelioFuelType(raw: string | undefined): FuelType | null {
+  const s = (raw ?? "").trim();
+  if (s === "") return null;
+  if (/^\d+(\.0+)?$/.test(s)) return Number(s) === 0 ? null : "other";
+  return normalizeFuelType(s);
+}
 
 /**
  * Fuelio の CSV を読み込む。エラーメッセージは日本語でそのまま画面に出してよい。
@@ -352,6 +370,7 @@ export function parseFuelioCsv(text: string): ParseFuelioResult {
     volumePrice: findColumn(logHeaders, h => h === "volumeprice"),
     uniqueId: findColumn(logHeaders, h => h === "uniqueid"),
     tankNumber: findColumn(logHeaders, h => h === "tanknumber"),
+    fuelType: findColumn(logHeaders, h => h === "fueltype"),
   };
   if (col.date < 0 || col.fuel < 0) {
     return fail("Fuelio の給油記録（## Log）に日付または給油量の列が見つかりません。");
@@ -398,9 +417,8 @@ export function parseFuelioCsv(text: string): ParseFuelioResult {
       return;
     }
 
+    // 店舗名は City だけ（Notes はメモへ）
     const city = (cell(row, col.city) ?? "").trim();
-    const notes = (cell(row, col.notes) ?? "").trim();
-    const stationSource = city || (DATE_ONLY_NOTE.test(notes) ? "" : notes);
 
     raw.push({
       index,
@@ -412,7 +430,9 @@ export function parseFuelioCsv(text: string): ParseFuelioResult {
       // Full 列が無い・空なら満タン扱い
       full: !isFalsyFlag(cell(row, col.full)),
       missed: isTruthyFlag(cell(row, col.missed)),
-      station: stationSource ? stationSource.slice(0, MAX_GAS_STATION_LENGTH) : null,
+      station: city ? city.slice(0, MAX_GAS_STATION_LENGTH) : null,
+      fuelType: parseFuelioFuelType(cell(row, col.fuelType)),
+      memo: sanitizeMemo(cell(row, col.notes)),
       uniqueId: (cell(row, col.uniqueId) ?? "").trim(),
     });
   });
@@ -432,41 +452,19 @@ export function parseFuelioCsv(text: string): ParseFuelioResult {
 
   const records: ImportedRecord[] = [];
   const usedIds = new Set<string>();
-  /** これまでの最大の積算距離（後戻りした行で下げない） */
-  let maxOdo: number | null = null;
-  /** 直前の行の積算距離が不明（区間距離をつなげられない） */
-  let odoChainBroken = false;
-  /** 前回の満タン給油からの距離と給油量の合計。null は「満タン法で計算できない」状態 */
-  let acc: { distance: number; fuel: number } | null = null;
   let partial = 0;
   let missed = 0;
+  let odometerNotIncreasing = 0;
+  /** ここまでの行の積算距離の最大値（プレビューの注意書き用。区間距離の計算は applyFillChain が行う） */
+  let maxOdo: number | null = null;
 
   for (const r of raw) {
-    let distance: number | null = null;
-    if (!r.missed && !odoChainBroken && maxOdo != null && r.odometer != null && r.odometer > maxOdo) {
-      distance = round1(r.odometer - maxOdo);
-    }
-    if (r.odometer == null) {
-      odoChainBroken = true;
-    } else {
-      // 最大値より小さい（後戻りした）行は区間距離 null のまま、最大値も下げない
-      maxOdo = maxOdo == null ? r.odometer : Math.max(maxOdo, r.odometer);
-      odoChainBroken = false;
-    }
-
-    if (acc && distance != null && r.fuel != null && r.fuel > 0) {
-      acc = { distance: acc.distance + distance, fuel: acc.fuel + r.fuel };
-    } else {
-      acc = null;
-    }
-    let efficiency: number | null = null;
-    if (r.full) {
-      if (acc) efficiency = calculateFuelMetrics(round1(acc.distance), round2(acc.fuel), null).fuel_efficiency;
-      acc = { distance: 0, fuel: 0 };
-    } else {
-      partial += 1;
-    }
+    if (!r.full) partial += 1;
     if (r.missed) missed += 1;
+    if (r.odometer != null) {
+      if (maxOdo != null && r.odometer <= maxOdo) odometerNotIncreasing += 1;
+      else maxOdo = r.odometer;
+    }
 
     const idPart = /^[A-Za-z0-9_-]{1,64}$/.test(r.uniqueId)
       ? r.uniqueId
@@ -479,15 +477,17 @@ export function parseFuelioCsv(text: string): ParseFuelioResult {
     records.push({
       id,
       date: r.date,
-      total_distance: distance,
+      total_distance: null,
       fuel_amount: r.fuel,
       gas_station: r.station,
       price_per_unit: calculateFuelMetrics(null, r.fuel, r.cost).price_per_unit,
       total_cost: r.cost,
-      fuel_efficiency: efficiency,
-      full: r.full,
-      missed: r.missed,
+      fuel_efficiency: null,
       odometer: r.odometer,
+      is_full: r.full,
+      missed_previous: r.missed,
+      fuel_type: r.fuelType,
+      memo: r.memo,
     });
   }
 
@@ -498,13 +498,15 @@ export function parseFuelioCsv(text: string): ParseFuelioResult {
     vehicleKey,
     tankCount,
     records,
-    stats: { rows: records.length, partial, missed, skippedInvalid, skippedOtherTank },
+    stats: { rows: records.length, partial, missed, odometerNotIncreasing, skippedInvalid, skippedOtherTank },
   };
 }
 
 /**
- * 読み込んだ Fuelio のデータを FuelLens のバックアップ（version 1、車両 1 台）に変換する。
+ * 読み込んだ Fuelio のデータを FuelLens のバックアップ（version 2、車両 1 台）に変換する。
  * vehicleName / vehicleType で取り込み先の車両名・種別を上書きできる（名前 + 種別が一致する既存車両に追加される）。
+ * 車両は distance_mode = "odometer"（新規作成されるときに使われる。既存車両に追加するときは既存車両の設定のまま）。
+ * 記録の区間距離・燃費は null（applyFillChain が積算距離から計算する）。
  * 車両 ID は `fuelio-<車両名のハッシュ>`、記録 ID は `fuelio-<車両名のハッシュ>-<UniqueId>`
  * （UniqueId が無ければ `h<日付・積算距離・給油量のハッシュ>`）。
  */
@@ -518,7 +520,15 @@ export function fuelioToBackup(
     app: BACKUP_APP_ID,
     version: BACKUP_VERSION,
     exportedAt: (options.now ?? new Date()).toISOString(),
-    vehicles: [{ id: vehicleId, name, type: options.vehicleType ?? parsed.vehicleType }],
+    vehicles: [
+      {
+        id: vehicleId,
+        name,
+        type: options.vehicleType ?? parsed.vehicleType,
+        distance_mode: "odometer",
+        default_fuel_type: null,
+      },
+    ],
     records: parsed.records.map(r => ({
       id: r.id,
       date: r.date,
@@ -530,6 +540,11 @@ export function fuelioToBackup(
       fuel_efficiency: r.fuel_efficiency,
       vehicle_id: vehicleId,
       created_at: null,
+      odometer: r.odometer,
+      is_full: r.is_full,
+      missed_previous: r.missed_previous,
+      fuel_type: r.fuel_type,
+      memo: r.memo,
     })),
   };
 }

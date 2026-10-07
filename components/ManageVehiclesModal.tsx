@@ -2,18 +2,132 @@
 
 import { useEffect, useRef, useState } from "react";
 import { X, Plus, Car, Bike, Edit2, Trash2, Check, Sliders, Loader2 } from "lucide-react";
-import { Vehicle } from "@/lib/useVehicles";
+import type { Vehicle, VehicleSettings } from "@/lib/useVehicles";
+import {
+  FUEL_TYPES,
+  FUEL_TYPE_LABELS,
+  distanceModeOf,
+  isFuelType,
+  type DistanceMode,
+  type FuelType,
+} from "@/lib/fillChain";
 import { useBackdropClose } from "@/lib/useBackdropClose";
 import { useFocusTrap } from "@/lib/useFocusTrap";
 import { useToast } from "./Toast";
+
+const DISTANCE_MODE_OPTIONS: readonly { value: DistanceMode; label: string; detail: string }[] = [
+  { value: "trip", label: "トリップメーター", detail: "区間距離" },
+  { value: "odometer", label: "オドメーター", detail: "積算距離" },
+];
+
+const DISTANCE_MODE_SHORT_LABELS: Readonly<Record<DistanceMode, string>> = {
+  trip: "トリップメーター",
+  odometer: "オドメーター",
+};
+
+/** オドメーターへ切り替えるときの注意（docs/design-fill-chain.md 4 章） */
+const ODOMETER_SWITCH_NOTE =
+  "オドメーターが入っていない既存の記録は、区間距離と燃費が「不明」になります（記録は消えません）。";
+
+/** オドメーターからトリップメーターへ戻すときの注意（区間距離はオドメーター差分の導出値で、保存値を使わなくなるため） */
+const TRIP_SWITCH_NOTE =
+  "トリップメーター方式に切り替えると、オドメーターから自動計算していた区間距離は表示されなくなります（走行距離を入力した記録のみ表示）";
+
+/** 既存の車両の方式を from → to に切り替えるときの注意。切り替えないなら null */
+function modeSwitchNote(from: DistanceMode, to: DistanceMode): string | null {
+  if (from === to) return null;
+  return to === "odometer" ? ODOMETER_SWITCH_NOTE : TRIP_SWITCH_NOTE;
+}
+
+/** 距離の入力方式・既定の燃料種別の入力欄（編集行と追加フォームで共通） */
+function VehicleSettingsFields({
+  idPrefix,
+  mode,
+  fuelType,
+  onModeChange,
+  onFuelTypeChange,
+  disabled,
+  switchNote,
+}: {
+  idPrefix: string;
+  mode: DistanceMode;
+  fuelType: FuelType | null;
+  onModeChange: (mode: DistanceMode) => void;
+  onFuelTypeChange: (fuelType: FuelType | null) => void;
+  disabled?: boolean;
+  /** 方式を切り替えるときの注意（modeSwitchNote）。null・省略なら出さない */
+  switchNote?: string | null;
+}) {
+  const modeLabelId = `${idPrefix}-mode-label`;
+  const fuelId = `${idPrefix}-fuel-type`;
+  return (
+    <div className="space-y-2">
+      <div>
+        <p id={modeLabelId} className="text-[11px] text-gray-400 mb-1">
+          距離の入力方式
+        </p>
+        <div
+          className="grid grid-cols-2 gap-1 bg-gray-900 p-0.5 rounded-xl border border-gray-800"
+          role="radiogroup"
+          aria-labelledby={modeLabelId}
+        >
+          {DISTANCE_MODE_OPTIONS.map((opt) => {
+            const selected = mode === opt.value;
+            return (
+              <button
+                key={opt.value}
+                type="button"
+                role="radio"
+                aria-checked={selected}
+                onClick={() => onModeChange(opt.value)}
+                disabled={disabled}
+                className={`px-2 py-1.5 rounded-lg text-xs font-semibold transition focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 disabled:opacity-60 ${
+                  selected ? "bg-blue-600 text-white shadow" : "text-gray-500 hover:text-gray-300"
+                }`}
+              >
+                {opt.label}
+                <span className="block text-[10px] font-normal opacity-80">（{opt.detail}）</span>
+              </button>
+            );
+          })}
+        </div>
+        {switchNote && (
+          <p role="status" className="mt-1 text-[11px] text-amber-400">
+            {switchNote}
+          </p>
+        )}
+      </div>
+      <div className="flex items-center gap-2">
+        <label htmlFor={fuelId} className="text-[11px] text-gray-400 flex-shrink-0">
+          既定の燃料種別
+        </label>
+        <select
+          id={fuelId}
+          value={fuelType ?? ""}
+          onChange={(e) => onFuelTypeChange(isFuelType(e.target.value) ? e.target.value : null)}
+          disabled={disabled}
+          className="flex-1 min-w-0 bg-gray-900 border border-gray-800 rounded-lg px-2 py-1.5 text-xs text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus:border-blue-500 transition disabled:opacity-60"
+        >
+          <option value="">未指定</option>
+          {FUEL_TYPES.map((t) => (
+            <option key={t} value={t}>
+              {FUEL_TYPE_LABELS[t]}
+            </option>
+          ))}
+        </select>
+      </div>
+    </div>
+  );
+}
 
 interface ManageVehiclesModalProps {
   isOpen: boolean;
   onClose: () => void;
   vehicles: Vehicle[];
-  onAdd: (name: string, type: "car" | "bike") => Promise<Vehicle>;
+  onAdd: (name: string, type: "car" | "bike", settings?: VehicleSettings) => Promise<Vehicle>;
   onDelete: (id: string) => Promise<void>;
-  onUpdate: (id: string, name: string, type: "car" | "bike") => Promise<void>;
+  /** settings（距離の入力方式・既定の燃料種別）も同じ 1 回の更新で保存する */
+  onUpdate: (id: string, name: string, type: "car" | "bike", settings?: VehicleSettings) => Promise<void>;
   /** 閲覧専用（クラウド障害中）。追加・編集・削除を無効化する */
   readOnly?: boolean;
 }
@@ -32,12 +146,16 @@ export default function ManageVehiclesModal({
   // 新規追加ステート
   const [newName, setNewName] = useState("");
   const [newType, setNewType] = useState<"car" | "bike">("car");
+  const [newMode, setNewMode] = useState<DistanceMode>("trip");
+  const [newFuelType, setNewFuelType] = useState<FuelType | null>(null);
   const [addLoading, setAddLoading] = useState(false);
 
   // 編集ステート
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
   const [editType, setEditType] = useState<"car" | "bike">("car");
+  const [editMode, setEditMode] = useState<DistanceMode>("trip");
+  const [editFuelType, setEditFuelType] = useState<FuelType | null>(null);
   const [updateLoading, setUpdateLoading] = useState(false);
 
   // 削除中の車両ID（行ごとの二重クリック防止）
@@ -88,9 +206,11 @@ export default function ManageVehiclesModal({
 
     setAddLoading(true);
     try {
-      await onAdd(newName.trim(), newType);
+      await onAdd(newName.trim(), newType, { distance_mode: newMode, default_fuel_type: newFuelType });
       setNewName("");
       setNewType("car");
+      setNewMode("trip");
+      setNewFuelType(null);
       toast("車両を追加しました", { type: "success" });
     } catch (err) {
       console.error(err);
@@ -105,6 +225,8 @@ export default function ManageVehiclesModal({
     setEditingId(v.id);
     setEditName(v.name);
     setEditType(v.type);
+    setEditMode(distanceModeOf(v));
+    setEditFuelType(isFuelType(v.default_fuel_type) ? v.default_fuel_type : null);
   };
 
   const handleCancelEdit = () => {
@@ -117,7 +239,7 @@ export default function ManageVehiclesModal({
 
     setUpdateLoading(true);
     try {
-      await onUpdate(id, editName.trim(), editType);
+      await onUpdate(id, editName.trim(), editType, { distance_mode: editMode, default_fuel_type: editFuelType });
       setEditingId(null);
       toast("車両を更新しました", { type: "success" });
     } catch (err) {
@@ -269,6 +391,15 @@ export default function ManageVehiclesModal({
                         </button>
                       </div>
                     </div>
+                    <VehicleSettingsFields
+                      idPrefix={`manage-vehicles-edit-${v.id}`}
+                      mode={editMode}
+                      fuelType={editFuelType}
+                      onModeChange={setEditMode}
+                      onFuelTypeChange={setEditFuelType}
+                      disabled={updateLoading}
+                      switchNote={modeSwitchNote(distanceModeOf(v), editMode)}
+                    />
                     <div className="flex justify-end gap-2 text-xs font-bold pt-1">
                       <button
                         type="button"
@@ -295,7 +426,13 @@ export default function ManageVehiclesModal({
                       <div className={`p-2 rounded-xl bg-gray-900 border border-gray-800/80 ${v.type === "bike" ? "text-amber-500" : "text-blue-500"}`}>
                         {v.type === "bike" ? <Bike className="w-4 h-4" aria-hidden="true" /> : <Car className="w-4 h-4" aria-hidden="true" />}
                       </div>
-                      <span className="text-sm font-semibold text-white">{v.name}</span>
+                      <div className="min-w-0">
+                        <span className="block text-sm font-semibold text-white truncate">{v.name}</span>
+                        <span className="block text-[10px] text-gray-500">
+                          {DISTANCE_MODE_SHORT_LABELS[distanceModeOf(v)]}
+                          {isFuelType(v.default_fuel_type) ? `・${FUEL_TYPE_LABELS[v.default_fuel_type]}` : ""}
+                        </span>
+                      </div>
                     </div>
 
                     <div className="flex items-center gap-1.5">
@@ -304,7 +441,7 @@ export default function ManageVehiclesModal({
                         onClick={() => handleStartEdit(v)}
                         disabled={readOnly || isDeleting}
                         className="p-1.5 rounded-lg text-gray-500 hover:text-blue-400 hover:bg-gray-900 transition disabled:opacity-30 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
-                        title="車両名・タイプを編集"
+                        title="車両名・タイプ・設定を編集"
                         aria-label={`「${v.name}」を編集`}
                       >
                         <Edit2 className="w-4 h-4" aria-hidden="true" />
@@ -391,6 +528,14 @@ export default function ManageVehiclesModal({
               {addLoading ? <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" /> : <Plus className="w-4 h-4" aria-hidden="true" />} 追加
             </button>
           </div>
+          <VehicleSettingsFields
+            idPrefix="manage-vehicles-new"
+            mode={newMode}
+            fuelType={newFuelType}
+            onModeChange={setNewMode}
+            onFuelTypeChange={setNewFuelType}
+            disabled={addLoading || readOnly}
+          />
         </form>
       </div>
     </div>

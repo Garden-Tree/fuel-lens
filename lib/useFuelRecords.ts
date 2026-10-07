@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useAuth } from "@clerk/nextjs";
 import {
   getSupabaseClient,
@@ -18,6 +18,7 @@ import {
 import {
   FUEL_RECORDS_CHANGED_EVENT,
   isDefaultVehicleSelected,
+  isUnclassifiedRecord,
   isUuid,
   matchesSelectedVehicle,
 } from "./recordFilters";
@@ -36,18 +37,47 @@ import {
   writeCache,
 } from "./supabaseHealth";
 import { normalizeTimestamp } from "./backup";
+import {
+  applyFillChain,
+  distanceModeOf,
+  isFuelType,
+  normalizeRecord,
+  sanitizeMemo,
+  sanitizeOdometer,
+  type DistanceMode,
+  type FuelType,
+} from "./fillChain";
+import type { Vehicle } from "./useVehicles";
+
+export type { FuelType } from "./fillChain";
+export { FUEL_TYPES, FUEL_TYPE_LABELS, MEMO_MAX_LENGTH, isFuelType, normalizeRecord } from "./fillChain";
 
 export type FuelRecord = {
   id: string;
   date: string;
+  /**
+   * 区間距離 (km)。トリップモードの車両では入力値、オドメーターモードの車両では odometer の差分から
+   * 導出した値（useFuelRecords が読み取り時に applyFillChain で上書きする）。
+   */
   total_distance: number | null;
   fuel_amount: number | null;
   gas_station: string | null;
   price_per_unit: number | null;
   total_cost: number | null;
+  /** 燃費 (km/L)。useFuelRecords が読み取り時に applyFillChain で再計算した値（部分給油は null） */
   fuel_efficiency: number | null;
   vehicle_id?: string | null;
   created_at?: string | null;
+  /** 給油時の積算距離 (km)。オドメーターモードの車両では必須入力（0004 で追加） */
+  odometer?: number | null;
+  /** 満タン給油か。省略は true。false は部分給油（0004 で追加） */
+  is_full?: boolean;
+  /** この給油の前に記録し忘れた給油がある。省略は false。true なら連鎖を切る（0004 で追加） */
+  missed_previous?: boolean;
+  /** 燃料種別。null / 省略は未指定（0004 で追加） */
+  fuel_type?: FuelType | null;
+  /** メモ（200 文字まで）。null / 省略はなし（0004 で追加） */
+  memo?: string | null;
 };
 
 export type UseFuelRecordsOptions = {
@@ -57,7 +87,67 @@ export type UseFuelRecordsOptions = {
    * 省略時は selectedVehicleId が UUID になった時点で読み込む。
    */
   enabled?: boolean;
+  /**
+   * 車両一覧（useVehicles の vehicles）。連鎖計算で各車両の distance_mode を知るために使う。
+   * - records: selectedVehicleId の車両の方式で計算する（未分類の記録も同じ連鎖に入る）
+   * - fetchAllRecords: 車両ごと（未分類は defaultVehicleId の車両）にまとめて、それぞれの方式で計算する
+   * 省略時、または一覧に無い車両はトリップモードとして扱う（従来の動作）。
+   */
+  vehicles?: readonly Pick<Vehicle, "id" | "distance_mode">[];
 };
+
+/** addRecord / updateRecord / addRecords で保存する列（id・user_id 以外の FuelRecord の列） */
+const RECORD_COLUMNS = [
+  "date",
+  "total_distance",
+  "fuel_amount",
+  "gas_station",
+  "price_per_unit",
+  "total_cost",
+  "fuel_efficiency",
+  "vehicle_id",
+  "created_at",
+  "odometer",
+  "is_full",
+  "missed_previous",
+  "fuel_type",
+  "memo",
+] as const satisfies readonly (keyof FuelRecord)[];
+
+type RecordColumn = (typeof RECORD_COLUMNS)[number];
+
+/**
+ * 保存する値を既知の列だけに絞り、0004 で追加した列の値を検証する（純粋関数）。
+ * - 渡されたキー（値が undefined でないもの）だけを返す。Supabase へ送らなかった列には DB の既定値が入る
+ *   （0004 適用前の DB でも、新しい列を指定しない保存は従来どおり成功する）
+ * - is_full / missed_previous は真偽値以外なら捨てる（DB の既定値 true / false）
+ * - odometer は 0 以上の有限数、fuel_type は 4 値、memo は 200 文字まで（空は null）に正規化する
+ */
+export function pickRecordColumns(input: Partial<FuelRecord>): Partial<Pick<FuelRecord, RecordColumn>> {
+  const out: Partial<Record<RecordColumn, unknown>> = {};
+  for (const key of RECORD_COLUMNS) {
+    const value = input[key];
+    if (value === undefined) continue;
+    switch (key) {
+      case "odometer":
+        out.odometer = sanitizeOdometer(value);
+        break;
+      case "is_full":
+      case "missed_previous":
+        if (typeof value === "boolean") out[key] = value;
+        break;
+      case "fuel_type":
+        out.fuel_type = isFuelType(value) ? value : null;
+        break;
+      case "memo":
+        out.memo = sanitizeMemo(value);
+        break;
+      default:
+        out[key] = value;
+    }
+  }
+  return out as Partial<Pick<FuelRecord, RecordColumn>>;
+}
 
 const recordsCacheKey = (userId: string, vehicleId: string | null) =>
   `fuel_lens_cache_records_${userId}_${vehicleId ?? "all"}`;
@@ -83,6 +173,41 @@ function parseLocalRecords(raw: string | null): FuelRecord[] {
   } catch {
     return [];
   }
+}
+
+/** 読み込んだ記録（ローカル・クラウド・キャッシュ）の新しい列に既定値を入れる */
+function normalizeAll(list: readonly FuelRecord[]): FuelRecord[] {
+  return list.map(r => normalizeRecord(r));
+}
+
+/**
+ * 全車両の記録を車両ごとにまとめて連鎖計算を適用する（純粋関数。入力と同じ順序で返す）。
+ * 未分類の記録（vehicle_id null / default-*）は既定車両 defaultVehicleId のグループに入れる
+ * （画面で既定車両に表示されるのと同じ連鎖にする）。
+ */
+export function applyFillChainByVehicle(
+  records: readonly FuelRecord[],
+  modeOf: (vehicleId: string | null) => DistanceMode,
+  defaultVehicleId: string | null | undefined
+): FuelRecord[] {
+  const groups = new Map<string, number[]>();
+  records.forEach((r, i) => {
+    const key = isUnclassifiedRecord(r) ? (defaultVehicleId ?? "") : (r.vehicle_id ?? "");
+    const list = groups.get(key);
+    if (list) list.push(i);
+    else groups.set(key, [i]);
+  });
+  const out: FuelRecord[] = new Array(records.length);
+  for (const [key, indexes] of groups) {
+    const chained = applyFillChain(
+      indexes.map(i => records[i]),
+      { distance_mode: modeOf(key || null) }
+    );
+    indexes.forEach((recordIndex, j) => {
+      out[recordIndex] = chained[j];
+    });
+  }
+  return out;
 }
 
 function readLocalRecords(): FuelRecord[] {
@@ -120,9 +245,13 @@ export function useFuelRecords(
   defaultVehicleId?: string,
   options: UseFuelRecordsOptions = {}
 ) {
-  const { enabled = true } = options;
+  const { enabled = true, vehicles } = options;
   const { getToken, userId, isSignedIn, isLoaded } = useAuth();
-  const [records, setRecords] = useState<FuelRecord[]>([]);
+  /**
+   * 保存値のままの記録（新しい列は既定値で補完済み）。画面へは連鎖計算を適用した `records` を返す。
+   * 連鎖計算を描画時に行うので、追加・更新・削除で隣の記録の燃費が変わっても、車両の方式を切り替えても即座に反映される。
+   */
+  const [rawRecords, setRecords] = useState<FuelRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const outage = useSupabaseOutage();
@@ -132,9 +261,23 @@ export function useFuelRecords(
 
   const readOnly = !!isSignedIn && outage != null;
 
+  // 車両ごとの距離の入力方式。vehicles 配列の参照が変わっても、方式が同じなら同じ Map を保つ
+  const modesKey = JSON.stringify((vehicles ?? []).map(v => [v.id, distanceModeOf(v)]));
+  const modeById = useMemo(
+    () => new Map<string, DistanceMode>(JSON.parse(modesKey) as [string, DistanceMode][]),
+    [modesKey]
+  );
+  const selectedMode: DistanceMode = (selectedVehicleId ? modeById.get(selectedVehicleId) : undefined) ?? "trip";
+
+  /** 連鎖計算を適用した記録（日付の降順）。UI・統計・CSV はこちらを使う */
+  const records = useMemo(
+    () => applyFillChain(rawRecords, { distance_mode: selectedMode }),
+    [rawRecords, selectedMode]
+  );
+
   useEffect(() => {
-    if (cacheKeyRef.current) writeCache(cacheKeyRef.current, records);
-  }, [records]);
+    if (cacheKeyRef.current) writeCache(cacheKeyRef.current, rawRecords);
+  }, [rawRecords]);
 
   const loadData = useCallback(async (fetchId: number) => {
     if (!isLoaded) return;
@@ -147,7 +290,7 @@ export function useFuelRecords(
         const all = readLocalRecords();
         if (fetchId !== fetchCounter.current) return;
         const filtered = all.filter(r => matchesSelectedVehicle(r, selectedVehicleId, defaultVehicleId));
-        setRecords(sortRecordsByDateDesc(filtered));
+        setRecords(sortRecordsByDateDesc(normalizeAll(filtered)));
       } finally {
         if (fetchId === fetchCounter.current) setLoading(false);
       }
@@ -202,7 +345,7 @@ export function useFuelRecords(
 
       clearOutage();
       cacheKeyRef.current = cacheKey;
-      setRecords(sortRecordsByDateDesc((data ?? []) as FuelRecord[]));
+      setRecords(sortRecordsByDateDesc(normalizeAll((data ?? []) as FuelRecord[])));
     } catch (e) {
       if (fetchId !== fetchCounter.current) return;
       console.error("給油データの取得失敗:", e);
@@ -214,7 +357,7 @@ export function useFuelRecords(
       // 全車両の記録を読み込むフォールバックはしない。最後に同期した一覧があれば閲覧専用で表示する。
       cacheKeyRef.current = null;
       const cached = readCache<FuelRecord[]>(cacheKey);
-      setRecords(Array.isArray(cached) ? sortRecordsByDateDesc(cached) : []);
+      setRecords(Array.isArray(cached) ? sortRecordsByDateDesc(normalizeAll(cached)) : []);
     } finally {
       if (fetchId === fetchCounter.current) {
         setLoading(false);
@@ -245,16 +388,31 @@ export function useFuelRecords(
   const applyLocalFilter = (list: FuelRecord[]) =>
     sortRecordsByDateDesc(list.filter(r => matchesSelectedVehicle(r, selectedVehicleId, defaultVehicleId)));
 
+  /**
+   * 選択中の車両に記録を追加する。0004 の列（odometer / is_full / missed_previous / fuel_type / memo）は省略可
+   * （省略時は満タン・記録漏れなし・未指定）。戻り値は保存値のままの記録（連鎖計算の結果は records に反映される）。
+   */
   const addRecord = async (record: Omit<FuelRecord, "id" | "vehicle_id">) => {
+    // vehicle_id は選択中の車両、created_at はここで決める（呼び出し側の値は使わない）
+    const columns = pickRecordColumns(record);
+    delete columns.vehicle_id;
+    delete columns.created_at;
     if (!isSignedIn) {
       const localTarget =
         selectedVehicleId && !selectedVehicleId.startsWith("default-") ? selectedVehicleId : LOCAL_DEFAULT_VEHICLE_ID;
-      const newRecord: FuelRecord = {
-        ...record,
+      const newRecord: FuelRecord = normalizeRecord({
+        date: record.date,
+        total_distance: null,
+        fuel_amount: null,
+        gas_station: null,
+        price_per_unit: null,
+        total_cost: null,
+        fuel_efficiency: null,
+        ...columns,
         id: Date.now().toString(),
         vehicle_id: localTarget,
         created_at: new Date().toISOString(),
-      };
+      });
       writeLocalRecords([newRecord, ...readLocalRecords()]);
       setRecords(prev => applyLocalFilter([newRecord, ...prev]));
       return newRecord;
@@ -269,7 +427,7 @@ export function useFuelRecords(
     const supabase = getSupabaseClient(userId, getToken);
     const { data, error: insertError, status } = await supabase
       .from("fuel_records")
-      .insert({ ...record, user_id: userId, vehicle_id: selectedVehicleId })
+      .insert({ ...columns, user_id: userId, vehicle_id: selectedVehicleId })
       .select()
       .single();
 
@@ -279,24 +437,31 @@ export function useFuelRecords(
       throw normalizeError(insertError, status);
     }
 
-    const added = data as FuelRecord;
+    const added = normalizeRecord(data as FuelRecord);
     setRecords(prev => sortRecordsByDateDesc([added, ...prev]));
     return added;
   };
 
+  /**
+   * 記録を更新する。既知の列だけを保存し（id・user_id などは無視）、0004 の列は pickRecordColumns で検証する。
+   * 渡さなかった列は変更しない。
+   */
   const updateRecord = async (id: string, updates: Partial<FuelRecord>) => {
+    const columns = pickRecordColumns(updates);
+    const merge = (r: FuelRecord) => (r.id === id ? normalizeRecord({ ...r, ...columns }) : r);
     if (!isSignedIn) {
       const all = readLocalRecords();
       if (all.length > 0) {
-        writeLocalRecords(all.map(r => (r.id === id ? { ...r, ...updates } : r)));
+        writeLocalRecords(all.map(merge));
       }
-      setRecords(prev => applyLocalFilter(prev.map(r => (r.id === id ? { ...r, ...updates } : r))));
+      setRecords(prev => applyLocalFilter(prev.map(merge)));
       return;
     }
 
     requireWritable();
+    if (Object.keys(columns).length === 0) return;
     const supabase = getSupabaseClient(userId, getToken);
-    const { error: updateError, status } = await supabase.from("fuel_records").update(updates).eq("id", id);
+    const { error: updateError, status } = await supabase.from("fuel_records").update(columns).eq("id", id);
     if (updateError) {
       const kind = classify(status, updateError);
       if (kind) setOutage(kind);
@@ -305,7 +470,7 @@ export function useFuelRecords(
 
     // 車両移動（vehicle_id 変更）で選択中車両に属さなくなった記録は一覧から外す。
     // 読み込み時と同じ判定（未分類は既定車両にのみ表示）を使う。
-    setRecords(prev => applyLocalFilter(prev.map(r => (r.id === id ? { ...r, ...updates } : r))));
+    setRecords(prev => applyLocalFilter(prev.map(merge)));
   };
 
   const deleteRecord = async (id: string) => {
@@ -356,18 +521,25 @@ export function useFuelRecords(
     if (!isSignedIn) {
       const base = Date.now().toString(36);
       const nowIso = new Date().toISOString();
-      const added: FuelRecord[] = items.map((item, i) => ({
-        id: `restored-${base}-${i}`,
-        date: item.date,
-        total_distance: item.total_distance,
-        fuel_amount: item.fuel_amount,
-        gas_station: item.gas_station,
-        price_per_unit: item.price_per_unit,
-        total_cost: item.total_cost,
-        fuel_efficiency: item.fuel_efficiency,
-        vehicle_id: item.vehicle_id ?? null,
-        created_at: normalizeTimestamp(item.created_at) ?? nowIso,
-      }));
+      const added: FuelRecord[] = items.map((item, i) =>
+        normalizeRecord({
+          id: `restored-${base}-${i}`,
+          date: item.date,
+          total_distance: item.total_distance,
+          fuel_amount: item.fuel_amount,
+          gas_station: item.gas_station,
+          price_per_unit: item.price_per_unit,
+          total_cost: item.total_cost,
+          fuel_efficiency: item.fuel_efficiency,
+          vehicle_id: item.vehicle_id ?? null,
+          created_at: normalizeTimestamp(item.created_at) ?? nowIso,
+          odometer: item.odometer,
+          is_full: item.is_full,
+          missed_previous: item.missed_previous,
+          fuel_type: item.fuel_type,
+          memo: item.memo,
+        })
+      );
       try {
         writeLocalRecords([...readLocalRecords(), ...added]);
       } catch (e) {
@@ -401,6 +573,15 @@ export function useFuelRecords(
       // insert(配列) は全行のキーの和集合を送るため、created_at は全行に必ず入れる。
       // Postgres が拒否・誤読しない ISO 文字列に正規化し、無効なら現在時刻にする
       created_at: normalizeTimestamp(item.created_at) ?? nowIso,
+      // 0004 の列は値があるものだけ送る。キーの無い行には defaultToNull: false により列の既定値
+      // （満タン・記録漏れなし・null）が入る
+      ...pickRecordColumns({
+        odometer: item.odometer,
+        is_full: item.is_full,
+        missed_previous: item.missed_previous,
+        fuel_type: item.fuel_type,
+        memo: item.memo,
+      }),
     }));
 
     const CHUNK = 100;
@@ -430,14 +611,27 @@ export function useFuelRecords(
     return inserted;
   };
 
+  /** 全車両の記録へ車両ごとの連鎖計算を適用する（未分類は既定車両の連鎖に入れる） */
+  const chainAll = useCallback(
+    (list: FuelRecord[]) =>
+      sortRecordsByDateDesc(
+        applyFillChainByVehicle(
+          normalizeAll(list),
+          id => (id ? modeById.get(id) : undefined) ?? "trip",
+          defaultVehicleId
+        )
+      ),
+    [modeById, defaultVehicleId]
+  );
+
   /**
    * 全車両の給油記録を取得する（バックアップ・全車両 CSV・復元の重複判定用）。
-   * 選択中の車両では絞り込まない。日付の新しい順。
+   * 選択中の車両では絞り込まない。日付の新しい順。車両ごと（未分類は既定車両）に連鎖計算を適用済み。
    * ログイン中は 1,000 件ずつページングして全件を読む（PostgREST の既定上限を超えても欠けないように）。
    */
   const fetchAllRecords = useCallback(async (): Promise<FuelRecord[]> => {
     if (!isLoaded) throw new Error("読み込み中です。しばらく待ってから再度お試しください。");
-    if (!isSignedIn) return sortRecordsByDateDesc(readLocalRecords());
+    if (!isSignedIn) return chainAll(readLocalRecords());
     if (!userId) throw new Error("ログイン情報を確認できませんでした。再読み込みしてください。");
 
     const supabase = getSupabaseClient(userId, getToken);
@@ -468,8 +662,8 @@ export function useFuelRecords(
       if (kind) setOutage(kind);
       throw new Error(errorMessage(e), { cause: e });
     }
-    return sortRecordsByDateDesc(all);
-  }, [isLoaded, isSignedIn, userId, getToken]);
+    return chainAll(all);
+  }, [isLoaded, isSignedIn, userId, getToken, chainAll]);
 
   const refresh = useCallback(() => {
     const currentFetchId = ++fetchCounter.current;
@@ -487,6 +681,7 @@ export function useFuelRecords(
   }, [refresh]);
 
   return {
+    /** 連鎖計算（lib/fillChain.ts）を適用済みの記録。日付の降順 */
     records,
     loading,
     /** 障害以外の読み込みエラー（RLS 違反など）。障害は `outage` で通知する。 */
