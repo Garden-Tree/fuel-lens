@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { applyFillChain } from "@/lib/fillChain";
 import type { FuelRecord } from "@/lib/useFuelRecords";
 import {
   PERIOD_MONTHS,
@@ -222,14 +223,18 @@ describe("hasStatsData", () => {
 });
 
 describe("summarize", () => {
-  const records = [
-    rec({ total_distance: 100, fuel_amount: 10, total_cost: 1500, fuel_efficiency: 10 }),
-    rec({ total_distance: 500, fuel_amount: 25, total_cost: 4000, fuel_efficiency: 20 }),
-    rec({ total_distance: 200, fuel_amount: null, total_cost: 3000, fuel_efficiency: null }), // cost + distance only
-    rec({ total_distance: null, fuel_amount: 5, total_cost: null, fuel_efficiency: null }), // fuel only
-    rec({ total_distance: 0, fuel_amount: 0, total_cost: 0, fuel_efficiency: 0 }), // zeros
-    rec(), // all null
-  ];
+  // 統計ページには連鎖計算（applyFillChain）済みの記録が渡る。全件満タンのトリップモードでは各記録が 1 件の run
+  const records = applyFillChain(
+    [
+      rec({ total_distance: 100, fuel_amount: 10, total_cost: 1500 }),
+      rec({ total_distance: 500, fuel_amount: 25, total_cost: 4000 }),
+      rec({ total_distance: 200, fuel_amount: null, total_cost: 3000 }), // cost + distance only（燃費が出ないので run なし）
+      rec({ total_distance: null, fuel_amount: 5, total_cost: null }), // fuel only
+      rec({ total_distance: 0, fuel_amount: 0, total_cost: 0 }), // zeros
+      rec(), // all null
+    ],
+    { distance_mode: "trip" }
+  );
 
   it("returns zeros / nulls for an empty list", () => {
     expect(summarize([])).toEqual({
@@ -244,19 +249,19 @@ describe("summarize", () => {
     });
   });
 
-  it("uses Σkm/ΣL for avgEfficiency and the simple mean for meanEfficiency", () => {
+  it("uses Σkm/ΣL over closed runs for avgEfficiency and the simple mean for meanEfficiency", () => {
     const s = summarize(records);
     expect(s.avgEfficiency).toBeCloseTo(600 / 35, 10); // 17.142857...
     expect(s.meanEfficiency).toBe(15);
     expect(s.avgEfficiency).not.toBe(s.meanEfficiency);
   });
 
-  it("computes paired sums for ¥/L and ¥/km using only records that have both values", () => {
+  it("¥/L pairs records that have both values; ¥/km uses closed runs only", () => {
     const s = summarize(records);
     // ¥/L: 記録 1,2 のみ (記録 3 は fuel なし, 記録 4 は cost なし)
     expect(s.avgPricePerUnit).toBeCloseTo((1500 + 4000) / (10 + 25), 10);
-    // ¥/km: 記録 1,2,3 (記録 3 は cost と distance の両方あり)
-    expect(s.costPerKm).toBeCloseTo((1500 + 4000 + 3000) / (100 + 500 + 200), 10);
+    // ¥/km: 燃費の出た run（記録 1,2）のみ。記録 3 は給油量が無く run を閉じないので含めない
+    expect(s.costPerKm).toBeCloseTo((1500 + 4000) / (100 + 500), 10);
   });
 
   it("sums totals independently of pairing", () => {
@@ -267,23 +272,96 @@ describe("summarize", () => {
     expect(s.totalFuel).toBe(40);
   });
 
+  it("trip mode with all full fills gives the same numbers as the per-record pairing", () => {
+    const list = applyFillChain(
+      [
+        rec({ date: "2026-01-01", total_distance: 512.3, fuel_amount: 31.7, total_cost: 5400 }),
+        rec({ date: "2026-01-10", total_distance: 480, fuel_amount: 29.95, total_cost: 5100 }),
+        rec({ date: "2026-01-20", total_distance: 333.3, fuel_amount: 20, total_cost: 3500 }),
+      ],
+      { distance_mode: "trip" }
+    );
+    const s = summarize(list);
+    expect(s.avgEfficiency).toBeCloseTo((512.3 + 480 + 333.3) / (31.7 + 29.95 + 20), 10);
+    expect(s.costPerKm).toBeCloseTo((5400 + 5100 + 3500) / (512.3 + 480 + 333.3), 10);
+  });
+
+  it("carry rows do not skew the averages: A(1000, 30 L) → B(no odometer, 20 L, ¥3000) → C(1600, 20 L, ¥3000)", () => {
+    const list = applyFillChain(
+      [
+        rec({ id: "A", date: "2026-07-10", odometer: 1000, fuel_amount: 30 }),
+        rec({ id: "B", date: "2026-07-11", odometer: null, fuel_amount: 20, total_cost: 3000 }),
+        rec({ id: "C", date: "2026-07-12", odometer: 1600, fuel_amount: 20, total_cost: 3000 }),
+      ],
+      { distance_mode: "odometer" }
+    );
+    const s = summarize(list);
+    expect(s.avgEfficiency).toBe(15); // 600 ÷ (20 + 20)。記録ごとのペアなら 600 ÷ 20 = 30 になっていた
+    expect(s.costPerKm).toBe(10); // 6000 ÷ 600
+    expect(s.totalDistance).toBe(600);
+    expect(s.totalFuel).toBe(70);
+  });
+
+  it("a rolled-back odometer: 1000 → 1300 → 130 → 1600 (20 L each) gives 600 / 60 = 10", () => {
+    const list = applyFillChain(
+      [
+        rec({ date: "2026-10-01", odometer: 1000, fuel_amount: 20 }),
+        rec({ date: "2026-10-02", odometer: 1300, fuel_amount: 20 }),
+        rec({ date: "2026-10-03", odometer: 130, fuel_amount: 20 }),
+        rec({ date: "2026-10-04", odometer: 1600, fuel_amount: 20 }),
+      ],
+      { distance_mode: "odometer" }
+    );
+    expect(summarize(list).avgEfficiency).toBe(10);
+  });
+
+  it("a run with an unknown cost counts for avgEfficiency but not for costPerKm", () => {
+    const s = summarize([
+      rec({ fuel_efficiency: 15, run_distance: 300, run_fuel: 20, run_cost: null }),
+      rec({ fuel_efficiency: 20, run_distance: 400, run_fuel: 20, run_cost: 2000 }),
+    ]);
+    expect(s.avgEfficiency).toBeCloseTo(700 / 40, 10);
+    expect(s.costPerKm).toBe(5); // 2000 ÷ 400
+  });
+
+  it("records without run fields (not chained) give no efficiency / ¥/km average", () => {
+    const s = summarize([rec({ total_distance: 300, fuel_amount: 20, total_cost: 3000, fuel_efficiency: 15 })]);
+    expect(s.avgEfficiency).toBeNull();
+    expect(s.costPerKm).toBeNull();
+    expect(s.meanEfficiency).toBe(15);
+    expect(s.avgPricePerUnit).toBe(150);
+  });
+
   it("ignores zero / negative denominators but still counts totalCost of any finite number", () => {
     const s = summarize([
       rec({ total_distance: -100, fuel_amount: -10, total_cost: -500, fuel_efficiency: -5 }),
       rec({ total_distance: 100, fuel_amount: 0, total_cost: 1000 }),
+      rec({ run_distance: 0, run_fuel: 10, run_cost: 1000 }),
+      rec({ run_distance: 100, run_fuel: -10, run_cost: -1000 }),
     ]);
     expect(s.avgEfficiency).toBeNull();
     expect(s.meanEfficiency).toBeNull();
     expect(s.avgPricePerUnit).toBeNull();
-    expect(s.costPerKm).toBe(10); // 1000 / 100
+    expect(s.costPerKm).toBeNull();
     expect(s.totalCost).toBe(500); // -500 + 1000 (負数も有限値として合算される: 現状の挙動)
     expect(s.totalDistance).toBe(100);
     expect(s.totalFuel).toBe(0);
   });
 
   it("ignores NaN / Infinity values", () => {
-    const s = summarize([rec({ total_distance: NaN, fuel_amount: Infinity, total_cost: NaN, fuel_efficiency: Infinity })]);
-    expect(s).toMatchObject({ count: 1, avgEfficiency: null, meanEfficiency: null, totalCost: 0, totalDistance: 0, totalFuel: 0 });
+    const s = summarize([
+      rec({ total_distance: NaN, fuel_amount: Infinity, total_cost: NaN, fuel_efficiency: Infinity }),
+      rec({ run_distance: NaN, run_fuel: Infinity, run_cost: NaN }),
+    ]);
+    expect(s).toMatchObject({
+      count: 2,
+      avgEfficiency: null,
+      meanEfficiency: null,
+      costPerKm: null,
+      totalCost: 0,
+      totalDistance: 0,
+      totalFuel: 0,
+    });
   });
 });
 

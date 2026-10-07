@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { FuelRecord } from "@/lib/useFuelRecords";
-import { openRunBefore, previousOdometer, type OpenRun } from "@/lib/fillChain";
+import { applyFillChain, openRunBefore, previousOdometer, type OpenRun } from "@/lib/fillChain";
 import { plausibilityWarnings } from "@/lib/analyze";
 import {
   MISSED_PREVIOUS_EFFICIENCY_NOTE,
@@ -15,6 +15,7 @@ import {
   findDuplicateRecord,
   formTargetOf,
   mergedRunCountOf,
+  mergedRunNote,
   normalizeNumericInput,
   odometerHintOf,
   odometerRequiredFor,
@@ -341,9 +342,10 @@ describe("odometer requirement (new manual records only)", () => {
   const EDIT = formTargetOf(rec({ id: "r9" }));
 
   it("formTargetOf: records without an id are new", () => {
-    expect(NEW).toEqual({ recordId: null, initialDate: "2025-01-05" });
-    expect(EDIT).toEqual({ recordId: "r9", initialDate: "2025-01-05" });
-    expect(formTargetOf(null)).toEqual({ recordId: null, initialDate: "" });
+    expect(NEW).toEqual({ recordId: null, initialDate: "2025-01-05", initialOdometer: null });
+    expect(EDIT).toEqual({ recordId: "r9", initialDate: "2025-01-05", initialOdometer: null });
+    expect(formTargetOf(null)).toEqual({ recordId: null, initialDate: "", initialOdometer: null });
+    expect(formTargetOf(rec({ id: "r9", odometer: 12000 })).initialOdometer).toBe(12000);
   });
 
   it("is required only for new manual records in odometer mode", () => {
@@ -500,6 +502,19 @@ describe("efficiency preview with an open run (partial fills)", () => {
     expect(resolveEfficiency(parsed, null, run)).toBe(55.49);
   });
 
+  it("merges when the combined fuel is positive even if this fill is 0 L (same as the chain's Σfuel > 0)", () => {
+    const zero = parseDraft(draft({ total_distance: "250", fuel_amount: "0" }), { vehicle: TRIP_VEHICLE }).parsed;
+    expect(resolveEfficiency(zero, null, run)).toBe(199.75); // (149.5 + 250) ÷ (2 + 0)
+    expect(mergedRunCountOf(zero, null, run)).toBe(1);
+    // 合算しても 0 L なら合算しない（燃費は出ない）
+    expect(mergedRunCountOf(zero, null, { ...run, fuel: 0 })).toBe(0);
+    expect(resolveEfficiency(zero, null, { ...run, fuel: 0 })).toBeNull();
+  });
+
+  it("the note mentions partial fills and carry rows", () => {
+    expect(mergedRunNote(2)).toBe("部分給油・持ち越し 2 件分と合算");
+  });
+
   it("buildRecordInput stores the merged efficiency when context.openRun is given", () => {
     const d = draft({ total_distance: "250", fuel_amount: "5.2" });
     expect(buildRecordInput(d, null, null, { vehicle: TRIP_VEHICLE, openRun: run }).fuel_efficiency).toBe(55.49);
@@ -536,5 +551,108 @@ describe("resolveOpenRun (date changed inside the form)", () => {
     const target = formTargetOf({ id: "b", date: "2025-02-01" });
     // b 自身を除くと、2025-02-15 の前に開いている run は無い（a は満タン）
     expect(resolveOpenRun({ vehicle: TRIP_VEHICLE, getOpenRun }, "2025-02-15", target)).toMatchObject({ count: 0 });
+  });
+});
+
+describe("same-date position follows the odometer being typed (preview = chain)", () => {
+  /** 画面（app/app/page.tsx など）の getter と同じ形。odometer を位置に使う */
+  const gettersFor = (records: FuelRecord[], vehicle: RecordFormContext["vehicle"]) => ({
+    getPreviousOdometer: (date: string, excludeRecordId?: string, odometer?: number | null) =>
+      previousOdometer(excludeRecordId ? records.filter(r => r.id !== excludeRecordId) : records, { date, odometer }),
+    getOpenRun: (date: string, excludeRecordId?: string, odometer?: number | null) =>
+      openRunBefore(excludeRecordId ? records.filter(r => r.id !== excludeRecordId) : records, vehicle, { date, odometer }),
+  });
+  /** フォームの燃費プレビュー（useRecordForm と同じ手順） */
+  const preview = (records: FuelRecord[], vehicle: RecordFormContext["vehicle"], d: RecordDraft) => {
+    const target = formTargetOf({ date: d.date });
+    const getters = gettersFor(records, vehicle);
+    const ctx: RecordFormContext = {
+      vehicle,
+      previousOdometer: previousOdometer(records, { date: d.date }),
+      openRun: openRunBefore(records, vehicle, { date: d.date }),
+      ...getters,
+    };
+    const odometer = parseDraftNumber(d.odometer).value;
+    const prev = resolvePreviousOdometer(ctx, d.date, target, odometer);
+    const openRun = resolveOpenRun(ctx, d.date, target, odometer);
+    const { parsed } = parseDraft(d, { ...ctx, previousOdometer: prev, openRun });
+    return resolveEfficiency(parsed, null, openRun);
+  };
+  /** 保存後に連鎖計算が出す燃費 */
+  const chained = (records: FuelRecord[], vehicle: RecordFormContext["vehicle"], d: RecordDraft) => {
+    const odometer = parseDraftNumber(d.odometer).value;
+    const added = rec({
+      id: "new",
+      date: d.date,
+      odometer,
+      total_distance: vehicle?.distance_mode === "odometer" ? null : parseDraftNumber(d.total_distance).value,
+      fuel_amount: parseDraftNumber(d.fuel_amount).value,
+      is_full: d.is_full,
+      created_at: "2026-12-31T12:00:00Z",
+    });
+    return applyFillChain([...records, added], vehicle).find(r => r.id === "new")!.fuel_efficiency;
+  };
+
+  it("same-date record without an odometer + new 1600: preview and chain agree (30.00)", () => {
+    const records = [
+      rec({ id: "a", date: "2026-12-01", odometer: 1000, fuel_amount: 30, created_at: "2026-12-01T00:00:00Z" }),
+      rec({ id: "x", date: "2026-12-10", odometer: null, fuel_amount: 20, created_at: "2026-12-10T09:00:00Z" }),
+    ];
+    const d = draft({ date: "2026-12-10", odometer: "1600", fuel_amount: "20" });
+    expect(chained(records, ODO_VEHICLE, d)).toBe(30);
+    expect(preview(records, ODO_VEHICLE, d)).toBe(30);
+  });
+
+  it("same-date partial at 1500 + new 1400: preview 20.00 (not null)", () => {
+    const records = [
+      rec({ id: "a", date: "2026-12-01", odometer: 1000, fuel_amount: 30, created_at: "2026-12-01T00:00:00Z" }),
+      rec({ id: "p", date: "2026-12-10", odometer: 1500, fuel_amount: 5, is_full: false, created_at: "2026-12-10T09:00:00Z" }),
+    ];
+    const d = draft({ date: "2026-12-10", odometer: "1400", fuel_amount: "20" });
+    expect(preview(records, ODO_VEHICLE, d)).toBe(20);
+    expect(chained(records, ODO_VEHICLE, d)).toBe(20);
+  });
+
+  it("trip mode: a legacy same-date record without created_at is not merged (it is chained after the new one)", () => {
+    const records = [
+      rec({ id: "f", date: "2026-12-01", total_distance: 400, fuel_amount: 30, created_at: "2026-12-01T00:00:00Z" }),
+      rec({ id: "l", date: "2026-12-10", total_distance: 100, fuel_amount: 10, is_full: false, created_at: null }),
+    ];
+    const d = draft({ date: "2026-12-10", total_distance: "300", fuel_amount: "20" });
+    expect(chained(records, TRIP_VEHICLE, d)).toBe(15);
+    expect(preview(records, TRIP_VEHICLE, d)).toBe(15);
+  });
+
+  it("recomputes for a new record once an odometer is typed, and for an edit only when the odometer changes", () => {
+    const calls: unknown[][] = [];
+    const ctx: RecordFormContext = {
+      vehicle: ODO_VEHICLE,
+      previousOdometer: 2000,
+      getPreviousOdometer: (...args) => {
+        calls.push(args);
+        return 1500;
+      },
+    };
+    const NEW = formTargetOf({ date: "2025-03-10" });
+    expect(resolvePreviousOdometer(ctx, "2025-03-10", NEW, null)).toBe(2000); // 未入力: 開いたときの値
+    expect(resolvePreviousOdometer(ctx, "2025-03-10", NEW)).toBe(2000); // odometer を渡さない
+    expect(resolvePreviousOdometer(ctx, "2025-03-10", NEW, 1800)).toBe(1500);
+    expect(calls.at(-1)).toEqual(["2025-03-10", undefined, 1800]);
+
+    const EDIT = formTargetOf(rec({ id: "e", date: "2025-03-10", odometer: 2100 }));
+    expect(resolvePreviousOdometer(ctx, "2025-03-10", EDIT, 2100)).toBe(2000); // 変えていない
+    expect(resolvePreviousOdometer(ctx, "2025-03-10", EDIT, 2050)).toBe(1500);
+    expect(calls.at(-1)).toEqual(["2025-03-10", "e", 2050]);
+    expect(resolvePreviousOdometer(ctx, "2025-03-10", EDIT, null)).toBe(1500); // 消した
+    // 入力途中の日付では取り直さない
+    expect(resolvePreviousOdometer(ctx, "2025-03", NEW, 1800)).toBe(2000);
+  });
+
+  it("resolveOpenRun follows the same rule and keeps baseStale from the getter", () => {
+    const stale: OpenRun = { distance: 0, fuel: 0, valid: true, count: 0, baseStale: true };
+    const ctx: RecordFormContext = { vehicle: ODO_VEHICLE, openRun: null, getOpenRun: () => stale };
+    const NEW = formTargetOf({ date: "2025-03-10" });
+    expect(resolveOpenRun(ctx, "2025-03-10", NEW, null)).toBeNull();
+    expect(resolveOpenRun(ctx, "2025-03-10", NEW, 1800)?.baseStale).toBe(true);
   });
 });

@@ -5,13 +5,21 @@
  * 給油記録の型は useFuelRecords から型のみ import する。
  *
  * 【燃費の平均について（満タン法）】
- * 本アプリの燃費は満タン法（燃費 = 前回給油からの走行距離 ÷ 今回の給油量）で算出する。
+ * 本アプリの燃費は満タン法（燃費 = 前回の満タン給油からの走行距離 ÷ 給油量）で算出する。
  * この前提では、期間全体の燃費は「各給油の燃費の単純平均」ではなく
  * 「Σ走行距離 ÷ Σ給油量」（走行距離で重み付けした調和平均に相当）が正しい。
  * 例: 100km/10L (10km/L) と 500km/25L (20km/L) の 2 回なら、
  *   単純平均 = 15 km/L だが、実際は 600km / 35L = 17.14 km/L。
  * そのため summarize() の avgEfficiency は Σkm/ΣL を返し、
  * 参考値として単純平均 meanEfficiency も併せて返す。
+ *
+ * 【run 単位で集計する理由】
+ * 部分給油・持ち越し行（オドメーターモードでオドメーターが無い・戻った記録）は、距離と給油量の片方しか持たない、
+ * あるいは次の満タン給油の距離に自分の分が含まれる。記録ごとに「距離と給油量の両方がある記録」を拾うと
+ * 分子と分母で区間がずれて値が歪む（例: A(1000 km) → B(ODO なし, 20 L) → C(1600 km, 20 L) で C の 600 km を 20 L で割ってしまう）。
+ * そこで燃費と走行コストは、連鎖計算（lib/fillChain.ts の applyFillChain）が満タン給油で閉じた run の記録に付ける
+ * run_distance / run_fuel / run_cost（導出値）だけで Σ ÷ Σ を求める。
+ * 全件が満タンのトリップモードでは各記録が 1 件の run なので、従来の記録ごとの集計と同じ値になる。
  */
 
 import type { FuelRecord } from "./useFuelRecords";
@@ -50,7 +58,10 @@ export type MonthlyCostPoint = {
 export type StatsSummary = {
   /** 集計対象の記録件数 */
   count: number;
-  /** 期間平均燃費 = Σ走行距離 ÷ Σ給油量（両方が正の記録のみ）。対象なしは null */
+  /**
+   * 期間平均燃費 = Σrun_distance ÷ Σrun_fuel（満タン給油で閉じた run のうち、距離と給油量が正のもの）。対象なしは null。
+   * run は連鎖計算が燃費の出た記録に付ける導出値（部分給油・持ち越し行の分を含む）
+   */
   avgEfficiency: number | null;
   /** 各記録の燃費（fuel_efficiency > 0）の単純平均。参考値。対象なしは null */
   meanEfficiency: number | null;
@@ -58,7 +69,10 @@ export type StatsSummary = {
   totalCost: number;
   /** 平均単価 = Σ支払総額 ÷ Σ給油量（両方が正の記録のみ）。対象なしは null */
   avgPricePerUnit: number | null;
-  /** 走行コスト = Σ支払総額 ÷ Σ走行距離（両方が正の記録のみ）。対象なしは null */
+  /**
+   * 走行コスト = Σrun_cost ÷ Σrun_distance（満タン給油で閉じた run のうち、支払総額がすべて分かり、距離と支払総額が正のもの）。
+   * 対象なしは null
+   */
   costPerKm: number | null;
   /** 走行距離の合計（正の値の記録すべて） */
   totalDistance: number;
@@ -212,11 +226,12 @@ export function hasStatsData(record: Pick<FuelRecord, "fuel_efficiency" | "total
 /**
  * サマリーカード用の集計。
  *
- * 比率系の指標（平均燃費・平均単価・走行コスト）は、
- * 分子と分母の両方が正の値として存在する記録だけを対象に「合計 ÷ 合計」で求める。
- * 片方しか無い記録を混ぜると、分子と分母で母集団が異なり値が歪むため。
- *
- * 平均燃費は満タン法の前提に従い Σ走行距離 ÷ Σ給油量（ファイル先頭のコメント参照）。
+ * 比率系の指標は、分子と分母の両方が正の値として存在する対象だけで「合計 ÷ 合計」を求める。
+ * 片方しか無いものを混ぜると、分子と分母で母集団が異なり値が歪むため。
+ * - 平均燃費・走行コスト: 満タン給油で閉じた run 単位（run_distance / run_fuel / run_cost を持つ記録。ファイル先頭のコメント参照）。
+ *   期間フィルタ後の記録を渡した場合、run を閉じた記録が期間内なら、その run の全体（期間より前の部分給油を含む）を数える
+ * - 平均単価: 記録単位（支払総額と給油量の両方が正の記録）
+ * 合計（totalDistance / totalFuel / totalCost）は記録ごとの値をそのまま合算する（部分給油・持ち越し行も含む）。
  * 各記録の燃費の単純平均は meanEfficiency として参考値で返す。
  */
 export function summarize(records: ReadonlyArray<FuelRecord>): StatsSummary {
@@ -224,13 +239,14 @@ export function summarize(records: ReadonlyArray<FuelRecord>): StatsSummary {
   let totalDistance = 0;
   let totalFuel = 0;
 
-  // ペア集計（両方が正の記録のみ）
+  // run 単位の集計（満タン給油で閉じた run のみ）
   let effDistance = 0;
   let effFuel = 0;
-  let priceCost = 0;
-  let priceFuel = 0;
   let kmCost = 0;
   let kmDistance = 0;
+  // 記録単位のペア集計（両方が正の記録のみ）
+  let priceCost = 0;
+  let priceFuel = 0;
 
   let effSum = 0;
   let effCount = 0;
@@ -244,17 +260,20 @@ export function summarize(records: ReadonlyArray<FuelRecord>): StatsSummary {
     if (hasPositiveNumber(dist)) totalDistance += dist;
     if (hasPositiveNumber(fuel)) totalFuel += fuel;
 
-    if (hasPositiveNumber(dist) && hasPositiveNumber(fuel)) {
-      effDistance += dist;
-      effFuel += fuel;
+    const runDistance = r.run_distance;
+    const runFuel = r.run_fuel;
+    const runCost = r.run_cost;
+    if (hasPositiveNumber(runDistance) && hasPositiveNumber(runFuel)) {
+      effDistance += runDistance;
+      effFuel += runFuel;
+    }
+    if (hasPositiveNumber(runDistance) && hasPositiveNumber(runCost)) {
+      kmCost += runCost;
+      kmDistance += runDistance;
     }
     if (hasPositiveNumber(cost) && hasPositiveNumber(fuel)) {
       priceCost += cost;
       priceFuel += fuel;
-    }
-    if (hasPositiveNumber(cost) && hasPositiveNumber(dist)) {
-      kmCost += cost;
-      kmDistance += dist;
     }
     if (hasPositiveNumber(r.fuel_efficiency)) {
       effSum += r.fuel_efficiency;

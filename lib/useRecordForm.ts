@@ -22,7 +22,8 @@ import {
  *   オドメーターが必須なのは「手動で新規に記録するとき」だけ（odometerRequiredFor を参照）。
  *   既存の記録の編集とスキャン結果では未入力でも保存でき、注意表示（ODOMETER_OPTIONAL_HINT）を出す。
  *   オドメーターの無い記録は連鎖計算で「持ち越し行」になり、区間距離は null のまま次の区間にまとめて計算される
- * - 前回のオドメーターは、フォーム内で日付を変えたら getPreviousOdometer で取り直す（resolvePreviousOdometer）
+ * - 前回のオドメーターは、フォーム内で日付・オドメーターを変えたら getPreviousOdometer で取り直す（resolvePreviousOdometer）。
+ *   同じ日付の記録の中の位置はオドメーターで決まる（連鎖計算の並び順）ため、オドメーターも渡す
  * - 単価・燃費は calculateFuelMetrics で派生させ、入力に追従してライブ更新する
  * - 車両の距離の入力方式（コンテキスト）に応じて区間距離を決める:
  *   トリップモードは入力値、オドメーターモードは「オドメーター − 前回のオドメーター」（docs/design-fill-chain.md 4 章）
@@ -56,19 +57,22 @@ export type RecordInput = Omit<FuelRecord, "id" | "vehicle_id" | "created_at">;
  * - vehicle: 記録の車両。distance_mode で入力方式を、default_fuel_type で新規記録の燃料種別の初期値を決める。省略はトリップモード
  * - previousOdometer: 連鎖計算で直前になる記録のオドメーター（lib/fillChain.ts の previousOdometer）。オドメーターモードでのみ使う。
  *   フォームを開いたときの日付での値
- * - getPreviousOdometer: フォーム内で日付を変えたときに、その日付での前回のオドメーターを返す関数。
- *   excludeRecordId は編集中の記録の ID（自分自身を前回として数えないため）。省略時は previousOdometer を使い続ける
+ * - getPreviousOdometer: フォーム内で日付・オドメーターを変えたときに、その位置での前回のオドメーターを返す関数。
+ *   excludeRecordId は編集中の記録の ID（自分自身を前回として数えないため）。odometer は入力中のオドメーター（未入力は null）で、
+ *   同じ日付の記録の中の位置（連鎖計算はオドメーター順に並べる）を決めるために使う
+ *   （lib/fillChain.ts の previousOdometer に `{ date, odometer }` を渡す）。省略時は previousOdometer を使い続ける
  * - openRun: 連鎖計算でこの記録の直前に開いている run（部分給油・持ち越し行の合計。lib/fillChain.ts の openRunBefore）。
- *   満タン給油の燃費プレビューを、保存後に連鎖計算が出す値（部分給油の分を合算）に揃えるために使う。フォームを開いたときの日付での値
- * - getOpenRun: フォーム内で日付を変えたときに、その日付での openRun を返す関数（getPreviousOdometer と同じ。excludeRecordId は編集中の記録）
+ *   満タン給油の燃費プレビューを、保存後に連鎖計算が出す値（部分給油の分を合算）に揃えるために使う。フォームを開いたときの値。
+ *   baseStale（記録漏れの直後で基準が無い）は「前回から ○○ km」欄の説明にも使う
+ * - getOpenRun: フォーム内で日付・オドメーターを変えたときに、その位置での openRun を返す関数（getPreviousOdometer と同じ引数）
  * - odometerOptional: 新規でもオドメーター未入力の保存を許す（スキャン結果。メーターが写っていない・読めないことがあるため）
  */
 export type RecordFormContext = {
   vehicle?: Pick<Vehicle, "distance_mode" | "default_fuel_type"> | null;
   previousOdometer?: number | null;
-  getPreviousOdometer?: (date: string, excludeRecordId?: string) => number | null;
+  getPreviousOdometer?: (date: string, excludeRecordId?: string, odometer?: number | null) => number | null;
   openRun?: OpenRun | null;
-  getOpenRun?: (date: string, excludeRecordId?: string) => OpenRun;
+  getOpenRun?: (date: string, excludeRecordId?: string, odometer?: number | null) => OpenRun;
   odometerOptional?: boolean;
 };
 
@@ -78,11 +82,17 @@ export type RecordFormTarget = {
   recordId: string | null;
   /** フォームを開いたときの日付（previousOdometer はこの日付での値） */
   initialDate: string;
+  /** フォームを開いたときのオドメーター（未入力・不正は null。省略は null とみなす） */
+  initialOdometer?: number | null;
 };
 
 /** 記録（の部分オブジェクト）からフォームの対象を作る */
 export function formTargetOf(record?: Partial<FuelRecord> | null): RecordFormTarget {
-  return { recordId: record?.id ? record.id : null, initialDate: record?.date ?? "" };
+  return {
+    recordId: record?.id ? record.id : null,
+    initialDate: record?.date ?? "",
+    initialOdometer: sanitizeOdometer(record?.odometer),
+  };
 }
 
 /** 部分給油のときの燃費欄の説明 */
@@ -90,12 +100,14 @@ export const PARTIAL_FILL_EFFICIENCY_NOTE = "次の満タン給油でまとめ�
 /** 記録漏れのときの燃費欄の説明 */
 export const MISSED_PREVIOUS_EFFICIENCY_NOTE = "記録漏れのため、この給油の燃費は計算しません";
 
-/** 燃費のプレビューに部分給油の分を合算したときの説明 */
+/** 燃費のプレビューに部分給油・持ち越し行の分を合算したときの説明 */
 export function mergedRunNote(count: number): string {
-  return `部分給油 ${count} 件分と合算`;
+  return `部分給油・持ち越し ${count} 件分と合算`;
 }
 /** オドメーターモードで記録漏れのとき、区間距離を計算しない旨 */
 export const MISSED_PREVIOUS_DISTANCE_NOTE = "記録漏れのため区間距離は計算しません";
+/** オドメーターモードで、直前の記録漏れのために基準（前回のオドメーター）が無いとき */
+export const AFTER_MISSED_DISTANCE_NOTE = "記録漏れの直後のため区間は計算できません";
 
 /** 今日の日付（ローカル）を YYYY-MM-DD で返す */
 export function todayLocalISO(): string {
@@ -206,35 +218,55 @@ function resolveContext(context?: RecordFormContext | null): ResolvedContext {
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 /**
- * 現在の日付での「前回のオドメーター」。
- * 日付が開いたときのまま（または不正・空）なら context.previousOdometer を使う。日付を変えていて
- * getPreviousOdometer があれば、その日付で取り直す（編集中の記録自身は除く）。
- * 開いたときの日付では、編集時の値（連鎖順でその記録の直前。同じ日付の記録もオドメーター順に考慮済み）の方が正確なので取り直さない。
+ * フォームの位置（日付・オドメーター）が、開いたときの値（context.previousOdometer / context.openRun を計算した位置）から
+ * 変わったか。変わっていれば getPreviousOdometer / getOpenRun で取り直す。
+ * - 日付が不正・空（入力途中）なら取り直さない
+ * - 日付を変えた
+ * - オドメーターを変えた（odometer を渡したときだけ判定。同じ日付の記録の中の位置が変わる）
+ * - 新規の記録でオドメーターが入っている（開いたときの値は日付だけで計算されているため。スキャン結果で読めた値も含む）
+ * 開いたときの位置では、編集時の値（連鎖順でその記録の直前。同じ日付の記録の並びも考慮済み）の方が正確なので取り直さない。
+ */
+function positionChanged(date: string, target: RecordFormTarget, odometer: number | null | undefined): boolean {
+  if (!DATE_RE.test(date)) return false;
+  if (date !== target.initialDate) return true;
+  if (odometer === undefined) return false;
+  const odo = sanitizeOdometer(odometer);
+  return target.recordId === null ? odo !== null : odo !== (target.initialOdometer ?? null);
+}
+
+/**
+ * 現在の日付・オドメーターでの「前回のオドメーター」。
+ * 位置が開いたときのまま（positionChanged が false）なら context.previousOdometer を使う。変わっていて
+ * getPreviousOdometer があれば、その位置で取り直す（編集中の記録自身は除く）。
+ *
+ * @param odometer 入力中のオドメーター（未入力は null）。省略するとオドメーターでは取り直さない
  */
 export function resolvePreviousOdometer(
   context: RecordFormContext | null | undefined,
   date: string,
-  target: RecordFormTarget
+  target: RecordFormTarget,
+  odometer?: number | null
 ): number | null {
   const d = date.trim();
-  if (context?.getPreviousOdometer && DATE_RE.test(d) && d !== target.initialDate) {
-    return sanitizeOdometer(context.getPreviousOdometer(d, target.recordId ?? undefined));
+  if (context?.getPreviousOdometer && positionChanged(d, target, odometer)) {
+    return sanitizeOdometer(context.getPreviousOdometer(d, target.recordId ?? undefined, sanitizeOdometer(odometer)));
   }
   return sanitizeOdometer(context?.previousOdometer);
 }
 
 /**
- * 現在の日付での「直前に開いている run」。resolvePreviousOdometer と同じ規則
- * （日付が開いたときのまま・不正・空なら context.openRun、変えていて getOpenRun があれば取り直す）。無ければ null
+ * 現在の日付・オドメーターでの「直前に開いている run」。resolvePreviousOdometer と同じ規則
+ * （位置が開いたときのまま・日付が不正・空なら context.openRun、変わっていて getOpenRun があれば取り直す）。無ければ null
  */
 export function resolveOpenRun(
   context: RecordFormContext | null | undefined,
   date: string,
-  target: RecordFormTarget
+  target: RecordFormTarget,
+  odometer?: number | null
 ): OpenRun | null {
   const d = date.trim();
-  if (context?.getOpenRun && DATE_RE.test(d) && d !== target.initialDate) {
-    return context.getOpenRun(d, target.recordId ?? undefined);
+  if (context?.getOpenRun && positionChanged(d, target, odometer)) {
+    return context.getOpenRun(d, target.recordId ?? undefined, sanitizeOdometer(odometer));
   }
   return context?.openRun ?? null;
 }
@@ -388,13 +420,15 @@ const EFFICIENCY_SOURCE_FIELDS: ReadonlySet<DraftField> = new Set<DraftField>([
 ]);
 
 /**
- * 満タン給油の燃費に合算する、直前の開いている run。合算できるのは、満タン給油・記録漏れでない・区間距離と給油量（> 0）が分かる・
- * run が有効（全記録の距離と給油量が分かる）で空でないとき。それ以外は null（合算しない）
+ * 満タン給油の燃費に合算する、直前の開いている run。合算できるのは、満タン給油・記録漏れでない・区間距離と給油量が分かる・
+ * run が有効（全記録の距離と給油量が分かる）で空でなく、合算した給油量が正のとき（連鎖計算の Σfuel > 0 と同じ）。
+ * それ以外は null（合算しない）
  */
 function mergeableRun(parsed: ParsedDraft, openRun: OpenRun | null | undefined): OpenRun | null {
   if (!openRun || !openRun.valid || openRun.count <= 0) return null;
   if (!parsed.is_full || parsed.missed_previous) return null;
-  if (parsed.total_distance === null || parsed.fuel_amount === null || parsed.fuel_amount <= 0) return null;
+  if (parsed.total_distance === null || parsed.fuel_amount === null) return null;
+  if (!(openRun.fuel + parsed.fuel_amount > 0)) return null;
   return openRun;
 }
 
@@ -496,9 +530,14 @@ export type UseRecordFormReturn = {
   distanceMode: DistanceMode;
   /**
    * 前回の記録のオドメーター（オドメーターモードの区間距離の計算に使う）。
-   * reset で渡した値。フォーム内で日付を変えたら context.getPreviousOdometer で取り直した値
+   * reset で渡した値。フォーム内で日付・オドメーターを変えたら context.getPreviousOdometer で取り直した値
    */
   previousOdometer: number | null;
+  /**
+   * 直前の記録漏れのために基準（前回のオドメーター）が無いか（openRun の baseStale）。
+   * true のとき previousOdometer は null で、区間は連鎖計算でも計算されない（AFTER_MISSED_DISTANCE_NOTE を出す）
+   */
+  previousOdometerStale: boolean;
   /** オドメーターが必須か（オドメーターモードの手動の新規記録のみ。odometerRequiredFor） */
   odometerRequired: boolean;
   /** オドメーター未入力の注意（必須でないときだけ。ODOMETER_OPTIONAL_HINT）。それ以外は null */
@@ -566,14 +605,20 @@ export function useRecordForm(
     setFallbackEfficiency(efficiencyFallbackOf(record));
   }, []);
 
-  // 日付に追従する前回のオドメーター（日付を変えていなければ reset で渡した値）
+  // 入力中のオドメーター（同じ日付の記録の中の位置を決める。入力途中・不正は null）
+  const draftOdometer = useMemo(() => parseDraftNumber(draft.odometer).value, [draft.odometer]);
+  // 日付・オドメーターに追従する前回のオドメーター（位置を変えていなければ reset で渡した値）
   const previousOdometer = useMemo(
-    () => resolvePreviousOdometer(context, draft.date, target),
-    [context, draft.date, target]
+    () => resolvePreviousOdometer(context, draft.date, target, draftOdometer),
+    [context, draft.date, target, draftOdometer]
   );
-  // 解析・保存に使うコンテキスト（previousOdometer を現在の日付での値に差し替えたもの）
-  // 日付に追従する、直前に開いている run（部分給油の合算用）
-  const openRun = useMemo(() => resolveOpenRun(context, draft.date, target), [context, draft.date, target]);
+  // 日付・オドメーターに追従する、直前に開いている run（部分給油の合算用）
+  const openRun = useMemo(
+    () => resolveOpenRun(context, draft.date, target, draftOdometer),
+    [context, draft.date, target, draftOdometer]
+  );
+  const previousOdometerStale = previousOdometer === null && openRun?.baseStale === true;
+  // 解析・保存に使うコンテキスト（previousOdometer・openRun を現在の位置での値に差し替えたもの）
   const effectiveContext = useMemo<RecordFormContext>(
     () => ({ ...context, previousOdometer, openRun }),
     [context, previousOdometer, openRun]
@@ -611,6 +656,7 @@ export function useRecordForm(
     reset,
     distanceMode,
     previousOdometer,
+    previousOdometerStale,
     odometerRequired,
     odometerHint,
     parsed,

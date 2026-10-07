@@ -78,6 +78,15 @@ export type FuelRecord = {
   fuel_type?: FuelType | null;
   /** メモ（200 文字まで）。null / 省略はなし（0004 で追加） */
   memo?: string | null;
+  /**
+   * 導出値（保存しない。DB・localStorage・バックアップ・CSV には書かない）: この記録が満タン給油で閉じた走行区間（run）の
+   * Σ区間距離 (km)。applyFillChain が燃費の出た記録にだけ付ける。統計（lib/stats.ts の summarize）が run 単位で集計するのに使う
+   */
+  run_distance?: number;
+  /** 導出値（保存しない）: 同じ run の Σ給油量 (L)。run_distance と同じ記録にだけ付く */
+  run_fuel?: number;
+  /** 導出値（保存しない）: 同じ run の Σ支払総額 (円)。run 内に支払総額の無い記録があれば null */
+  run_cost?: number | null;
 };
 
 export type UseFuelRecordsOptions = {
@@ -96,7 +105,10 @@ export type UseFuelRecordsOptions = {
   vehicles?: readonly Pick<Vehicle, "id" | "distance_mode">[];
 };
 
-/** addRecord / updateRecord / addRecords で保存する列（id・user_id 以外の FuelRecord の列） */
+/**
+ * addRecord / updateRecord / addRecords で保存する列（id・user_id 以外の FuelRecord の列）。
+ * 導出値の run_distance / run_fuel / run_cost は DB の列ではないので含めない（連鎖計算済みの記録を渡しても保存されない）
+ */
 const RECORD_COLUMNS = [
   "date",
   "total_distance",

@@ -17,7 +17,14 @@ import { normalizeFuelType } from "../analyze";
 import { BACKUP_APP_ID, BACKUP_MAX_RECORDS, BACKUP_VERSION, type FuelLensBackup } from "../backup";
 import { calculateFuelMetrics } from "../calculations";
 import { CSV_NO, CSV_YES, RECORD_CSV_EXTRA_HEADERS, RECORDS_CSV_BASE_HEADERS } from "../csv";
-import { FUEL_TYPES, FUEL_TYPE_LABELS, sanitizeMemo, sanitizeOdometer, type FuelType } from "../fillChain";
+import {
+  FUEL_TYPES,
+  FUEL_TYPE_LABELS,
+  sanitizeMemo,
+  sanitizeOdometer,
+  type DistanceMode,
+  type FuelType,
+} from "../fillChain";
 import type { FuelRecord } from "../useFuelRecords";
 import { hashString, isBlankRow, parseCsvNumber, parseCsvRows, parseFlexibleDate, type VehicleType } from "./fuelio";
 
@@ -202,6 +209,8 @@ export function parseFuelLensCsv(text: string): ParseFuelLensCsvResult {
  * - 全車両 CSV: 車両名ごとに 1 台。種別は CSV に無いので typeByName（既存車両の種別など）→ 無ければ car
  * - 車両別 CSV: vehicleName / vehicleType の 1 台
  * 車両 ID は `fuellens-csv-v-<車両名のハッシュ>`、記録 ID は `fuellens-csv-<車両名と各列のハッシュ>`（同じ行が続けば `-2` …）。
+ * 車両の距離の入力方式: その車両の記録に 1 件でもオドメーターがあれば "odometer"、無ければ "trip"
+ * （lib/importers/fuelio.ts と同じく、新規作成されるときに使われる。既存車両に追加するときは既存車両の設定のまま）。
  */
 export function fuelLensCsvToBackup(
   parsed: ParsedFuelLensCsv,
@@ -216,18 +225,30 @@ export function fuelLensCsvToBackup(
   let vehicles: FuelLensBackup["vehicles"];
   let vehicleIdForRecord: (r: FuelLensCsvRecord) => string;
 
+  /** 記録にオドメーターがあればオドメーター入力方式（区間距離は applyFillChain が積算距離の差分から出す） */
+  const distanceModeFor = (records: readonly FuelLensCsvRecord[]): DistanceMode =>
+    records.some(r => r.odometer !== null) ? "odometer" : "trip";
+
   if (parsed.format === "all") {
     vehicles = parsed.vehicleNames.map(name => ({
       id: vehicleIdOf(name),
       name,
       type: options.typeByName?.(name) ?? "car",
+      distance_mode: distanceModeFor(parsed.records.filter(r => (r.vehicleName ?? FALLBACK_VEHICLE_NAME) === name)),
     }));
     vehicleIdForRecord = r => vehicleIdOf(r.vehicleName ?? FALLBACK_VEHICLE_NAME);
   } else {
     const name =
       (options.vehicleName ?? "").trim().slice(0, MAX_VEHICLE_NAME_LENGTH).trim() || FUELLENS_CSV_DEFAULT_VEHICLE_NAME;
     const id = vehicleIdOf(name);
-    vehicles = [{ id, name, type: options.vehicleType ?? options.typeByName?.(name) ?? "car" }];
+    vehicles = [
+      {
+        id,
+        name,
+        type: options.vehicleType ?? options.typeByName?.(name) ?? "car",
+        distance_mode: distanceModeFor(parsed.records),
+      },
+    ];
     vehicleIdForRecord = () => id;
   }
 
