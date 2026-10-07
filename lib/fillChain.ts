@@ -189,6 +189,20 @@ export function applyFillChain<T extends FuelRecord>(
   vehicle?: Pick<Vehicle, "distance_mode"> | null
 ): T[] {
   const mode = distanceModeOf(vehicle);
+  const { distances, efficiencies } = computeChain(records, mode);
+  return records.map((r, i) => ({
+    ...r,
+    // オドメーターモードは導出値。トリップモードは入力値（missed_previous の記録も保持する）
+    total_distance: mode === "odometer" ? distances[i] : r.total_distance,
+    fuel_efficiency: efficiencies[i],
+  }));
+}
+
+/** 連鎖計算の本体。入力と同じ順序の区間距離・燃費と、最後の記録の後の「開いている run」（まだ満タン給油で閉じていない記録）を返す */
+function computeChain(
+  records: readonly FuelRecord[],
+  mode: DistanceMode
+): { distances: (number | null)[]; efficiencies: (number | null)[]; openRun: OpenRun } {
   const order = records.map((_, i) => i).sort((i, j) => compareForChain(records[i], records[j]));
 
   const distances: (number | null)[] = new Array(records.length).fill(null);
@@ -202,11 +216,13 @@ export function applyFillChain<T extends FuelRecord>(
   let runDistance = 0;
   let runFuel = 0;
   let runValid = true;
+  let runCount = 0;
 
   const resetRun = () => {
     runDistance = 0;
     runFuel = 0;
     runValid = true;
+    runCount = 0;
   };
 
   for (const i of order) {
@@ -255,6 +271,7 @@ export function applyFillChain<T extends FuelRecord>(
       // 給油量だけを run に積み上げる（距離は次に区間が出た記録の差分に含まれる）。燃費は null で run は閉じない
       if (fuel === null) runValid = false;
       else runFuel += fuel;
+      runCount += 1;
       efficiencies[i] = null;
       continue;
     }
@@ -269,6 +286,7 @@ export function applyFillChain<T extends FuelRecord>(
       runDistance += distance;
       runFuel += fuel;
     }
+    runCount += 1;
 
     if (r.is_full === false) {
       efficiencies[i] = null; // 部分給油: 次の満タン給油でまとめて計算する
@@ -278,12 +296,60 @@ export function applyFillChain<T extends FuelRecord>(
     }
   }
 
-  return records.map((r, i) => ({
-    ...r,
-    // オドメーターモードは導出値。トリップモードは入力値（missed_previous の記録も保持する）
-    total_distance: mode === "odometer" ? distances[i] : r.total_distance,
-    fuel_efficiency: efficiencies[i],
-  }));
+  return {
+    distances,
+    efficiencies,
+    openRun: { distance: runDistance, fuel: runFuel, valid: runValid, count: runCount },
+  };
+}
+
+/** 開いている走行区間（直前の満タン給油の次の記録から、ある位置の手前まで）の合計 */
+export type OpenRun = {
+  /** 区間距離の合計（valid が false なら不完全な値） */
+  distance: number;
+  /** 給油量の合計（valid が false なら不完全な値） */
+  fuel: number;
+  /** run 内のすべての記録で区間距離と給油量が分かっているか。false なら合算した燃費は出せない */
+  valid: boolean;
+  /** run に含まれる記録の件数（部分給油と持ち越し行）。0 なら run は空 */
+  count: number;
+};
+
+/**
+ * ある位置の直前で「開いている run」（部分給油・持ち越し行が、直前の満タン給油や記録漏れ・切れ目の後に積み上がったもの）の合計。
+ * フォームの燃費プレビューを、保存後に連鎖計算が出す値（部分給油の分を合算した Σ距離 / Σ給油量）と一致させるために使う。
+ * 位置の決め方は previousOdometer と同じ。run が無ければ 0 / 0 / valid / count 0。
+ * 距離か給油量が null の記録（トリップモードの距離なし・給油量なし）が含まれると valid は false。
+ *
+ * @param records 1 台分の記録（順不同）
+ * @param vehicle 記録の車両。省略・null ならトリップモード
+ * @param at previousOdometer と同じ（`{ recordId }` は既存の記録の直前、`{ date }` は日付が以前の記録すべての後ろ）
+ */
+export function openRunBefore(
+  records: readonly FuelRecord[],
+  vehicle: Pick<Vehicle, "distance_mode"> | null | undefined,
+  at: { recordId: string } | { date: string }
+): OpenRun {
+  const sorted = sortForChain(records);
+  const end = positionIndex(sorted, at);
+  if (end === null) return { distance: 0, fuel: 0, valid: true, count: 0 };
+  return computeChain(sorted.slice(0, end), distanceModeOf(vehicle)).openRun;
+}
+
+/** 連鎖順に並べた記録の中での位置（その位置より前の記録の件数）。recordId が見つからなければ null */
+function positionIndex(sorted: readonly FuelRecord[], at: { recordId: string } | { date: string }): number | null {
+  if ("recordId" in at) {
+    const idx = sorted.findIndex(r => r.id === at.recordId);
+    return idx < 0 ? null : idx;
+  }
+  let end = 0;
+  for (const r of sorted) {
+    // compareForChain と同じく、文字列でない日付は "" とみなす（先頭に並ぶ）
+    const date = typeof r.date === "string" ? r.date : "";
+    if (date > at.date) break;
+    end += 1;
+  }
+  return end;
 }
 
 /**
@@ -302,19 +368,8 @@ export function previousOdometer(
   at: { recordId: string } | { date: string }
 ): number | null {
   const sorted = sortForChain(records);
-  let end: number;
-  if ("recordId" in at) {
-    end = sorted.findIndex(r => r.id === at.recordId);
-    if (end < 0) return null;
-  } else {
-    end = 0;
-    for (const r of sorted) {
-      // compareForChain と同じく、文字列でない日付は "" とみなす（先頭に並ぶ）
-      const date = typeof r.date === "string" ? r.date : "";
-      if (date > at.date) break;
-      end += 1;
-    }
-  }
+  const end = positionIndex(sorted, at);
+  if (end === null) return null;
   // applyFillChain と同じく、記録漏れの記録が基準を進められなかったら、次に基準を進める記録まで基準は無いものとする
   let max: number | null = null;
   let stale = false;

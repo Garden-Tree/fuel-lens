@@ -3,7 +3,7 @@
 import { useCallback, useMemo, useState } from "react";
 import type { FuelRecord } from "./useFuelRecords";
 import type { Vehicle } from "./useVehicles";
-import { calculateFuelMetrics } from "./calculations";
+import { calculateFuelMetrics, roundFuelEfficiency } from "./calculations";
 import {
   MEMO_MAX_LENGTH,
   distanceModeOf,
@@ -11,6 +11,7 @@ import {
   sanitizeOdometer,
   type DistanceMode,
   type FuelType,
+  type OpenRun,
 } from "./fillChain";
 
 /**
@@ -57,12 +58,17 @@ export type RecordInput = Omit<FuelRecord, "id" | "vehicle_id" | "created_at">;
  *   フォームを開いたときの日付での値
  * - getPreviousOdometer: フォーム内で日付を変えたときに、その日付での前回のオドメーターを返す関数。
  *   excludeRecordId は編集中の記録の ID（自分自身を前回として数えないため）。省略時は previousOdometer を使い続ける
+ * - openRun: 連鎖計算でこの記録の直前に開いている run（部分給油・持ち越し行の合計。lib/fillChain.ts の openRunBefore）。
+ *   満タン給油の燃費プレビューを、保存後に連鎖計算が出す値（部分給油の分を合算）に揃えるために使う。フォームを開いたときの日付での値
+ * - getOpenRun: フォーム内で日付を変えたときに、その日付での openRun を返す関数（getPreviousOdometer と同じ。excludeRecordId は編集中の記録）
  * - odometerOptional: 新規でもオドメーター未入力の保存を許す（スキャン結果。メーターが写っていない・読めないことがあるため）
  */
 export type RecordFormContext = {
   vehicle?: Pick<Vehicle, "distance_mode" | "default_fuel_type"> | null;
   previousOdometer?: number | null;
   getPreviousOdometer?: (date: string, excludeRecordId?: string) => number | null;
+  openRun?: OpenRun | null;
+  getOpenRun?: (date: string, excludeRecordId?: string) => OpenRun;
   odometerOptional?: boolean;
 };
 
@@ -83,6 +89,13 @@ export function formTargetOf(record?: Partial<FuelRecord> | null): RecordFormTar
 export const PARTIAL_FILL_EFFICIENCY_NOTE = "次の満タン給油でまとめて計算";
 /** 記録漏れのときの燃費欄の説明 */
 export const MISSED_PREVIOUS_EFFICIENCY_NOTE = "記録漏れのため、この給油の燃費は計算しません";
+
+/** 燃費のプレビューに部分給油の分を合算したときの説明 */
+export function mergedRunNote(count: number): string {
+  return `部分給油 ${count} 件分と合算`;
+}
+/** オドメーターモードで記録漏れのとき、区間距離を計算しない旨 */
+export const MISSED_PREVIOUS_DISTANCE_NOTE = "記録漏れのため区間距離は計算しません";
 
 /** 今日の日付（ローカル）を YYYY-MM-DD で返す */
 export function todayLocalISO(): string {
@@ -211,6 +224,22 @@ export function resolvePreviousOdometer(
 }
 
 /**
+ * 現在の日付での「直前に開いている run」。resolvePreviousOdometer と同じ規則
+ * （日付が開いたときのまま・不正・空なら context.openRun、変えていて getOpenRun があれば取り直す）。無ければ null
+ */
+export function resolveOpenRun(
+  context: RecordFormContext | null | undefined,
+  date: string,
+  target: RecordFormTarget
+): OpenRun | null {
+  const d = date.trim();
+  if (context?.getOpenRun && DATE_RE.test(d) && d !== target.initialDate) {
+    return context.getOpenRun(d, target.recordId ?? undefined);
+  }
+  return context?.openRun ?? null;
+}
+
+/**
  * オドメーターが必須か。オドメーターモードで、手動で新規に記録するとき（記録 ID なし・odometerOptional でない）だけ必須。
  * - 既存の記録の編集: 任意。オドメーター導入前の記録やトリップモードから切り替えた車両の記録を、
  *   オドメーターを調べ直さなくても編集・保存できるようにする（区間距離は null のまま。連鎖計算では持ち越し行）
@@ -277,7 +306,13 @@ export function parseDraft(
       date,
       fuel_amount: fuel.value,
       total_cost: cost.value,
-      total_distance: mode === "odometer" ? deriveOdometerDistance(odo.value, previousOdometer) : dist.value,
+      // オドメーターモードで記録漏れなら区間は信頼できないので null（連鎖計算と同じ）。トリップモードは入力値のまま
+      total_distance:
+        mode === "odometer"
+          ? draft.missed_previous
+            ? null
+            : deriveOdometerDistance(odo.value, previousOdometer)
+          : dist.value,
       odometer: odo.value,
       gas_station: station === "" ? null : station,
       is_full: draft.is_full,
@@ -353,15 +388,47 @@ const EFFICIENCY_SOURCE_FIELDS: ReadonlySet<DraftField> = new Set<DraftField>([
 ]);
 
 /**
+ * 満タン給油の燃費に合算する、直前の開いている run。合算できるのは、満タン給油・記録漏れでない・区間距離と給油量（> 0）が分かる・
+ * run が有効（全記録の距離と給油量が分かる）で空でないとき。それ以外は null（合算しない）
+ */
+function mergeableRun(parsed: ParsedDraft, openRun: OpenRun | null | undefined): OpenRun | null {
+  if (!openRun || !openRun.valid || openRun.count <= 0) return null;
+  if (!parsed.is_full || parsed.missed_previous) return null;
+  if (parsed.total_distance === null || parsed.fuel_amount === null || parsed.fuel_amount <= 0) return null;
+  return openRun;
+}
+
+/**
  * 解析済みの値から燃費を決める。
  * - 部分給油・記録漏れ: null（連鎖計算でも null。部分給油は次の満タン給油でまとめて計算される）
  * - 引き継ぎ値があればその値（null を含む）
+ * - 直前に部分給油・持ち越し行の run があれば (run の距離 + 区間距離) ÷ (run の給油量 + 給油量)（連鎖計算と同じ）
  * - それ以外は 区間距離 ÷ 給油量
  */
-function resolveEfficiency(parsed: ParsedDraft, fallbackEfficiency: EfficiencyFallback): number | null {
+export function resolveEfficiency(
+  parsed: ParsedDraft,
+  fallbackEfficiency: EfficiencyFallback,
+  openRun?: OpenRun | null
+): number | null {
   if (!parsed.is_full || parsed.missed_previous) return null;
   if (fallbackEfficiency) return fallbackEfficiency.value;
+  // 直前の run に距離や給油量が不明な記録が含まれる場合、連鎖計算は null を保存する。プレビューも同じにする
+  if (openRun && openRun.count > 0 && !openRun.valid) return null;
+  const run = mergeableRun(parsed, openRun);
+  if (run && parsed.total_distance !== null && parsed.fuel_amount !== null) {
+    return roundFuelEfficiency((run.distance + parsed.total_distance) / (run.fuel + parsed.fuel_amount));
+  }
   return calculateFuelMetrics(parsed.total_distance, parsed.fuel_amount, parsed.total_cost).fuel_efficiency;
+}
+
+/** 燃費に合算した部分給油（持ち越し行を含む）の件数。合算していなければ 0（引き継ぎ値を使うときも 0） */
+export function mergedRunCountOf(
+  parsed: ParsedDraft,
+  fallbackEfficiency: EfficiencyFallback,
+  openRun?: OpenRun | null
+): number {
+  if (fallbackEfficiency) return 0;
+  return mergeableRun(parsed, openRun)?.count ?? 0;
 }
 
 /**
@@ -369,6 +436,7 @@ function resolveEfficiency(parsed: ParsedDraft, fallbackEfficiency: EfficiencyFa
  * - 区間距離: トリップモードは入力値、オドメーターモードは導出値
  * - 単価: 再計算できなければ fallbackPrice
  * - 燃費: 部分給油・記録漏れは null。それ以外は fallbackEfficiency があればその値（null を含む）、なければ再計算値
+ *   （context.openRun があれば直前の部分給油の分を合算した値）
  * - メモ: 前後の空白を除き、空なら null
  */
 export function buildRecordInput(
@@ -386,7 +454,7 @@ export function buildRecordInput(
     gas_station: p.gas_station,
     price_per_unit: m.price_per_unit ?? fallbackPrice,
     total_cost: p.total_cost,
-    fuel_efficiency: resolveEfficiency(p, fallbackEfficiency),
+    fuel_efficiency: resolveEfficiency(p, fallbackEfficiency, context?.openRun),
     odometer: p.odometer,
     is_full: p.is_full,
     missed_previous: p.missed_previous,
@@ -450,6 +518,8 @@ export type UseRecordFormReturn = {
   metrics: ReturnType<typeof calculateFuelMetrics>;
   /** 燃費が null になる理由の短い説明（部分給油・記録漏れ）。それ以外は null */
   efficiencyNote: string | null;
+  /** 燃費のプレビューに合算した部分給油の件数（0 なら合算なし。mergedRunNote の n） */
+  mergedRunCount: number;
   /**
    * 画面に表示する単価 (円/L、0.1 円単位の数値)。再計算できなければ、給油量・支払総額が未変更の間に限り元の記録の単価にフォールバックする。
    * 文字列にするときは `formatPricePerUnit`（lib/calculations.ts）を使う
@@ -502,9 +572,11 @@ export function useRecordForm(
     [context, draft.date, target]
   );
   // 解析・保存に使うコンテキスト（previousOdometer を現在の日付での値に差し替えたもの）
+  // 日付に追従する、直前に開いている run（部分給油の合算用）
+  const openRun = useMemo(() => resolveOpenRun(context, draft.date, target), [context, draft.date, target]);
   const effectiveContext = useMemo<RecordFormContext>(
-    () => ({ ...context, previousOdometer }),
-    [context, previousOdometer]
+    () => ({ ...context, previousOdometer, openRun }),
+    [context, previousOdometer, openRun]
   );
   const odometerRequired = odometerRequiredFor(context, target);
   const { parsed, errors } = useMemo(
@@ -516,10 +588,11 @@ export function useRecordForm(
 
   const metrics = useMemo(() => {
     const m = calculateFuelMetrics(parsed.total_distance, parsed.fuel_amount, parsed.total_cost);
-    return { ...m, fuel_efficiency: resolveEfficiency(parsed, fallbackEfficiency) };
-  }, [parsed, fallbackEfficiency]);
+    return { ...m, fuel_efficiency: resolveEfficiency(parsed, fallbackEfficiency, openRun) };
+  }, [parsed, fallbackEfficiency, openRun]);
 
   const efficiencyNote = efficiencyNoteOf(parsed);
+  const mergedRunCount = mergedRunCountOf(parsed, fallbackEfficiency, openRun);
 
   const isValid = Object.keys(errors).length === 0;
   const hasCoreValue =
@@ -546,6 +619,7 @@ export function useRecordForm(
     hasCoreValue,
     metrics,
     efficiencyNote,
+    mergedRunCount,
     pricePerUnitDisplay,
     toRecord,
   };

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { FuelRecord } from "@/lib/useFuelRecords";
-import { previousOdometer } from "@/lib/fillChain";
+import { openRunBefore, previousOdometer, type OpenRun } from "@/lib/fillChain";
 import { plausibilityWarnings } from "@/lib/analyze";
 import {
   MISSED_PREVIOUS_EFFICIENCY_NOTE,
@@ -14,12 +14,15 @@ import {
   efficiencyNoteOf,
   findDuplicateRecord,
   formTargetOf,
+  mergedRunCountOf,
   normalizeNumericInput,
   odometerHintOf,
   odometerRequiredFor,
   parseDraft,
   parseDraftNumber,
   recordToDraft,
+  resolveEfficiency,
+  resolveOpenRun,
   resolvePreviousOdometer,
   visibleScanWarnings,
   type RecordDraft,
@@ -433,5 +436,105 @@ describe("visibleScanWarnings", () => {
   it("ignores non-array input and non-string items", () => {
     expect(visibleScanWarnings(undefined, "trip")).toEqual([]);
     expect(visibleScanWarnings(["a", 1, null], "trip")).toEqual(["a"]);
+  });
+});
+
+describe("parseDraft: missed_previous in odometer mode", () => {
+  it("odometer mode: the derived distance is null (matches the chain); the odometer itself is kept", () => {
+    const { parsed } = parseDraft(draft({ odometer: "12,450", missed_previous: true }), {
+      vehicle: ODO_VEHICLE,
+      previousOdometer: 12000,
+    });
+    expect(parsed.total_distance).toBeNull();
+    expect(parsed.odometer).toBe(12450);
+    expect(buildRecordInput(draft({ odometer: "12450", missed_previous: true }), null, null, { vehicle: ODO_VEHICLE, previousOdometer: 12000 })
+      .total_distance).toBeNull();
+  });
+
+  it("trip mode: the entered distance is kept", () => {
+    const { parsed } = parseDraft(draft({ missed_previous: true }), { vehicle: TRIP_VEHICLE });
+    expect(parsed.total_distance).toBe(450);
+  });
+});
+
+describe("efficiency preview with an open run (partial fills)", () => {
+  // 部分給油 (149.5 km, 2.0 L) の後の満タン給油 (250 km, 5.2 L) → 保存後は (149.5 + 250) / (2 + 5.2) = 55.49
+  const run: OpenRun = { distance: 149.5, fuel: 2, valid: true, count: 1 };
+  const full = () => parseDraft(draft({ total_distance: "250", fuel_amount: "5.2" }), { vehicle: TRIP_VEHICLE }).parsed;
+
+  it("merges the open run into a full fill", () => {
+    expect(resolveEfficiency(full(), null, run)).toBe(55.49);
+    expect(resolveEfficiency(full(), null, null)).toBe(48.08);
+    expect(resolveEfficiency(full(), null, undefined)).toBe(48.08);
+    expect(mergedRunCountOf(full(), null, run)).toBe(1);
+    expect(mergedRunCountOf(full(), null, null)).toBe(0);
+    expect(mergedRunCountOf(full(), null, { ...run, count: 3 })).toBe(3);
+  });
+
+  it("does not merge an empty run; an invalid run gives null like the chain", () => {
+    expect(resolveEfficiency(full(), null, { distance: 0, fuel: 0, valid: true, count: 0 })).toBe(48.08);
+    // 直前の run に距離や給油量が不明な記録があると連鎖計算は null を保存するので、プレビューも null
+    expect(resolveEfficiency(full(), null, { ...run, valid: false })).toBeNull();
+    expect(mergedRunCountOf(full(), null, { ...run, valid: false })).toBe(0);
+  });
+
+  it("partial fills and missed records stay null; a missing distance or fuel falls back to the plain calculation", () => {
+    const partial = parseDraft(draft({ total_distance: "250", fuel_amount: "5.2", is_full: false }), { vehicle: TRIP_VEHICLE }).parsed;
+    expect(resolveEfficiency(partial, null, run)).toBeNull();
+    const missed = parseDraft(draft({ total_distance: "250", fuel_amount: "5.2", missed_previous: true }), { vehicle: TRIP_VEHICLE }).parsed;
+    expect(resolveEfficiency(missed, null, run)).toBeNull();
+    expect(mergedRunCountOf(missed, null, run)).toBe(0);
+    const noDistance = parseDraft(draft({ total_distance: "", fuel_amount: "5.2" }), { vehicle: TRIP_VEHICLE }).parsed;
+    expect(resolveEfficiency(noDistance, null, run)).toBeNull();
+    expect(mergedRunCountOf(noDistance, null, run)).toBe(0);
+  });
+
+  it("keeps the stored efficiency for untouched edits (fallback wins over the open run)", () => {
+    expect(resolveEfficiency(full(), { value: 55.49 }, run)).toBe(55.49);
+    expect(resolveEfficiency(full(), { value: null }, run)).toBeNull();
+    expect(mergedRunCountOf(full(), { value: 55.49 }, run)).toBe(0);
+  });
+
+  it("odometer mode merges the derived distance", () => {
+    const { parsed } = parseDraft(draft({ odometer: "12250", fuel_amount: "5.2" }), { vehicle: ODO_VEHICLE, previousOdometer: 12000 });
+    expect(resolveEfficiency(parsed, null, run)).toBe(55.49);
+  });
+
+  it("buildRecordInput stores the merged efficiency when context.openRun is given", () => {
+    const d = draft({ total_distance: "250", fuel_amount: "5.2" });
+    expect(buildRecordInput(d, null, null, { vehicle: TRIP_VEHICLE, openRun: run }).fuel_efficiency).toBe(55.49);
+    expect(buildRecordInput(d, null, null, { vehicle: TRIP_VEHICLE }).fuel_efficiency).toBe(48.08);
+  });
+});
+
+describe("resolveOpenRun (date changed inside the form)", () => {
+  const list: FuelRecord[] = [
+    rec({ id: "a", date: "2025-01-01", total_distance: 400, fuel_amount: 30 }),
+    rec({ id: "b", date: "2025-02-01", total_distance: 100, fuel_amount: 5, is_full: false }),
+    rec({ id: "c", date: "2025-03-01", total_distance: 300, fuel_amount: 20 }),
+  ];
+  const getOpenRun = (date: string, excludeRecordId?: string) =>
+    openRunBefore(excludeRecordId ? list.filter(r => r.id !== excludeRecordId) : list, TRIP_VEHICLE, { date });
+
+  it("uses the fixed value while the date is unchanged, and recomputes when it changes", () => {
+    const target = formTargetOf({ id: "c", date: "2025-03-01" });
+    const ctx: RecordFormContext = {
+      vehicle: TRIP_VEHICLE,
+      openRun: openRunBefore(list, TRIP_VEHICLE, { recordId: "c" }),
+      getOpenRun,
+    };
+    expect(resolveOpenRun(ctx, "2025-03-01", target)).toMatchObject({ count: 1, fuel: 5 });
+    expect(resolveOpenRun(ctx, "2025-01-15", target)).toMatchObject({ count: 0 });
+    expect(resolveOpenRun(ctx, "2025-02-15", target)).toMatchObject({ count: 1, distance: 100 });
+    // 入力途中・空の日付では取り直さない。getOpenRun が無ければ固定値、どちらも無ければ null
+    expect(resolveOpenRun(ctx, "", target)).toMatchObject({ count: 1 });
+    expect(resolveOpenRun({ openRun: ctx.openRun }, "2025-01-15", target)).toMatchObject({ count: 1 });
+    expect(resolveOpenRun(null, "2025-01-15", target)).toBeNull();
+  });
+
+  it("excludes the record being edited", () => {
+    const target = formTargetOf({ id: "b", date: "2025-02-01" });
+    // b 自身を除くと、2025-02-15 の前に開いている run は無い（a は満タン）
+    expect(resolveOpenRun({ vehicle: TRIP_VEHICLE, getOpenRun }, "2025-02-15", target)).toMatchObject({ count: 0 });
   });
 });
