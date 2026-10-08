@@ -120,9 +120,9 @@ export default function ScanReviewSheet({
       lockBodyScroll
       initialFocusRef={firstFieldRef}
       backdropClassName="fixed inset-0 z-[90] flex items-end justify-center bg-black/70 backdrop-blur-sm sm:items-center sm:p-4"
-      panelClassName="w-full max-w-lg max-h-[92vh] overflow-y-auto rounded-t-3xl sm:rounded-3xl border border-gray-700 bg-gray-900 shadow-2xl"
+      panelClassName="w-full max-w-lg max-h-[92dvh] sm:max-h-[92vh] overflow-y-auto rounded-t-3xl sm:rounded-3xl border border-gray-700 bg-gray-900 shadow-2xl"
     >
-      <div className="p-5 space-y-4">
+      <div className="p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] sm:pb-5 space-y-4">
         {/* ヘッダー */}
         <div className="flex items-start gap-3">
           {imageSrc ? (

@@ -49,7 +49,7 @@ interface EfficiencyChartProps {
 export default function EfficiencyChart({ period, efficiency, averageEfficiency }: EfficiencyChartProps) {
   const { series: chartData, axis: efficiencyAxis, timeDomain } = efficiency;
   return (
-    <div className="bg-gray-900/50 border border-gray-800 rounded-3xl p-5 md:p-8">
+    <div className="bg-gray-900/50 border border-gray-800 rounded-3xl p-4 sm:p-5 md:p-8">
       <h2 className="text-lg font-bold text-gray-300 mb-6 flex items-center gap-2">
         <span className="w-3 h-3 rounded-full bg-blue-500 shadow-[0_0_10px_#3b82f6]"></span>
         燃費の推移 (km/L)
@@ -66,7 +66,7 @@ export default function EfficiencyChart({ period, efficiency, averageEfficiency 
         ) : (
           <ResponsiveContainer width="100%" height="100%">
             {/* key={period}: 期間切替時にデータ点数が大きく変わると線が不自然に変形するため、再マウントして新規描画させる */}
-            <LineChart key={period} data={chartData} margin={{ top: 10, right: 10, left: 30, bottom: 0 }}>
+            <LineChart key={period} data={chartData} margin={{ top: 10, right: 10, left: 8, bottom: 0 }}>
               <defs>
                 <linearGradient id="colorEfficiency" x1="0" y1="0" x2="0" y2="1">
                   <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.4}/>

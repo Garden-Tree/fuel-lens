@@ -14,7 +14,7 @@ export default function SummaryCards({ summary }: { summary: StatsSummary }) {
             : "総走行距離 ÷ 総給油量（満タン法）"
         }
       >
-        <p className="text-[10px] md:text-xs text-gray-500 uppercase tracking-wider mb-1">平均燃費</p>
+        <p className="text-xs text-gray-500 uppercase tracking-wider mb-1">平均燃費</p>
         <p className="text-xl md:text-2xl font-bold font-mono text-blue-400">
           {summary.avgEfficiency != null ? summary.avgEfficiency.toFixed(2) : "--"}
           <span className="text-xs text-gray-500 ml-1">km/L</span>
@@ -26,20 +26,20 @@ export default function SummaryCards({ summary }: { summary: StatsSummary }) {
         )}
       </div>
       <div className="bg-gray-900/50 border border-gray-800 rounded-2xl p-4 md:p-5">
-        <p className="text-[10px] md:text-xs text-gray-500 uppercase tracking-wider mb-1">累計給油額</p>
+        <p className="text-xs text-gray-500 uppercase tracking-wider mb-1">累計給油額</p>
         <p className="text-xl md:text-2xl font-bold font-mono text-green-400">
           ¥{summary.totalCost.toLocaleString()}
         </p>
       </div>
       <div className="bg-gray-900/50 border border-gray-800 rounded-2xl p-4 md:p-5">
-        <p className="text-[10px] md:text-xs text-gray-500 uppercase tracking-wider mb-1">平均単価</p>
+        <p className="text-xs text-gray-500 uppercase tracking-wider mb-1">平均単価</p>
         <p className="text-xl md:text-2xl font-bold font-mono text-gray-200">
           {summary.avgPricePerUnit != null ? `¥${formatPricePerUnit(summary.avgPricePerUnit)}` : "--"}
           <span className="text-xs text-gray-500 ml-1">/L</span>
         </p>
       </div>
       <div className="bg-gray-900/50 border border-gray-800 rounded-2xl p-4 md:p-5">
-        <p className="text-[10px] md:text-xs text-gray-500 uppercase tracking-wider mb-1">走行コスト</p>
+        <p className="text-xs text-gray-500 uppercase tracking-wider mb-1">走行コスト</p>
         <p className="text-xl md:text-2xl font-bold font-mono text-gray-200">
           {summary.costPerKm != null ? `¥${summary.costPerKm.toFixed(1)}` : "--"}
           <span className="text-xs text-gray-500 ml-1">/km</span>

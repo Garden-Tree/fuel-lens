@@ -79,7 +79,7 @@ export default function VehicleRow({
               required
               aria-label="車両の名前"
               disabled={saving}
-              className="flex-1 bg-gray-900 border border-gray-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus:border-blue-500 transition"
+              className="flex-1 min-w-0 bg-gray-900 border border-gray-800 rounded-xl px-3 py-2 text-base sm:text-sm text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus:border-blue-500 transition"
               placeholder="車両の名前"
             />
             <VehicleTypeToggle variant="edit" value={draft.type} onChange={draft.setType} />
@@ -98,7 +98,7 @@ export default function VehicleRow({
               type="button"
               onClick={onCancelEdit}
               disabled={saving}
-              className="px-3 py-1.5 bg-gray-800 hover:bg-gray-700 text-gray-400 rounded-lg transition disabled:opacity-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-400"
+              className="px-3 py-3 sm:py-1.5 bg-gray-800 hover:bg-gray-700 text-gray-400 rounded-lg transition disabled:opacity-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-400"
             >
               キャンセル
             </button>
@@ -106,7 +106,7 @@ export default function VehicleRow({
               type="button"
               onClick={() => onSave(v)}
               disabled={saving || !draft.isValid || readOnly}
-              className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition flex items-center gap-1 disabled:opacity-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-300"
+              className="px-3 py-3 sm:py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition flex items-center gap-1 disabled:opacity-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-300"
             >
               {saving ? (
                 <Loader2 className="w-3.5 h-3.5 animate-spin" aria-hidden="true" />
@@ -119,10 +119,11 @@ export default function VehicleRow({
         </div>
       ) : (
         /* 通常表示 */
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
+        <div className="flex items-center justify-between gap-2">
+          {/* 長い車両名でも操作ボタンを押し出さないよう、名前側を縮められるようにする */}
+          <div className="flex items-center gap-3 min-w-0 flex-1">
             <div
-              className={`p-2 rounded-xl bg-gray-900 border border-gray-800/80 ${v.type === "bike" ? "text-amber-500" : "text-blue-500"}`}
+              className={`p-2 shrink-0 rounded-xl bg-gray-900 border border-gray-800/80 ${v.type === "bike" ? "text-amber-500" : "text-blue-500"}`}
             >
               {v.type === "bike" ? (
                 <Bike className="w-4 h-4" aria-hidden="true" />
@@ -132,19 +133,19 @@ export default function VehicleRow({
             </div>
             <div className="min-w-0">
               <span className="block text-sm font-semibold text-white truncate">{v.name}</span>
-              <span className="block text-[10px] text-gray-500">
+              <span className="block text-[10px] text-gray-500 truncate">
                 {DISTANCE_MODE_SHORT_LABELS[distanceModeOf(v)]}
                 {isFuelType(v.default_fuel_type) ? `・${FUEL_TYPE_LABELS[v.default_fuel_type]}` : ""}
               </span>
             </div>
           </div>
 
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-0.5 sm:gap-1.5 shrink-0">
             <button
               type="button"
               onClick={() => onStartEdit(v)}
               disabled={readOnly || deleting}
-              className="p-1.5 rounded-lg text-gray-500 hover:text-blue-400 hover:bg-gray-900 transition disabled:opacity-30 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
+              className="p-3 sm:p-1.5 rounded-lg text-gray-500 hover:text-blue-400 hover:bg-gray-900 transition disabled:opacity-30 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
               title="車両名・タイプ・設定を編集"
               aria-label={`「${v.name}」を編集`}
             >
@@ -154,7 +155,7 @@ export default function VehicleRow({
               type="button"
               onClick={() => onDelete(v)}
               disabled={isLast || readOnly || deleteLocked}
-              className="p-1.5 rounded-lg text-gray-500 hover:text-red-500 hover:bg-gray-900 transition disabled:opacity-30 disabled:hover:text-gray-500 disabled:hover:bg-transparent focus:outline-none focus-visible:ring-2 focus-visible:ring-red-400"
+              className="p-3 sm:p-1.5 rounded-lg text-gray-500 hover:text-red-500 hover:bg-gray-900 transition disabled:opacity-30 disabled:hover:text-gray-500 disabled:hover:bg-transparent focus:outline-none focus-visible:ring-2 focus-visible:ring-red-400"
               title={isLast ? "最低1台の車両は残す必要があります" : "この車両を削除"}
               aria-label={`「${v.name}」を削除`}
             >

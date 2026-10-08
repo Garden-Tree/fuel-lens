@@ -49,7 +49,7 @@ export default function LandingPage() {
       <div className="absolute bottom-[20%] right-[-10%] w-[600px] h-[600px] rounded-full bg-cyan-500/10 blur-[130px] pointer-events-none" />
 
       {/* ヘッダーナビゲーション */}
-      <header className="sticky top-0 z-50 border-b border-white/5 bg-gray-950/80 backdrop-blur-md">
+      <header className="sticky top-0 z-50 border-b border-white/5 bg-gray-950/80 backdrop-blur-md pt-[env(safe-area-inset-top)]">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <div className="w-9 h-9 bg-gradient-to-tr from-blue-600 to-cyan-400 rounded-lg flex items-center justify-center shadow-md shadow-blue-500/10">
@@ -72,7 +72,7 @@ export default function LandingPage() {
       </header>
 
       {/* ヒーローセクション */}
-      <section className="relative pt-20 pb-16 md:pt-32 md:pb-24">
+      <section className="relative pt-12 pb-16 sm:pt-20 md:pt-32 md:pb-24">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-12 items-center">
             {/* 左側テキストコンテンツ */}
@@ -122,7 +122,8 @@ export default function LandingPage() {
               <HeroPhonePreview />
 
               {/* フローティングデコレーション */}
-              <div className="absolute top-1/4 -left-6 bg-gray-900/90 backdrop-blur-xl border border-gray-700 p-3.5 rounded-2xl shadow-xl flex items-center gap-3 animate-bounce duration-1000 max-w-[170px]">
+              {/* スマホ幅ではモックに重なり画面外にはみ出すため sm 以上でだけ表示する */}
+              <div className="hidden sm:flex absolute top-1/4 -left-6 bg-gray-900/90 backdrop-blur-xl border border-gray-700 p-3.5 rounded-2xl shadow-xl items-center gap-3 animate-bounce duration-1000 max-w-[170px]">
                 <div className="w-8 h-8 rounded-lg bg-green-500/10 flex items-center justify-center text-green-400">
                   <Calculator className="w-4 h-4" />
                 </div>
@@ -132,7 +133,7 @@ export default function LandingPage() {
                 </div>
               </div>
 
-              <div className="absolute bottom-1/4 -right-8 bg-gray-900/90 backdrop-blur-xl border border-gray-700 p-3.5 rounded-2xl shadow-xl flex items-center gap-3 max-w-[170px]">
+              <div className="hidden sm:flex absolute bottom-1/4 -right-8 bg-gray-900/90 backdrop-blur-xl border border-gray-700 p-3.5 rounded-2xl shadow-xl items-center gap-3 max-w-[170px]">
                 <div className="w-8 h-8 rounded-lg bg-blue-500/10 flex items-center justify-center text-blue-400">
                   <Sparkles className="w-4 h-4" />
                 </div>
@@ -347,11 +348,11 @@ export default function LandingPage() {
             © {new Date().getFullYear()} FuelLens. All rights reserved. Google Gemini AI OCR Powered.
           </p>
 
-          <div className="flex items-center gap-6">
-            <a href="#features" className="hover:text-gray-400 transition">機能</a>
-            <a href="#demo" className="hover:text-gray-400 transition">デモ</a>
-            <a href="#how-to" className="hover:text-gray-400 transition">使い方</a>
-            <a href="#faq" className="hover:text-gray-400 transition">FAQ</a>
+          <div className="flex items-center gap-2 sm:gap-6">
+            <a href="#features" className="hover:text-gray-400 transition px-2 py-3 sm:p-0">機能</a>
+            <a href="#demo" className="hover:text-gray-400 transition px-2 py-3 sm:p-0">デモ</a>
+            <a href="#how-to" className="hover:text-gray-400 transition px-2 py-3 sm:p-0">使い方</a>
+            <a href="#faq" className="hover:text-gray-400 transition px-2 py-3 sm:p-0">FAQ</a>
           </div>
         </div>
       </footer>

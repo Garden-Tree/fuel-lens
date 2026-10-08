@@ -43,7 +43,7 @@ export default function VehicleSelector({
   if (loading) {
     return (
       <div className={className}>
-        <div className="flex items-center gap-2 overflow-x-auto pb-2 scrollbar-none">
+        <div className="flex items-center gap-2 overflow-x-auto pb-2 scrollbar-none -mx-4 px-4 md:mx-0 md:px-0">
           <div className="flex items-center gap-2 p-1.5 bg-gray-950/40 border border-gray-800/80 rounded-2xl shadow-inner">
             <div className="w-20 h-8 md:h-[36px] bg-gray-850 rounded-xl animate-pulse" />
             <div className="w-20 h-8 md:h-[36px] bg-gray-850 rounded-xl animate-pulse" />
@@ -56,7 +56,7 @@ export default function VehicleSelector({
 
   return (
     <div className={className}>
-      <div className="flex items-center gap-2 overflow-x-auto pb-2 scrollbar-none">
+      <div className="flex items-center gap-2 overflow-x-auto pb-2 scrollbar-none -mx-4 px-4 md:mx-0 md:px-0">
         {/* 車両タブグループ */}
         <div
           role="tablist"
@@ -72,7 +72,7 @@ export default function VehicleSelector({
                 role="tab"
                 aria-selected={isSelected}
                 onClick={() => onSelect(v.id)}
-                className={`flex items-center gap-2 py-2 px-4 rounded-xl font-bold text-xs md:text-sm transition-all duration-300 flex-shrink-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 ${
+                className={`flex items-center gap-2 py-2 px-4 min-h-10 rounded-xl font-bold text-xs md:text-sm transition-all duration-300 flex-shrink-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 ${
                   isSelected
                     ? "bg-gradient-to-r from-blue-600 to-cyan-500 text-white shadow-lg shadow-blue-950 scale-[1.02]"
                     : "text-gray-400 hover:text-white hover:bg-gray-900/50"
@@ -88,7 +88,7 @@ export default function VehicleSelector({
           <button
             type="button"
             onClick={() => setIsModalOpen(true)}
-            className="flex items-center justify-center p-2 rounded-xl text-gray-500 hover:text-blue-400 hover:bg-gray-900/50 transition border border-dashed border-gray-800 hover:border-blue-500/50 flex-shrink-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
+            className="flex items-center justify-center p-2 min-w-10 min-h-10 rounded-xl text-gray-500 hover:text-blue-400 hover:bg-gray-900/50 transition border border-dashed border-gray-800 hover:border-blue-500/50 flex-shrink-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
             title="車両を管理"
             aria-label="車両を管理"
             aria-haspopup="dialog"

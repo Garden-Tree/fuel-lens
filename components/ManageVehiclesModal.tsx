@@ -147,7 +147,9 @@ export default function ManageVehiclesModal({
       disableClose={busy}
       title="車両の管理"
       labelledBy="manage-vehicles-title"
-      panelClassName="relative w-full max-w-md bg-gray-900 border border-gray-800 rounded-3xl shadow-2xl p-6 overflow-hidden flex flex-col max-h-[90vh]"
+      // スマホ幅では下から出るシートにし、パネル全体をスクロールさせる（本文だけのスクロールだと編集中の行が狭くなるため）
+      backdropClassName="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-200"
+      panelClassName="relative w-full max-w-md bg-gray-900 border border-gray-800 rounded-t-3xl sm:rounded-3xl shadow-2xl p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] sm:p-6 overflow-hidden max-sm:overflow-y-auto flex flex-col max-h-[92dvh] sm:max-h-[90vh]"
     >
       {/* 背景の装飾光 */}
       <div className="absolute top-0 right-0 w-32 h-32 bg-blue-600/10 rounded-full blur-3xl pointer-events-none" />
@@ -162,7 +164,7 @@ export default function ManageVehiclesModal({
       )}
 
       {/* スクロール可能な車両リスト */}
-      <Modal.Body className="space-y-4 pr-1 min-h-[150px] scrollbar-thin scrollbar-thumb-gray-800 scrollbar-track-transparent">
+      <Modal.Body className="space-y-4 pr-1 min-h-[150px] max-sm:flex-none max-sm:overflow-y-visible scrollbar-thin scrollbar-thumb-gray-800 scrollbar-track-transparent">
         <p className="block text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1">
           登録済みの車両 ({vehicles.length})
         </p>

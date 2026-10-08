@@ -170,7 +170,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
       */}
       <div
         aria-live="polite"
-        className="pointer-events-none fixed inset-x-0 top-4 z-[100] flex flex-col items-center gap-2 px-4 sm:top-auto sm:bottom-6"
+        className="pointer-events-none fixed inset-x-0 top-[max(1rem,env(safe-area-inset-top))] z-[100] flex flex-col items-center gap-2 px-4 sm:top-auto sm:bottom-6"
       >
         {toasts.map((t) => (
           <div
@@ -183,7 +183,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
               type="button"
               onClick={() => dismiss(t.id)}
               aria-label="閉じる"
-              className="rounded p-0.5 text-current/70 hover:text-current focus:outline-none focus-visible:ring-2 focus-visible:ring-white/60"
+              className="rounded -m-2 p-2 sm:m-0 sm:p-0.5 text-current/70 hover:text-current focus:outline-none focus-visible:ring-2 focus-visible:ring-white/60"
             >
               ×
             </button>
@@ -202,7 +202,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
             role="dialog"
             aria-modal="true"
             aria-labelledby="confirm-dialog-title"
-            className="w-full max-w-sm rounded-2xl border border-gray-700 bg-gray-900 p-5 shadow-2xl"
+            className="w-full max-w-sm max-h-[85dvh] overflow-y-auto rounded-2xl border border-gray-700 bg-gray-900 p-5 shadow-2xl"
           >
             <h2 id="confirm-dialog-title" className="text-base font-semibold text-white">
               {confirmState.options.title ?? '確認'}
@@ -217,7 +217,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
                 ref={cancelButtonRef}
                 type="button"
                 onClick={() => closeConfirm(false)}
-                className="rounded-lg px-4 py-2 text-sm text-gray-300 hover:bg-gray-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-500"
+                className="flex-1 sm:flex-none rounded-lg px-4 py-2.5 sm:py-2 text-sm text-gray-300 bg-gray-800/60 sm:bg-transparent hover:bg-gray-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-500"
               >
                 {confirmState.options.cancelLabel ?? 'キャンセル'}
               </button>
@@ -225,7 +225,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
                 ref={okButtonRef}
                 type="button"
                 onClick={() => closeConfirm(true)}
-                className={`rounded-lg px-4 py-2 text-sm font-medium text-white focus:outline-none focus-visible:ring-2 ${
+                className={`flex-1 sm:flex-none rounded-lg px-4 py-2.5 sm:py-2 text-sm font-medium text-white focus:outline-none focus-visible:ring-2 ${
                   confirmState.options.danger
                     ? 'bg-red-600 hover:bg-red-500 focus-visible:ring-red-400'
                     : 'bg-blue-600 hover:bg-blue-500 focus-visible:ring-blue-400'

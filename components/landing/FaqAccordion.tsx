@@ -32,20 +32,20 @@ export default function FaqAccordion({ items }: { items: FaqItem[] }) {
               type="button"
               onClick={() => toggle(idx)}
               aria-expanded={isOpen}
-              className="w-full px-6 py-5 flex items-center justify-between text-left font-bold text-white hover:bg-gray-800/40 transition"
+              className="w-full px-5 sm:px-6 py-5 flex items-center justify-between gap-3 text-left font-bold text-white hover:bg-gray-800/40 transition"
             >
               <span className="text-sm sm:text-base">{faq.q}</span>
               <ChevronDown
-                className={`w-5 h-5 text-gray-500 transition-transform duration-300 ${isOpen ? "rotate-180 text-blue-400" : ""}`}
+                className={`w-5 h-5 shrink-0 text-gray-500 transition-transform duration-300 ${isOpen ? "rotate-180 text-blue-400" : ""}`}
               />
             </button>
 
             <div
               className={`transition-all duration-300 ease-in-out overflow-hidden ${
-                isOpen ? "max-h-[240px] border-t border-white/5 opacity-100" : "max-h-0 opacity-0 pointer-events-none"
+                isOpen ? "max-h-[480px] border-t border-white/5 opacity-100" : "max-h-0 opacity-0 pointer-events-none"
               }`}
             >
-              <div className="px-6 py-5 text-xs sm:text-sm text-gray-400 leading-relaxed bg-black/10">{faq.a}</div>
+              <div className="px-5 sm:px-6 py-5 text-sm text-gray-400 leading-relaxed bg-black/10">{faq.a}</div>
             </div>
           </div>
         );

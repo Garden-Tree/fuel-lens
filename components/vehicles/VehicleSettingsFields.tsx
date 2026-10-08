@@ -99,7 +99,7 @@ export default function VehicleSettingsFields({
           value={fuelType ?? ""}
           onChange={(e) => onFuelTypeChange(isFuelType(e.target.value) ? e.target.value : null)}
           disabled={disabled}
-          className="flex-1 min-w-0 bg-gray-900 border border-gray-800 rounded-lg px-2 py-1.5 text-xs text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus:border-blue-500 transition disabled:opacity-60"
+          className="flex-1 min-w-0 bg-gray-900 border border-gray-800 rounded-lg px-2 py-2 sm:py-1.5 text-base sm:text-xs text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus:border-blue-500 transition disabled:opacity-60"
         >
           <option value="">未指定</option>
           {FUEL_TYPES.map((t) => (
@@ -155,7 +155,7 @@ export function VehicleTypeToggle({
             onClick={() => onChange(optValue)}
             disabled={disabled}
             className={`${
-              isAdd ? "px-3 rounded-lg font-semibold text-xs" : "p-2 rounded-lg"
+              isAdd ? "px-3 rounded-lg font-semibold text-xs" : "p-3 sm:p-2 rounded-lg"
             } transition focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 ${
               selected ? selectedClass : "text-gray-500 hover:text-gray-300"
             }`}

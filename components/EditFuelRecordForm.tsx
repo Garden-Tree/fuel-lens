@@ -279,7 +279,7 @@ export default function EditFuelRecordForm({
           maxLength={100}
           disabled={inputsDisabled}
           onChange={(e) => setField("gas_station", e.target.value)}
-          className={`${inputClass({ highlight: highlightFields?.gas_station })} text-sm font-sans`}
+          className={`${inputClass({ highlight: highlightFields?.gas_station })} text-base sm:text-sm font-sans`}
         />
       </div>
 
@@ -300,7 +300,7 @@ export default function EditFuelRecordForm({
           aria-describedby={`${uid}-is_full-hint`}
           disabled={inputsDisabled}
           onClick={() => setField("is_full", !draft.is_full)}
-          className={`relative inline-flex h-6 w-11 flex-shrink-0 items-center rounded-full border transition focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 disabled:opacity-60 disabled:cursor-not-allowed ${
+          className={`relative inline-flex h-6 w-11 flex-shrink-0 items-center rounded-full border transition after:absolute after:-inset-2 after:content-[''] focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 disabled:opacity-60 disabled:cursor-not-allowed ${
             draft.is_full ? "bg-blue-600 border-blue-500" : "bg-gray-700 border-gray-600"
           }`}
         >
@@ -320,7 +320,7 @@ export default function EditFuelRecordForm({
           aria-expanded={showDetails}
           aria-controls={detailsId}
           onClick={() => setDetailsOpen((open) => !open)}
-          className="w-full flex items-center justify-between gap-2 px-3 py-2 text-xs text-gray-400 hover:text-gray-200 transition rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
+          className="w-full flex items-center justify-between gap-2 px-3 py-3 sm:py-2 text-xs text-gray-400 hover:text-gray-200 transition rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
         >
           <span className="flex items-center gap-2 min-w-0">
             <span className="font-semibold">詳細</span>
@@ -361,7 +361,7 @@ export default function EditFuelRecordForm({
               value={draft.fuel_type ?? ""}
               disabled={inputsDisabled}
               onChange={(e) => setField("fuel_type", isFuelType(e.target.value) ? e.target.value : null)}
-              className={`${inputClass({ highlight: highlightFields?.fuel_type })} text-sm font-sans`}
+              className={`${inputClass({ highlight: highlightFields?.fuel_type })} text-base sm:text-sm font-sans`}
             >
               <option value="">未指定</option>
               {FUEL_TYPES.map((t) => (
@@ -390,7 +390,7 @@ export default function EditFuelRecordForm({
               onChange={(e) => setField("memo", e.target.value)}
               aria-invalid={errors.memo ? true : undefined}
               aria-describedby={`${uid}-memo-count${errors.memo ? ` ${errorIdFor("memo")}` : ""}`}
-              className={`${inputClass({ error: errors.memo })} text-sm font-sans resize-y`}
+              className={`${inputClass({ error: errors.memo })} text-base sm:text-sm font-sans resize-y`}
             />
             {renderError("memo")}
           </div>

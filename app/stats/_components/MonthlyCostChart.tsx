@@ -24,7 +24,7 @@ function CustomCostTooltip({ active, payload, label }: MonthlyCostTooltipProps) 
 /** 支払総額（月別）グラフ */
 export default function MonthlyCostChart({ period, data }: { period: Period; data: MonthlyCostPoint[] }) {
   return (
-    <div className="bg-gray-900/50 border border-gray-800 rounded-3xl p-5 md:p-8">
+    <div className="bg-gray-900/50 border border-gray-800 rounded-3xl p-4 sm:p-5 md:p-8">
       <h2 className="text-lg font-bold text-gray-300 mb-6 flex items-center gap-2">
         <span className="w-3 h-3 rounded-full bg-green-500 shadow-[0_0_10px_#22c55e]"></span>
         支払総額の推移 (円)

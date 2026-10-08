@@ -45,12 +45,12 @@ export default function DemoSimulator() {
   };
 
   return (
-    <div className="bg-gray-900/60 border border-gray-800 rounded-3xl p-6 md:p-8 shadow-2xl relative overflow-hidden backdrop-blur-xl">
+    <div className="bg-gray-900/60 border border-gray-800 rounded-3xl p-4 sm:p-6 md:p-8 shadow-2xl relative overflow-hidden backdrop-blur-xl">
       {demoState === "idle" && (
         <div className="space-y-8 py-6 flex flex-col items-center">
           <div className="flex items-center justify-center w-full max-w-xl">
             {/* メーターとレシートが1枚に収まったダミーの写真イメージ */}
-            <div className="w-full bg-gray-900/50 border border-gray-800 rounded-2xl pt-16 pb-6 px-6 flex flex-col sm:flex-row items-center gap-8 shadow-xl relative overflow-hidden">
+            <div className="w-full bg-gray-900/50 border border-gray-800 rounded-2xl pt-16 pb-6 px-4 sm:px-6 flex flex-col sm:flex-row items-center gap-8 shadow-xl relative overflow-hidden">
               <div className="absolute inset-0 bg-blue-500/5 pointer-events-none" />
 
               {/* レシート部分 */}
@@ -73,7 +73,7 @@ export default function DemoSimulator() {
 
               {/* メーター部分（トリップメーター） */}
               <div className="flex-1 w-full bg-gray-950 border-2 border-gray-800 p-4 rounded-xl shadow-inner text-center flex flex-col justify-center">
-                <div className="w-full h-14 bg-black border border-gray-800 rounded flex items-center justify-center font-mono text-3xl text-amber-500 tracking-widest relative px-4">
+                <div className="w-full h-14 bg-black border border-gray-800 rounded flex items-center justify-center font-mono text-2xl sm:text-3xl text-amber-500 tracking-widest relative px-4">
                   <span className="absolute left-2.5 text-xs text-gray-500 uppercase font-sans font-bold">Trip</span>
                   0548.0<span className="text-xs text-gray-500 self-end mb-0.5 ml-1">km</span>
                 </div>
@@ -85,7 +85,7 @@ export default function DemoSimulator() {
               <div className="absolute bottom-2 left-2 w-4 h-4 border-b-2 border-l-2 border-blue-500" />
               <div className="absolute bottom-2 right-2 w-4 h-4 border-b-2 border-r-2 border-blue-500" />
 
-              <div className="absolute top-3 left-1/2 -translate-x-1/2 bg-blue-500/10 text-blue-400 border border-blue-500/20 text-xs font-bold px-3 py-1 rounded-full flex items-center gap-1.5 whitespace-nowrap">
+              <div className="absolute top-3 left-1/2 -translate-x-1/2 bg-blue-500/10 text-blue-400 border border-blue-500/20 text-[11px] sm:text-xs font-bold px-3 py-1 rounded-full flex items-center gap-1.5 whitespace-nowrap">
                 <Camera className="w-3.5 h-3.5" />
                 <span>レシート＆トリップメーター同時撮影写真 (1枚)</span>
               </div>
@@ -95,7 +95,7 @@ export default function DemoSimulator() {
           <button
             type="button"
             onClick={startDemoScan}
-            className="bg-blue-600 hover:bg-blue-500 text-white font-bold px-8 py-4 rounded-full transition shadow-lg shadow-blue-500/20 active:scale-95 flex items-center gap-2 text-base"
+            className="bg-blue-600 hover:bg-blue-500 text-white font-bold px-6 sm:px-8 py-4 rounded-full transition shadow-lg shadow-blue-500/20 active:scale-95 flex items-center justify-center gap-2 text-base w-full sm:w-auto"
           >
             <Sparkles className="w-5 h-5" />
             <span>デモ写真を解析する（シミュレート）</span>
@@ -123,14 +123,14 @@ export default function DemoSimulator() {
 
       {demoState === "result" && (
         <div className="space-y-6 py-2 animate-in fade-in zoom-in-95 duration-500">
-          <div className="flex items-center justify-between border-b border-white/5 pb-4">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 border-b border-white/5 pb-4">
             <h3 className="text-lg font-bold text-green-400 flex items-center gap-2">
               <CheckCircle2 className="w-5 h-5" /> AI解析完了（以下のように読み取り結果が表示されます）
             </h3>
             <button
               type="button"
               onClick={resetDemo}
-              className="text-sm text-gray-400 hover:text-white flex items-center gap-1.5 px-3 py-2 rounded-lg hover:bg-gray-800 transition"
+              className="text-sm text-gray-400 hover:text-white flex items-center gap-1.5 px-3 py-2 min-h-10 shrink-0 self-end sm:self-auto rounded-lg hover:bg-gray-800 transition"
             >
               <RefreshCw className="w-4 h-4" /> もう一度試す
             </button>
@@ -139,8 +139,8 @@ export default function DemoSimulator() {
           {/* 実アプリ (/app) のリザルトカードの構成・クラスを再現し、文字サイズを拡大 */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
             {/* アプリの最新リザルトカードの再現 */}
-            <div className="relative overflow-hidden rounded-3xl border bg-gradient-to-br from-gray-800 to-gray-900 border-gray-700 p-6 shadow-md">
-              <div className="flex justify-between items-start mb-6">
+            <div className="relative overflow-hidden rounded-3xl border bg-gradient-to-br from-gray-800 to-gray-900 border-gray-700 p-5 sm:p-6 shadow-md">
+              <div className="flex justify-between items-start gap-3 mb-6">
                 <div>
                   <p className="text-xs text-gray-500 mb-1 flex items-center gap-1.5">
                     <Calendar className="w-3.5 h-3.5" /> 2026-05-21
@@ -151,7 +151,7 @@ export default function DemoSimulator() {
                   </div>
                 </div>
                 <div className="text-right">
-                  <p className="text-3xl font-extrabold text-green-400 font-mono">¥5,500</p>
+                  <p className="text-2xl sm:text-3xl font-extrabold text-green-400 font-mono">¥5,500</p>
                   <p className="text-xs text-gray-500">Total Cost</p>
                 </div>
               </div>
