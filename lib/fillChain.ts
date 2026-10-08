@@ -199,6 +199,32 @@ export function applyFillChain<T extends FuelRecord>(
   });
 }
 
+/** planDistanceWriteBack の 1 件分（RecordStore.update に渡す区間距離） */
+export type DistanceWriteBack = { id: string; total_distance: number | null };
+
+/**
+ * オドメーター → トリップメーターへ切り替える前に保存し直す区間距離（docs/design-fill-chain.md 4 章）。
+ * オドメーターモードの区間距離は保存時点の導出値で、後から前後に記録を足しても隣の記録の保存値は更新されない。
+ * トリップモードは保存値を入力値として使うので、切り替え前に連鎖計算（オドメーターモード）の値で書き戻す。
+ *
+ * 返すのは、連鎖計算の区間距離が出て（null でない）、保存値（数値以外は null とみなす）と異なる記録だけ。
+ * 区間が出ない記録（先頭・持ち越し行・記録漏れ）は書き戻さない。保存値は、オドメーターモードで保存したなら null で、
+ * それ以外はトリップモードのときに入力した値なので、トリップモードへ戻したときに表示を復元できるよう残す。
+ *
+ * @param records 1 台分の記録（その車両に表示する未分類の記録も含める）。複数車両を混ぜないこと
+ */
+export function planDistanceWriteBack(records: readonly FuelRecord[]): DistanceWriteBack[] {
+  const chained = applyFillChain(records, { distance_mode: "odometer" });
+  const plan: DistanceWriteBack[] = [];
+  chained.forEach((r, i) => {
+    const computed = finiteOrNull(r.total_distance);
+    if (computed === null) return;
+    if (finiteOrNull(records[i].total_distance) === computed) return;
+    plan.push({ id: r.id, total_distance: computed });
+  });
+  return plan;
+}
+
 /** 満タン給油で閉じた走行区間（run）の合計（applyFillChain が run_* として付ける値） */
 type ClosedRun = { distance: number; fuel: number; cost: number | null };
 

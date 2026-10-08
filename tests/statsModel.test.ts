@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { applyFillChain } from "@/lib/fillChain";
 import type { FuelRecord } from "@/lib/types";
 import {
   MAX_STATION_ROWS,
@@ -126,6 +127,29 @@ describe("buildStatsModel", () => {
     const model = buildStatsModel(sparse, "3m", today);
     expect(model.price.series).toHaveLength(1);
     expect(model.price.delta.diffFromPrevious).toBeCloseTo(10);
+  });
+
+  it("合計（走行距離・給油量）は支払総額の無い部分給油・持ち越し行も含め、平均は満タン給油で閉じた run だけで求める", () => {
+    // オドメーターモード: A(先頭) → B(部分給油・支払総額なし) → C(オドメーターなし = 持ち越し行・支払総額なし) → D(満タン)
+    const chained = applyFillChain(
+      [
+        rec({ date: "2026-10-01", odometer: 1000, fuel_amount: 30, total_cost: 5100 }),
+        rec({ date: "2026-10-03", odometer: 1200, fuel_amount: 10, is_full: false }),
+        rec({ date: "2026-10-05", odometer: null, fuel_amount: 5 }),
+        rec({ date: "2026-10-08", odometer: 1600, fuel_amount: 25, total_cost: 4250 }),
+      ],
+      { distance_mode: "odometer" }
+    );
+    const model = buildStatsModel(chained, "all", today);
+
+    // 燃費も支払総額も無い B・C は件数・系列の対象外
+    expect(model.validRecordCount).toBe(2);
+    expect(model.summary.count).toBe(2);
+    expect(model.summary.totalFuel).toBe(30 + 10 + 5 + 25);
+    expect(model.summary.totalDistance).toBe(200 + 400);
+    expect(model.summary.totalCost).toBe(5100 + 4250);
+    // 平均燃費は D が閉じた run（B・C・D）の Σkm / ΣL
+    expect(model.summary.avgEfficiency).toBeCloseTo(600 / 40, 10);
   });
 
   it("記録が無ければ空のモデルになる", () => {

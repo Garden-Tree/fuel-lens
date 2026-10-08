@@ -14,6 +14,7 @@ import { useRecordEditing } from "@/lib/useRecordEditing";
 import RecordStats from "@/components/RecordStats";
 import { efficiencyNullReason } from "@/lib/format";
 import { normalizeDateString } from "@/lib/dates";
+import { distanceModeOf } from "@/lib/fillChain";
 import {
   RECORD_CSV_EXTRA_HEADERS,
   buildCsv,
@@ -166,7 +167,16 @@ export default function HistoryPage() {
         setMovingId(null);
         return;
       }
-      await updateRecord(recordId, { vehicle_id: targetVehicleId });
+      // オドメーター → トリップメーターの車両へ移すときは、表示中の区間距離（連鎖計算の値）も保存する。
+      // 保存値は保存時点の導出値で古いことがあり、トリップモードは保存値をそのまま使うため（docs/design-fill-chain.md 4 章）。
+      // 区間が出ない記録（null）は保存値を残す。移動先もオドメーターなら移動先の連鎖で再計算されるので vehicle_id だけ
+      const target = vehicles.find(v => v.id === targetVehicleId);
+      const chainedDistance = records.find(r => r.id === recordId)?.total_distance ?? null;
+      const writeBack = distanceMode === "odometer" && distanceModeOf(target) === "trip" && chainedDistance !== null;
+      await updateRecord(
+        recordId,
+        writeBack ? { vehicle_id: targetVehicleId, total_distance: chainedDistance } : { vehicle_id: targetVehicleId }
+      );
       setMovingId(null);
       toast(`「${targetName}」へ移動しました`, { type: "success" });
     } catch (e) {

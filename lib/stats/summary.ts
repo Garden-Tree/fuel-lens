@@ -33,7 +33,7 @@ export type StatsSummary = {
   avgEfficiency: number | null;
   /** 各記録の燃費（fuel_efficiency > 0）の単純平均。参考値。対象なしは null */
   meanEfficiency: number | null;
-  /** 支払総額の合計（有効な数値の記録すべて） */
+  /** 支払総額の合計（totalsFrom の、有効な数値の記録すべて） */
   totalCost: number;
   /** 平均単価 = Σ支払総額 ÷ Σ給油量（両方が正の記録のみ）。対象なしは null */
   avgPricePerUnit: number | null;
@@ -42,9 +42,9 @@ export type StatsSummary = {
    * 対象なしは null
    */
   costPerKm: number | null;
-  /** 走行距離の合計（正の値の記録すべて） */
+  /** 走行距離の合計（totalsFrom の、正の値の記録すべて。部分給油・持ち越し行も含む） */
   totalDistance: number;
-  /** 給油量の合計（正の値の記録すべて） */
+  /** 給油量の合計（totalsFrom の、正の値の記録すべて。部分給油・持ち越し行も含む） */
   totalFuel: number;
 };
 
@@ -57,10 +57,17 @@ export type StatsSummary = {
  * - 平均燃費・走行コスト: 満タン給油で閉じた run 単位（run_distance / run_fuel / run_cost を持つ記録。ファイル先頭のコメント参照）。
  *   期間フィルタ後の記録を渡した場合、run を閉じた記録が期間内なら、その run の全体（期間より前の部分給油を含む）を数える
  * - 平均単価: 記録単位（支払総額と給油量の両方が正の記録）
- * 合計（totalDistance / totalFuel / totalCost）は記録ごとの値をそのまま合算する（部分給油・持ち越し行も含む）。
+ * 合計（totalDistance / totalFuel / totalCost）は totalsFrom の記録ごとの値をそのまま合算する（部分給油・持ち越し行も含む）。
  * 各記録の燃費の単純平均は meanEfficiency として参考値で返す。
+ *
+ * @param records 平均・件数の対象（統計ページでは燃費か支払総額を持つ記録。lib/stats/period.ts の hasStatsData）
+ * @param totalsFrom 合計の対象。省略時は records。統計ページは期間内の全記録を渡し、燃費も支払総額も無い
+ *   部分給油・持ち越し行の距離と給油量も合計に含める（docs/design-fill-chain.md 3 章）
  */
-export function summarize(records: ReadonlyArray<FuelRecord>): StatsSummary {
+export function summarize(
+  records: ReadonlyArray<FuelRecord>,
+  totalsFrom: ReadonlyArray<FuelRecord> = records
+): StatsSummary {
   let totalCost = 0;
   let totalDistance = 0;
   let totalFuel = 0;
@@ -77,14 +84,15 @@ export function summarize(records: ReadonlyArray<FuelRecord>): StatsSummary {
   let effSum = 0;
   let effCount = 0;
 
+  for (const r of totalsFrom) {
+    if (hasNumber(r.total_cost)) totalCost += r.total_cost;
+    if (hasPositiveNumber(r.total_distance)) totalDistance += r.total_distance;
+    if (hasPositiveNumber(r.fuel_amount)) totalFuel += r.fuel_amount;
+  }
+
   for (const r of records) {
     const cost = r.total_cost;
     const fuel = r.fuel_amount;
-    const dist = r.total_distance;
-
-    if (hasNumber(cost)) totalCost += cost;
-    if (hasPositiveNumber(dist)) totalDistance += dist;
-    if (hasPositiveNumber(fuel)) totalFuel += fuel;
 
     const runDistance = r.run_distance;
     const runFuel = r.run_fuel;
