@@ -9,6 +9,7 @@ import { readCache, recordsCacheKey, vehiclesCacheKey, writeCache } from "../sup
 import { bootstrapCloud, type BootstrapOptions, type CloudBootstrapResult } from "./cloudBootstrap";
 import { createCloudStores } from "./cloudStore";
 import { createLocalStores } from "./localStore";
+import { withPrimedVehicleList } from "./primedVehicles";
 import { DataError, type RecordStore, type VehicleStore } from "./types";
 import {
   runWithOutageHandling,
@@ -55,6 +56,7 @@ const OUTAGE_OPTIONS: OutageHandlingOptions = {
 function createCloudDataStores(userId: string, getToken: GetToken): CloudDataStores {
   const supabase = getSupabaseClient(userId, getToken);
   const raw = createCloudStores(supabase, userId);
+  const primed = withPrimedVehicleList(raw.vehicles);
   let active = true;
   const io: CacheIO = {
     read: key => readCache<unknown>(key),
@@ -69,9 +71,20 @@ function createCloudDataStores(userId: string, getToken: GetToken): CloudDataSto
       key: scope => recordsCacheKey(userId, scope.vehicleId),
       io,
     }),
-    vehicles: withCache(withOutageHandling(raw.vehicles, OUTAGE_OPTIONS), { key: vehiclesCacheKey(userId), io }),
-    bootstrap: options =>
-      runWithOutageHandling(() => bootstrapCloud(supabase, userId, undefined, options), OUTAGE_OPTIONS, "read"),
+    vehicles: withCache(withOutageHandling(primed.store, OUTAGE_OPTIONS), { key: vehiclesCacheKey(userId), io }),
+    bootstrap: async options => {
+      // 初期化は既定車両の確保で車両一覧を取得済み。このストアの次の vehicles.list() はそれを使い回し、同じ GET を重ねて発行しない。
+      // 一覧を使い回すのは 1 回だけで、bootstrap を呼ぶたびに先に捨てる（古い一覧を残さない）。
+      // useFuelRecords は別のストアインスタンスで vehicles.list() を呼ばないので、そちらの一覧は次の bootstrap で置き換わるだけ
+      primed.prime(null);
+      const result = await runWithOutageHandling(
+        () => bootstrapCloud(supabase, userId, undefined, options),
+        OUTAGE_OPTIONS,
+        "read"
+      );
+      primed.prime(result.vehicles ?? null);
+      return result;
+    },
     setActive: value => {
       active = value;
     },

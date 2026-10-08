@@ -3,10 +3,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { bootstrapCloud, type CloudBootstrapDeps } from "@/lib/data/cloudBootstrap";
 import { CrossTabLockError } from "@/lib/crossTabLock";
 import { SupabaseAuthTokenError } from "@/lib/supabaseClient";
+import type { Vehicle } from "@/lib/types";
 
 const supabase = {} as SupabaseClient;
 let seq = 0;
 const nextUser = () => `user-boot-${++seq}`;
+const veh = (id: string): Vehicle => ({ id, user_id: "u", name: id, type: "car" });
 
 function makeDeps(impl: Partial<Omit<CloudBootstrapDeps, "now">> = {}) {
   let now = 1_000_000;
@@ -41,7 +43,7 @@ describe("bootstrapCloud", () => {
     const p1 = bootstrapCloud(supabase, user, deps);
     const p2 = bootstrapCloud(supabase, user, deps);
     expect(p2).toBe(p1);
-    await expect(p1).resolves.toEqual({ migrationError: null });
+    await expect(p1).resolves.toEqual({ migrationError: null, vehicles: [] });
     await bootstrapCloud(supabase, user, deps);
     expect(order).toEqual(["migrate", "ensure"]);
 
@@ -75,7 +77,7 @@ describe("bootstrapCloud", () => {
     expect(deps.ensureDefaultVehicle).toHaveBeenCalledTimes(1);
 
     // 直後（30 秒以内）は同じ結果を返し、退避⇄復元を繰り返さない
-    await expect(bootstrapCloud(supabase, user, deps)).resolves.toBe(result);
+    await expect(bootstrapCloud(supabase, user, deps)).resolves.toEqual({ migrationError: result.migrationError });
     expect(deps.migrate).toHaveBeenCalledTimes(1);
     advance(31_000);
     await bootstrapCloud(supabase, user, deps);
@@ -95,7 +97,7 @@ describe("bootstrapCloud", () => {
     expect(first.migrationError).not.toBeNull();
 
     // 通常の呼び出しは 30 秒以内なら使い回す
-    await expect(bootstrapCloud(supabase, user, deps)).resolves.toBe(first);
+    await expect(bootstrapCloud(supabase, user, deps)).resolves.toEqual({ migrationError: first.migrationError });
     expect(deps.migrate).toHaveBeenCalledTimes(1);
 
     // force は使い回さず再実行する。並行する force 同士は同じ実行に合流する
@@ -104,7 +106,7 @@ describe("bootstrapCloud", () => {
     const p1 = bootstrapCloud(supabase, user, deps, { force: true });
     const p2 = bootstrapCloud(supabase, user, deps, { force: true });
     expect(p2).toBe(p1);
-    await expect(p1).resolves.toEqual({ migrationError: null });
+    await expect(p1).resolves.toEqual({ migrationError: null, vehicles: [] });
     expect(deps.migrate).toHaveBeenCalledTimes(2);
 
     // 成功済みの結果はそのまま使い回す（force でもやり直さない）
@@ -128,7 +130,7 @@ describe("bootstrapCloud", () => {
         throw new SupabaseAuthTokenError();
       }),
     });
-    await expect(bootstrapCloud(supabase, nextUser(), deps)).resolves.toEqual({ migrationError: null });
+    await expect(bootstrapCloud(supabase, nextUser(), deps)).resolves.toEqual({ migrationError: null, vehicles: [] });
   });
 
   it("rethrows an outage during migration without ensuring the default vehicle, and retries next time", async () => {
@@ -143,7 +145,7 @@ describe("bootstrapCloud", () => {
     expect(deps.ensureDefaultVehicle).not.toHaveBeenCalled();
 
     deps.migrate.mockResolvedValue(undefined);
-    await expect(bootstrapCloud(supabase, user, deps)).resolves.toEqual({ migrationError: null });
+    await expect(bootstrapCloud(supabase, user, deps)).resolves.toEqual({ migrationError: null, vehicles: [] });
     expect(deps.migrate).toHaveBeenCalledTimes(2);
   });
 
@@ -156,7 +158,39 @@ describe("bootstrapCloud", () => {
     const user = nextUser();
     await expect(bootstrapCloud(supabase, user, deps)).rejects.toMatchObject({ status: 400 });
     deps.ensureDefaultVehicle.mockResolvedValue([]);
-    await expect(bootstrapCloud(supabase, user, deps)).resolves.toEqual({ migrationError: null });
+    await expect(bootstrapCloud(supabase, user, deps)).resolves.toEqual({ migrationError: null, vehicles: [] });
     expect(deps.ensureDefaultVehicle).toHaveBeenCalledTimes(2);
+  });
+
+  describe("vehicles in the result", () => {
+    it("includes the list ensureDefaultVehicle returned when this call ran the initialization", async () => {
+      const list = [veh("v1"), veh("v2")];
+      const { deps } = makeDeps({ ensureDefaultVehicle: vi.fn(async () => list) });
+      const result = await bootstrapCloud(supabase, nextUser(), deps);
+      expect(result.vehicles).toEqual(list);
+      expect(result.migrationError).toBeNull();
+    });
+
+    it("gives the vehicles to a concurrent (in-flight) second caller too", async () => {
+      const list = [veh("v1")];
+      const { deps } = makeDeps({ ensureDefaultVehicle: vi.fn(async () => list) });
+      const user = nextUser();
+      const p1 = bootstrapCloud(supabase, user, deps);
+      const p2 = bootstrapCloud(supabase, user, deps);
+      const [r1, r2] = await Promise.all([p1, p2]);
+      expect(r1.vehicles).toEqual(list);
+      expect(r2.vehicles).toEqual(list);
+      expect(deps.ensureDefaultVehicle).toHaveBeenCalledTimes(1);
+    });
+
+    it("omits vehicles when reusing a settled result (the list may be stale), keeping migrationError", async () => {
+      const { deps } = makeDeps({ ensureDefaultVehicle: vi.fn(async () => [veh("v1")]) });
+      const user = nextUser();
+      await bootstrapCloud(supabase, user, deps);
+      const reused = await bootstrapCloud(supabase, user, deps);
+      expect(reused.vehicles).toBeUndefined();
+      expect(reused.migrationError).toBeNull();
+      expect(deps.ensureDefaultVehicle).toHaveBeenCalledTimes(1);
+    });
   });
 });
