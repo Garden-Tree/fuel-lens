@@ -3,6 +3,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import { ClerkProvider } from '@clerk/nextjs';
 import "./globals.css";
 import UserSync from "@/components/UserSync";
+import ServiceWorkerRegister from "@/components/ServiceWorkerRegister";
 import SupabaseStatusBanner from "@/components/SupabaseStatusBanner";
 import { ToastProvider } from "@/components/Toast";
 
@@ -88,6 +89,7 @@ export default function RootLayout({
         >
           <ToastProvider>
             <UserSync />
+            <ServiceWorkerRegister />
             <SupabaseStatusBanner />
             {children}
           </ToastProvider>

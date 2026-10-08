@@ -6,6 +6,8 @@ import {
   buildEfficiencyAxis,
   buildEfficiencySeries,
   buildMonthlyCostSeries,
+  buildPriceAxis,
+  buildPriceSeries,
   buildTimeDomain,
   countUnknownDate,
   filterByPeriod,
@@ -16,10 +18,14 @@ import {
   localDateString,
   normalizeDateString,
   parseLocalDate,
+  priceDelta,
+  recordPrice,
+  roundTo1,
   roundTo2,
   sortByDateAsc,
   subtractMonthsClamped,
   summarize,
+  summarizeStations,
 } from "@/lib/stats";
 
 let seq = 0;
@@ -474,5 +480,267 @@ describe("buildTimeDomain", () => {
     const a = 0;
     const b = 100 * day;
     expect(buildTimeDomain([{ timestamp: b }, { timestamp: a }])).toEqual([a - 5 * day, b + 5 * day]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 単価トレンドとスタンド比較
+// ---------------------------------------------------------------------------
+
+describe("recordPrice", () => {
+  it("prefers a positive price_per_unit", () => {
+    expect(recordPrice({ price_per_unit: 165.3, total_cost: 5000, fuel_amount: 30 })).toBe(165.3);
+  });
+
+  it("falls back to cost ÷ fuel rounded to 0.1 like calculateFuelMetrics", () => {
+    expect(recordPrice({ price_per_unit: null, total_cost: 5000, fuel_amount: 30 })).toBe(166.7);
+    expect(recordPrice({ price_per_unit: 0, total_cost: 4900, fuel_amount: 30 })).toBe(163.3);
+  });
+
+  it("returns null when no price can be derived", () => {
+    expect(recordPrice({ price_per_unit: null, total_cost: 5000, fuel_amount: null })).toBeNull();
+    expect(recordPrice({ price_per_unit: -1, total_cost: null, fuel_amount: 30 })).toBeNull();
+    expect(recordPrice({ price_per_unit: NaN, total_cost: 0, fuel_amount: 0 })).toBeNull();
+  });
+});
+
+describe("buildPriceSeries", () => {
+  it("keeps dated records with a positive price, ascending by date then id, with M/D labels", () => {
+    const out = buildPriceSeries([
+      rec({ id: "c", date: "2026-10-03", price_per_unit: 168.5, gas_station: "ＥＮＥＯＳ　調布店" }),
+      rec({ id: "b", date: "2026-09-01T09:00:00Z", price_per_unit: null, total_cost: 5000, fuel_amount: 30 }),
+      rec({ id: "a", date: "2026-10-03", price_per_unit: 166.0, gas_station: "山田石油" }),
+      rec({ id: "d", date: "2026-09-15", price_per_unit: 0 }), // excluded
+      rec({ id: "e", date: "2026-09-16", price_per_unit: null, total_cost: 5000 }), // excluded (no fuel)
+      rec({ id: "f", date: "2026-02-30", price_per_unit: 170 }), // invalid date
+      rec({ id: "g", date: "", price_per_unit: 170 }), // missing date
+    ]);
+    expect(out).toEqual([
+      { timestamp: local(2026, 9, 1).getTime(), name: "9/1", price: 166.7, station: null, brand: null },
+      { timestamp: local(2026, 10, 3).getTime(), name: "10/3", price: 166.0, station: "山田石油", brand: null },
+      { timestamp: local(2026, 10, 3).getTime(), name: "10/3", price: 168.5, station: "ENEOS 調布店", brand: "ENEOS" },
+    ]);
+  });
+
+  it("returns an empty array for no usable data", () => {
+    expect(buildPriceSeries([])).toEqual([]);
+    expect(buildPriceSeries([rec({ total_cost: 1000 })])).toEqual([]);
+  });
+});
+
+describe("buildPriceAxis / roundTo1", () => {
+  it("rounds like toFixed(1)", () => {
+    expect(roundTo1(165.25)).toBe(165.3);
+    expect(roundTo1(160)).toBe(160);
+  });
+
+  it("pads the price range and inserts the average rounded to 0.1", () => {
+    const axis = buildPriceAxis([{ price: 160 }, { price: 170 }], 166.666);
+    expect(axis.domain).toEqual([158.5, 171.5]);
+    expect(axis.averageTick).toBe(166.7);
+    expect(axis.ticks).toEqual([158.5, 161.8, 165, 166.7, 168.3, 171.5]);
+  });
+
+  it("returns undefined domain/ticks for an empty series", () => {
+    expect(buildPriceAxis([], 160)).toEqual({ domain: undefined, ticks: undefined, averageTick: null });
+  });
+});
+
+describe("summarizeStations", () => {
+  it("groups spelling variants of the same station and picks the most common name as the label", () => {
+    const { groups } = summarizeStations([
+      rec({ date: "2026-09-01", gas_station: "ENEOS セルフつつじヶ丘", price_per_unit: 165 }),
+      rec({ date: "2026-09-10", gas_station: "ＥＮＥＯＳ　セルフつつじヶ丘店", price_per_unit: 166 }),
+      rec({ date: "2026-09-20", gas_station: "ENEOS セルフつつじヶ丘店", price_per_unit: 167 }),
+      rec({ date: "2026-09-25", gas_station: "出光 高尾", price_per_unit: 170 }),
+    ]);
+    expect(groups.map(g => [g.key, g.label, g.brand, g.visits])).toEqual([
+      ["eneos|つつじケ丘", "ENEOS セルフつつじヶ丘店", "ENEOS", 3],
+      ["idemitsu|高尾", "出光 高尾", "出光", 1],
+    ]);
+  });
+
+  it("weights avgPrice by fuel (Σcost ÷ Σfuel) and tracks totals, last / min / max prices", () => {
+    const { groups } = summarizeStations([
+      rec({ id: "1", date: "2026-08-01", gas_station: "ENEOS 調布", fuel_amount: 10, total_cost: 1600, price_per_unit: 160 }),
+      rec({ id: "2", date: "2026-09-01", gas_station: "ENEOS 調布店", fuel_amount: 40, total_cost: 6800, price_per_unit: 170 }),
+      rec({ id: "3", date: "2026-07-01", gas_station: "ENEOS 調布", fuel_amount: 20, total_cost: null, price_per_unit: 150 }), // no cost
+      rec({ id: "4", date: "", gas_station: "ENEOS 調布", fuel_amount: 5, total_cost: 900, price_per_unit: 180 }), // undated
+    ]);
+    expect(groups).toHaveLength(1);
+    const g = groups[0];
+    expect(g.visits).toBe(4);
+    expect(g.pricedVisits).toBe(4); // 日付不明の記録も単価があれば数える
+    expect(g.totalFuel).toBe(75);
+    expect(g.totalCost).toBe(9300);
+    // Σcost ÷ Σfuel over records with both: (1600 + 6800 + 900) / (10 + 40 + 5)。単純平均 (160+170+150+180)/4 = 165 ではない
+    expect(g.avgPrice).toBeCloseTo(9300 / 55, 10);
+    expect(g.lastPrice).toBe(170);
+    expect(g.lastDate).toBe("2026-09-01");
+    expect(g.minPrice).toBe(150); // 日付の有効な記録だけ（日付不明の 180 は含めない）
+    expect(g.maxPrice).toBe(170);
+  });
+
+  it("falls back to the simple mean of prices when no record has both cost and fuel", () => {
+    const { groups, overallAvgPrice } = summarizeStations([
+      rec({ date: "2026-09-01", gas_station: "山田石油", price_per_unit: 160 }),
+      rec({ date: "2026-09-02", gas_station: "山田石油", price_per_unit: 170 }),
+      rec({ date: "2026-09-03", gas_station: "山田石油" }), // no price
+    ]);
+    expect(groups[0].avgPrice).toBe(165);
+    expect(groups[0].visits).toBe(3);
+    expect(groups[0].pricedVisits).toBe(2);
+    expect(groups[0].lastPrice).toBe(170);
+    expect(groups[0].lastDate).toBe("2026-09-02");
+    expect(overallAvgPrice).toBe(165);
+  });
+
+  it("uses the last visit date when no visit has a price", () => {
+    const { groups } = summarizeStations([
+      rec({ date: "2026-09-01", gas_station: "山田石油" }),
+      rec({ date: "2026-09-05", gas_station: "山田石油" }),
+    ]);
+    expect(groups[0]).toMatchObject({ avgPrice: null, lastPrice: null, lastDate: "2026-09-05", minPrice: null, maxPrice: null });
+  });
+
+  it("skips records without a station name but counts them in overallAvgPrice", () => {
+    const { groups, overallAvgPrice } = summarizeStations([
+      rec({ gas_station: null, fuel_amount: 10, total_cost: 1500 }),
+      rec({ gas_station: "  ", fuel_amount: 10, total_cost: 1500 }),
+      rec({ gas_station: "ENEOS", fuel_amount: 10, total_cost: 1800 }),
+    ]);
+    expect(groups.map(g => g.key)).toEqual(["eneos|"]);
+    expect(overallAvgPrice).toBe(160);
+  });
+
+  it("sorts by visits desc, then by the latest date", () => {
+    const { groups } = summarizeStations([
+      rec({ date: "2026-09-01", gas_station: "A石油" }),
+      rec({ date: "2026-09-10", gas_station: "B石油" }),
+      rec({ date: "2026-09-02", gas_station: "C石油" }),
+      rec({ date: "2026-09-03", gas_station: "C石油" }),
+    ]);
+    expect(groups.map(g => g.label)).toEqual(["C石油", "B石油", "A石油"]);
+  });
+
+  it("picks the cheapest only among stations with 2+ visits, and only when there are 2+ such stations", () => {
+    const records = [
+      rec({ date: "2026-09-01", gas_station: "ENEOS 調布", fuel_amount: 10, total_cost: 1700 }),
+      rec({ date: "2026-09-08", gas_station: "ENEOS 調布", fuel_amount: 10, total_cost: 1700 }),
+      rec({ date: "2026-09-02", gas_station: "出光 府中", fuel_amount: 10, total_cost: 1650 }),
+      rec({ date: "2026-09-09", gas_station: "出光 府中", fuel_amount: 10, total_cost: 1650 }),
+      rec({ date: "2026-09-03", gas_station: "コストコ 多摩境", fuel_amount: 10, total_cost: 1500 }), // 1 回だけ（最安でも対象外）
+    ];
+    expect(summarizeStations(records).cheapestKey).toBe("idemitsu|府中");
+
+    // 2 回以上のスタンドが 1 件だけなら比べる相手がいないので null
+    expect(summarizeStations(records.slice(2)).cheapestKey).toBeNull();
+    // 全部 1 回だけでも null
+    expect(summarizeStations([records[0], records[2], records[4]]).cheapestKey).toBeNull();
+  });
+
+  it("requires 2+ priced visits for the cheapest rule (visits without a price do not count)", () => {
+    const records = [
+      // ENEOS: 3 回給油したが単価が分かるのは 1 回だけ → 最安の対象外
+      rec({ date: "2026-09-01", gas_station: "ENEOS 調布", fuel_amount: 10, total_cost: 1500 }),
+      rec({ date: "2026-09-08", gas_station: "ENEOS 調布" }),
+      rec({ date: "2026-09-15", gas_station: "ENEOS 調布", fuel_amount: 20 }),
+      rec({ date: "2026-09-02", gas_station: "出光 府中", fuel_amount: 10, total_cost: 1700 }),
+      rec({ date: "2026-09-09", gas_station: "出光 府中", price_per_unit: 172 }),
+      rec({ date: "2026-09-03", gas_station: "コスモ石油 稲城", fuel_amount: 10, total_cost: 1650 }),
+      rec({ date: "2026-09-10", gas_station: "コスモ石油 稲城", fuel_amount: 10, total_cost: 1650 }),
+    ];
+    const { groups, cheapestKey } = summarizeStations(records);
+    const byKey = Object.fromEntries(groups.map(g => [g.key, g]));
+    expect(byKey["eneos|調布"]).toMatchObject({ visits: 3, pricedVisits: 1, avgPrice: 150 });
+    expect(byKey["idemitsu|府中"]).toMatchObject({ visits: 2, pricedVisits: 2 });
+    expect(byKey["cosmo|稲城"]).toMatchObject({ visits: 2, pricedVisits: 2 });
+    // ENEOS の 150 円が最も安いが、単価の分かる給油が 1 回だけなので選ばない
+    expect(cheapestKey).toBe("cosmo|稲城");
+
+    // 単価の分かる給油が 2 回以上のスタンドが 1 件だけなら null
+    expect(summarizeStations(records.slice(0, 5)).cheapestKey).toBeNull();
+  });
+
+  it("breaks a cheapest tie by priced visits, then by visits", () => {
+    const { cheapestKey } = summarizeStations([
+      rec({ date: "2026-09-01", gas_station: "A石油", price_per_unit: 160 }),
+      rec({ date: "2026-09-02", gas_station: "A石油", price_per_unit: 160 }),
+      rec({ date: "2026-09-03", gas_station: "A石油", price_per_unit: 160 }),
+      rec({ date: "2026-09-04", gas_station: "B石油", price_per_unit: 160 }),
+      rec({ date: "2026-09-05", gas_station: "B石油", price_per_unit: 160 }),
+      rec({ date: "2026-09-06", gas_station: "B石油" }),
+      rec({ date: "2026-09-07", gas_station: "B石油" }),
+    ]);
+    // B は給油 4 回だが単価が分かるのは 2 回。A（3 回とも単価あり）を採る
+    expect(cheapestKey).toBe("|a石油");
+  });
+
+  it("breaks a cheapest tie by visits", () => {
+    const { cheapestKey } = summarizeStations([
+      rec({ date: "2026-09-01", gas_station: "A石油", price_per_unit: 160 }),
+      rec({ date: "2026-09-02", gas_station: "A石油", price_per_unit: 160 }),
+      rec({ date: "2026-09-03", gas_station: "B石油", price_per_unit: 160 }),
+      rec({ date: "2026-09-04", gas_station: "B石油", price_per_unit: 160 }),
+      rec({ date: "2026-09-05", gas_station: "B石油", price_per_unit: 160 }),
+    ]);
+    expect(cheapestKey).toBe("|b石油");
+  });
+
+  it("returns empty groups for no records", () => {
+    expect(summarizeStations([])).toEqual({ groups: [], cheapestKey: null, overallAvgPrice: null });
+  });
+});
+
+describe("priceDelta", () => {
+  it("returns nulls when there is no price", () => {
+    expect(priceDelta([rec({ total_cost: 1000 })])).toEqual({
+      latest: null,
+      previous: null,
+      diffFromPrevious: null,
+      avg30: null,
+      diffFromAvg30: null,
+      avg90: null,
+      diffFromAvg90: null,
+    });
+  });
+
+  it("with a single price only reports the latest", () => {
+    const d = priceDelta([rec({ date: "2026-10-01", price_per_unit: 165 })]);
+    expect(d.latest).toEqual({ price: 165, date: "2026-10-01" });
+    expect(d.previous).toBeNull();
+    expect(d.diffFromPrevious).toBeNull();
+    expect(d.avg30).toBeNull();
+    expect(d.avg90).toBeNull();
+  });
+
+  it("compares the latest with the previous and the 30 / 90-day means before it (latest excluded)", () => {
+    const d = priceDelta([
+      rec({ id: "a", date: "2026-10-01", price_per_unit: 170 }), // latest
+      rec({ id: "b", date: "2026-09-25", price_per_unit: 166 }), // previous, in 30 days
+      rec({ id: "c", date: "2026-09-01", price_per_unit: 164 }), // 30 days before (boundary, included)
+      rec({ id: "d", date: "2026-08-31", price_per_unit: 160 }), // 31 days: 90 only
+      rec({ id: "e", date: "2026-07-03", price_per_unit: 150 }), // 90 days before (boundary, included)
+      rec({ id: "f", date: "2026-07-02", price_per_unit: 100 }), // 91 days: excluded
+      rec({ id: "g", date: "", price_per_unit: 999 }), // undated: ignored
+    ]);
+    expect(d.latest).toEqual({ price: 170, date: "2026-10-01" });
+    expect(d.previous).toEqual({ price: 166, date: "2026-09-25" });
+    expect(d.diffFromPrevious).toBe(4);
+    expect(d.avg30).toBe(165); // (166 + 164) / 2
+    expect(d.diffFromAvg30).toBe(5);
+    expect(d.avg90).toBe(160); // (166 + 164 + 160 + 150) / 4
+    expect(d.diffFromAvg90).toBe(10);
+  });
+
+  it("uses the id order for same-day records and derives missing prices from cost ÷ fuel", () => {
+    const d = priceDelta([
+      rec({ id: "b", date: "2026-10-01", price_per_unit: null, total_cost: 1680, fuel_amount: 10 }),
+      rec({ id: "a", date: "2026-10-01", price_per_unit: 170 }),
+    ]);
+    expect(d.latest).toEqual({ price: 168, date: "2026-10-01" });
+    expect(d.previous).toEqual({ price: 170, date: "2026-10-01" });
+    expect(d.diffFromPrevious).toBe(-2);
+    expect(d.avg30).toBe(170);
   });
 });

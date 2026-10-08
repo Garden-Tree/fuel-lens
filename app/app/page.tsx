@@ -30,6 +30,7 @@ import { useRecordForm, findDuplicateRecord, todayLocalISO, type RecordInput } f
 import { distanceModeOf, openRunBefore, previousOdometer } from "@/lib/fillChain";
 import RecordBadges, { efficiencyNullReason, formatOdometer } from "@/components/RecordBadges";
 import type { AnalyzeErrorResponse, AnalyzeSuccessResponse } from "@/lib/analyze";
+import { takeSharedImage } from "@/lib/shareInbox";
 
 /** /api/analyze 呼び出しのクライアント側タイムアウト（サーバー側は Gemini 30秒 + 関数全体 60秒） */
 const ANALYZE_TIMEOUT_MS = 45_000;
@@ -37,24 +38,37 @@ const ANALYZE_TIMEOUT_MS = 45_000;
 const DUPLICATE_CONFIRM_MESSAGE = "同じ日付・給油量・金額の記録が既にあります。重複して保存しますか？";
 
 /**
- * PWA ショートカット（manifest の `/app?action=scan` / `/app?action=manual`）を処理する。
+ * PWA ショートカット（manifest の `/app?action=scan` / `/app?action=manual`）と
+ * Web Share Target（Service Worker からの `/app?action=shared&t=<token>`、
+ * SW 未準備時・画像なしの `/app?action=share-unavailable`）を処理する。
  * useSearchParams を使うため、呼び出し側で <Suspense> で囲み /app の静的プリレンダーを保つ。
- * アクションは 1 ページロードにつき最大 1 回だけ実行し、実行後に `action` パラメータを URL から消す。
+ * アクションは 1 ページロードにつき最大 1 回だけ実行し、実行後に `action` / `t` パラメータを URL から消す
+ * （`router.replace("/app")` でクエリごと置き換える）。
  */
 function ShortcutActionHandler({
   scanReady,
   manualReady,
+  sharedReady,
+  noticeReady,
   onScan,
   onManual,
+  onShared,
+  onShareUnavailable,
 }: {
   scanReady: boolean;
   manualReady: boolean;
+  sharedReady: boolean;
+  noticeReady: boolean;
   onScan: () => void;
   onManual: () => void;
+  onShared: (token: string | null) => void;
+  onShareUnavailable: () => void;
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const action = searchParams.get("action");
+  // SW が付けるワンタイムトークン。IndexedDB の保留画像と一致したときだけ取り出す
+  const shareToken = searchParams.get("t");
   const handled = useRef(false);
 
   useEffect(() => {
@@ -67,11 +81,31 @@ function ShortcutActionHandler({
       if (!manualReady) return;
       handled.current = true;
       onManual();
+    } else if (action === "shared") {
+      if (!sharedReady) return;
+      handled.current = true;
+      onShared(shareToken);
+    } else if (action === "share-unavailable") {
+      if (!noticeReady) return;
+      handled.current = true;
+      onShareUnavailable();
     } else {
       return;
     }
     router.replace("/app");
-  }, [action, scanReady, manualReady, onScan, onManual, router]);
+  }, [
+    action,
+    shareToken,
+    scanReady,
+    manualReady,
+    sharedReady,
+    noticeReady,
+    onScan,
+    onManual,
+    onShared,
+    onShareUnavailable,
+    router,
+  ]);
 
   return null;
 }
@@ -112,6 +146,15 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [loadingStep, setLoadingStep] = useState<"compress" | "analyze" | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
+  // 共有（Web Share Target）で受け取り、まだ解析していない画像（圧縮済み data URL）。
+  // 共有は他サイトからの POST でも起こせるため、自動では解析せずユーザーの確認を待つ。
+  // state は表示用、ref は確認ダイアログ後の判定用（await 中に別の画像へ切り替わっていないか）
+  const [sharedPending, setSharedPendingState] = useState<string | null>(null);
+  const sharedPendingRef = useRef<string | null>(null);
+  const setSharedPending = useCallback((value: string | null) => {
+    sharedPendingRef.current = value;
+    setSharedPendingState(value);
+  }, []);
 
   // スキャン結果の確認待ち（確認シートに表示中）。保存は「保存」ボタンを押したときのみ
   const [scanResult, setScanResult] = useState<{ data: AnalyzeSuccessResponse; image: string; key: number } | null>(null);
@@ -176,7 +219,12 @@ export default function Home() {
 
   const isLoading = vehiclesLoading || recordsLoading;
 
-  const processImageFile = async (file: File) => {
+  /**
+   * 画像を圧縮してプレビューに出し、解析する。
+   * `confirmBeforeAnalyze`（共有で受け取った画像）のときは圧縮とプレビューまでで止め、
+   * 確認ダイアログで「読み取る」が選ばれたときだけ解析する。
+   */
+  const processImageFile = async (file: File, opts: { confirmBeforeAnalyze?: boolean } = {}) => {
     // スキャン中の再入（二重ペースト・ドロップ・連続選択）は無視する
     if (scanInFlight.current) return;
     // 確認シートを開いたまま次の画像を処理しない
@@ -184,6 +232,8 @@ export default function Home() {
       toast("確認中の読み取り結果を保存または破棄してから、次の画像を読み込んでください。", { type: "warning" });
       return;
     }
+    // 別の画像を読み込むので、確認待ちの共有画像は取り下げる
+    setSharedPending(null);
 
     const options = {
       maxSizeMB: 0.8,
@@ -214,6 +264,13 @@ export default function Home() {
           return;
         }
         setPreview(base64);
+        if (opts.confirmBeforeAnalyze) {
+          // 解析はまだしない。プレビューを出したまま確認を待つ（キャンセルしてもプレビューは残す）
+          abortScan();
+          setSharedPending(base64);
+          void confirmSharedAnalysis(base64);
+          return;
+        }
         analyzeImage(base64);
       };
       reader.onerror = () => {
@@ -363,6 +420,23 @@ export default function Home() {
     }
   };
 
+  // 確認待ちの共有画像の解析を始める（確認ダイアログの「読み取る」またはプレビュー上の「読み取る」ボタン）
+  const startSharedAnalysis = (base64: string) => {
+    // 確認中に別の画像へ切り替わった・閉じられた・すでに解析中なら何もしない
+    if (sharedPendingRef.current !== base64 || scanInFlight.current) return;
+    setSharedPending(null);
+    scanInFlight.current = true;
+    setLoading(true);
+    analyzeImage(base64);
+  };
+
+  // 共有で受け取った画像は、他サイトから送り込まれた可能性もあるため、読み取る前に確認する
+  const confirmSharedAnalysis = async (base64: string) => {
+    const ok = await confirm("共有された画像を読み取りますか？", { confirmLabel: "読み取る" });
+    if (!ok) return; // プレビューは残し、「読み取る / 手動で入力 / 次を撮る」を選べるようにする
+    startSharedAnalysis(base64);
+  };
+
   /**
    * 重複チェック付きで記録を追加する。
    * 同じ日付・給油量・金額の記録があれば確認し、キャンセルなら false を返す。
@@ -401,6 +475,7 @@ export default function Home() {
 
   const clearPreview = () => {
     setPreview(null);
+    setSharedPending(null);
   };
 
   // フォーム内で日付を変えたときの「前回のオドメーター」（編集中の記録自身は除く）
@@ -457,6 +532,34 @@ export default function Home() {
       button.focus({ preventScroll: true });
     }
     cameraInputRef.current?.click();
+  }, []);
+
+  // Web Share Target: Service Worker が IndexedDB に置いた共有画像を取り出し（URL の `t` と一致し、10 分以内のものだけ）、
+  // 圧縮してプレビューに出す。/share へは他サイトからも POST できるため、自動では解析せず
+  // 「読み取りますか？」の確認後にギャラリーと同じ経路（解析 → 確認シート）へ流す。
+  // 未ログインでもプレビューは表示され、解析の 401 で「ログインが必要」の案内が出る。
+  const handleSharedImage = useCallback((token: string | null) => {
+    void (async () => {
+      const file = await takeSharedImage(token ?? undefined);
+      if (!file) {
+        toastRef.current("共有された画像が見つかりませんでした", { type: "warning" });
+        return;
+      }
+      if (!file.type.startsWith("image/")) {
+        toastRef.current("画像ファイルのみ読み込めます。", { type: "warning" });
+        return;
+      }
+      await processImageFileRef.current(file, { confirmBeforeAnalyze: true });
+    })();
+  }, []);
+
+  // SW がまだ有効でなく共有がサーバーの /share に届いた場合（画像は受け取っていない）、
+  // または SW が共有から画像を取り出せなかった場合
+  const handleShareUnavailable = useCallback(() => {
+    toastRef.current(
+      "共有された画像を受け取れませんでした。もう一度お試しください（インストール直後は数秒かかることがあります）",
+      { type: "warning" }
+    );
   }, []);
 
   const cancelEditing = () => {
@@ -519,6 +622,8 @@ export default function Home() {
   // ショートカット実行条件: スキャンは読み込み完了かつ解析中・確認中でないこと、手動入力はさらに閲覧専用でないこと
   const shortcutScanReady = mounted && !isLoading && !loading && !scanResult;
   const shortcutManualReady = mounted && !isLoading && !readOnly;
+  // 共有画像はスキャンと同じ条件に加え、ログイン状態の確定を待つ（401 時の案内文を正しく出すため）
+  const sharedImageReady = shortcutScanReady && authLoaded;
 
   return (
     <main className="min-h-screen bg-gradient-to-b from-gray-900 to-black text-white p-4 md:p-8 pb-32 font-sans flex flex-col items-center">
@@ -526,8 +631,12 @@ export default function Home() {
         <ShortcutActionHandler
           scanReady={shortcutScanReady}
           manualReady={shortcutManualReady}
+          sharedReady={sharedImageReady}
+          noticeReady={mounted}
           onScan={handleShortcutScan}
           onManual={startManualEntry}
+          onShared={handleSharedImage}
+          onShareUnavailable={handleShareUnavailable}
         />
       </Suspense>
       <div className="w-full max-w-5xl">
@@ -662,7 +771,27 @@ export default function Home() {
                         </button>
                       )}
                       {!loading && (
-                        <div className="absolute bottom-3 right-3 flex gap-2">
+                        <div className="absolute bottom-3 right-3 flex flex-wrap justify-end gap-2">
+                          {/* 共有で受け取り、確認ダイアログで読み取らなかった画像 */}
+                          {sharedPending && (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => startSharedAnalysis(sharedPending)}
+                                className="bg-emerald-600/90 hover:bg-emerald-500 text-white text-xs font-bold py-2 px-4 rounded-full shadow-lg backdrop-blur flex items-center gap-2 pointer-events-auto"
+                              >
+                                <Calculator className="w-3 h-3" aria-hidden="true" /> 読み取る
+                              </button>
+                              <button
+                                type="button"
+                                onClick={startManualEntry}
+                                disabled={readOnly}
+                                className="bg-gray-800/90 hover:bg-gray-700 text-white text-xs font-bold py-2 px-4 rounded-full shadow-lg backdrop-blur flex items-center gap-2 pointer-events-auto disabled:opacity-50 disabled:cursor-not-allowed"
+                              >
+                                <Edit2 className="w-3 h-3" aria-hidden="true" /> 手動で入力
+                              </button>
+                            </>
+                          )}
                           <button
                             type="button"
                             onClick={() => cameraInputRef.current?.click()}

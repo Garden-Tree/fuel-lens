@@ -10,7 +10,7 @@ FuelLens の構成、データの流れ、主要なモジュールの役割を�
 | `app/page.tsx` | ランディングページ（Server Component）。対話部分は `components/landing/*` |
 | `app/app/page.tsx` | メイン画面。スキャン（画像の選択・ドロップ・貼り付け）、手動入力、最新記録の確認・編集 |
 | `app/history/page.tsx` | 履歴一覧。編集・削除・別車両への移動・年月フィルタ・並べ替え・CSV 出力 |
-| `app/stats/page.tsx` | 統計サマリーとグラフ（recharts）。期間フィルタ（全期間 / 1 年 / 6 ヶ月 / 3 ヶ月） |
+| `app/stats/page.tsx` | 統計サマリーとグラフ（recharts）。燃費・支払総額・単価の推移とスタンド別の単価。期間フィルタ（全期間 / 1 年 / 6 ヶ月 / 3 ヶ月）（[11 章](#11-統計)） |
 | `app/settings/page.tsx` | 設定画面（`/settings`）。データ概要とバックアップ・復元（[8 章](#8-バックアップと復元)） |
 | `app/manifest.ts` | PWA の Web App Manifest（`/manifest.webmanifest`。[9 章](#9-pwa)） |
 | `app/api/analyze/route.ts` | Gemini で画像を解析する API（[api-analyze.md](./api-analyze.md)） |
@@ -28,7 +28,8 @@ FuelLens の構成、データの流れ、主要なモジュールの役割を�
 | `lib/analyze.ts` | `/api/analyze` の純粋ヘルパーと型（他の lib に依存しない） |
 | `lib/calculations.ts` | `calculateFuelMetrics`（燃費・単価の計算） |
 | `lib/fillChain.ts` | 給油の連鎖計算 `applyFillChain`（オドメーターの差分・部分給油の合算・記録漏れでの連鎖切断）と、燃料種別・距離の入力方式の型・既定値補完（`normalizeRecord` / `normalizeVehicle`）。純粋関数（[10 章](#10-給油の連鎖計算fill-chain)） |
-| `lib/stats.ts` | 統計ページの純粋な集計ロジック |
+| `lib/stats.ts` | 統計ページの純粋な集計ロジック（[11 章](#11-統計)） |
+| `lib/stations.ts` | スタンド名の正規化（`normalizeStationName`）、ブランド判定（`detectBrand` と辞書 `STATION_BRANDS`）、グルーピングキー（`stationKey`）。純粋関数 |
 | `lib/recordFilters.ts` | 車両・未分類の判定（純粋関数） |
 | `lib/backup.ts` | バックアップ JSON の組み立て・検証（`parseBackup`）・復元計画（`planRestore` / `finalizeRestoreRecords`）。純粋関数 |
 | `lib/csv.ts` | CSV の組み立て・エスケープ・ダウンロード。履歴画面の CSV 出力と設定画面の全車両 CSV で共有 |
@@ -38,6 +39,10 @@ FuelLens の構成、データの流れ、主要なモジュールの役割を�
 | `lib/migrateLocalData.ts` | ローカル → クラウドの移行と既定車両の自動作成（[5 章](#5-ローカル--クラウド移行)） |
 | `lib/supabaseClient.ts` | ユーザーごとの Supabase クライアント（Clerk JWT 付き） |
 | `lib/supabaseHealth.ts` | 障害の分類、閲覧専用モード、キャッシュ、再試行（[6 章](#6-障害時の動作)） |
+| `lib/shareInbox.ts` | Web Share Target の受け取り箱。Service Worker が IndexedDB に置いた共有画像を、トークン一致かつ 10 分以内のときだけ取り出して削除する（`takeSharedImage` / `clearSharedImage`。[9 章](#9-pwa)） |
+| `public/sw.js` | Service Worker。Web Share Target（POST `/share`）の受け取り専用で、キャッシュはしない（[9 章](#9-pwa)） |
+| `components/ServiceWorkerRegister.tsx` | `public/sw.js` を登録する（本番ビルドのみ。開発中は `NEXT_PUBLIC_ENABLE_SW=1` で有効化）。`app/layout.tsx` にマウント |
+| `app/share/route.ts` | Web Share Target の予備のフォールバック。通常は `next.config.ts` の `redirects()` が先に 303 を返すので届かない。POST は本文を読まずに `/app?action=share-unavailable` へ、GET は `/app` へ 303 リダイレクト |
 | `public/icons/` / `public/apple-touch-icon.png` | PWA アイコン（`icon-192.png` / `icon-512.png` / `icon-maskable-512.png` と 180x180 の apple-touch-icon）。`scripts/generate-icons.mjs` が生成 |
 | `scripts/generate-icons.mjs` | `app/icon.svg` から PWA アイコンを生成するスクリプト（`node scripts/generate-icons.mjs`） |
 | `tests/*.test.ts` | Vitest の単体テスト（`environment: "node"`。対象は `lib/` の関数） |
@@ -318,8 +323,8 @@ CSV を `lib/importers/` の純粋関数でバックアップ形式（`FuelLensB
 
 ## 9. PWA
 
-ホーム画面に追加して、アプリのように起動できます。**Service Worker は未実装で、オフライン動作・Web Share Target には対応していません**
-（[今後の候補](./roadmap.md)）。
+ホーム画面に追加して、アプリのように起動できます。写真アプリの「共有」から FuelLens に画像を送ってスキャンできます（Web Share Target）。
+**Service Worker は共有の受け取り専用で、キャッシュはしません。オフライン動作には対応していません**（[今後の候補](./roadmap.md)）。
 
 - `app/manifest.ts` が `/manifest.webmanifest` を返します。`name` / `short_name` は `FuelLens`、`start_url` は `/app`、`display` は `standalone`、
   `orientation` は `portrait`、背景色とテーマ色は `#030712` です。`app/layout.tsx` の `metadata.manifest` から参照し、テーマ色は `viewport.themeColor` にも設定しています。
@@ -327,6 +332,37 @@ CSV を `lib/importers/` の純粋関数でバックアップ形式（`FuelLensB
   iOS 用の `public/apple-touch-icon.png`（180x180。`metadata.icons.apple`）です。
 - ショートカット（アイコンの長押しメニュー）は「スキャン」`/app?action=scan` と「手動で入力」`/app?action=manual` の 2 つです。
   `app/app/page.tsx` が `action` パラメータを 1 回だけ処理し、処理後にパラメータを URL から取り除きます（再読み込みで繰り返し開かないため）。
+- **Web Share Target（共有から読み取り）**: `manifest` の `share_target` は `POST /share`（`multipart/form-data`、画像は `image` フィールド、`accept: image/*`）です。
+  `params` は `files` だけを宣言し（`title` / `text` / `url` は無し）、テキストやリンクの共有先には FuelLens を出しません。
+  **SW が有効なら** 画像はサーバーへ送らず端末内だけで受け渡すので、サイズの上限もサーバー保存もありません。
+  SW がまだ無いときはブラウザが画像ごとサーバーへ POST します（下の 4.）。流れは次のとおりです。
+  1. 共有先に FuelLens を選ぶと、ブラウザが `/share` へ POST します。
+  2. Service Worker（`public/sw.js`）がこの POST だけを横取りし、`crypto.randomUUID()` でワンタイムトークンを作って、
+     画像を `{ blob, name, type, at, token }` として IndexedDB（DB `fuel-lens-share` / ストア `inbox` / キー `pending`）に保存し、
+     `/app?action=shared&t=<token>` へ 303 リダイレクトします。画像が無い・保存に失敗したときは古い `pending` を削除してから
+     `/app?action=share-unavailable` へリダイレクトします（前回の共有画像を誤って読み込まないため）。
+     それ以外のリクエストには `respondWith` を呼ばず、ネットワークに任せます。
+  3. `app/app/page.tsx` が読み込み完了後（ログイン状態の確定後）に `lib/shareInbox.ts` の `takeSharedImage(t)` で画像を取り出して削除します。
+     返すのは `token` が URL の `t` と一致し、保存から 10 分以内のものだけです（それ以外は削除して捨て、「共有された画像が見つかりませんでした」と表示）。
+     画像は圧縮してプレビューに出しますが、**自動では解析しません**。`/share` へは他のサイトからもフォーム送信（クロスサイト POST）で画像を送り込めるため、
+     「共有された画像を読み取りますか？」（`useToast` の confirm、ボタンは「読み取る」）で確認してから、ギャラリーと同じ経路（`/api/analyze` → 確認シート）に流します。
+     キャンセルしてもプレビューは残り、プレビュー上の「読み取る」「手動で入力」「次を撮る」から選べます。
+     未ログインでもプレビューは表示され、解析の 401 で「AIスキャンにはログインが必要」と案内します（手動入力はログイン不要）。
+     処理後は `action` と `t` を URL から取り除きます。
+  4. SW がまだ有効でない（インストール直後など）と、ブラウザは画像を含む POST を **サーバーへ送ります**。
+     `next.config.ts` の `redirects()` が `content-type: multipart/form-data` の `/share` を **本文を読まずに** `/app?action=share-unavailable` へ 303 で戻し
+     （それ以外の `/share` は `/app` へ 303）、画面は「共有された画像を受け取れませんでした。もう一度お試しください」と表示します。
+     サーバーは画像を読まず保存もしませんが、通信としては届きます。また Vercel では本文が 4.5 MB を超えると、リダイレクトの前に 413 で拒否されることがあります。
+     `app/share/route.ts` は同じ動作をする予備のフォールバックです。
+- **Service Worker の登録**: `components/ServiceWorkerRegister.tsx`（`app/layout.tsx` にマウント）が本番ビルドでのみ `/sw.js` をスコープ `/` で登録します。
+  開発中に試すときは `NEXT_PUBLIC_ENABLE_SW=1` を設定します。SW は `install` で `skipWaiting`、`activate` で `clients.claim` し、
+  `{ type: "SKIP_WAITING" }` メッセージにも応じます。**キャッシュ（precache / Cache Storage）は一切使いません。**
+  `proxy.ts`（Clerk）のマッチャーは `.js` の静的ファイルを除外するので `/sw.js` は素通しです。`/share` もマッチャーから除外しています（Clerk を通さずにリダイレクトする）。
+- **動作確認（Android Chrome）**: 本番 URL（HTTPS）を開いて「ホーム画面に追加」（インストール）し、一度アプリを起動して SW を有効にします。
+  フォトアプリで写真を開いて「共有」→ FuelLens を選ぶと、アプリが開いてプレビューと「共有された画像を読み取りますか？」の確認が出ます。
+  共有先に出ない場合はインストールし直してください（共有先の登録はインストール時の manifest で決まります）。
+- **iOS の制限**: iOS / iPadOS の Safari は `share_target` に対応していないため、共有メニューに FuelLens は出ません。
+  iOS ではアプリ内のカメラ／画像選択、またはショートカットの「スキャン」を使います。
 - アイコンの再生成: `app/icon.svg` を元に `node scripts/generate-icons.mjs` を実行します（インストール済みの `sharp` を使用。追加の依存なし）。
   生成後に各ファイルの寸法を表示するので確認し、出力されたファイルをコミットします。
 
@@ -377,3 +413,29 @@ CSV を `lib/importers/` の純粋関数でバックアップ形式（`FuelLensB
 - **補助関数**: `previousOdometer` / `chainBaseBefore`（フォームの「前回から ○○ km」表示用に、連鎖計算が基準にするオドメーター（それまでの最大値）と、記録漏れの直後で基準が無いかを返す）、
   `openRunBefore`（直前に開いている run。燃費プレビューの合算用）、`normalizeRecord` / `normalizeVehicle`（新しい列の既定値補完）、
   `FUEL_TYPES` / `FUEL_TYPE_LABELS`（燃料種別の一覧と表示名）、`MEMO_MAX_LENGTH`（200）。
+
+## 11. 統計
+
+`/stats` は選択中の車両の記録（連鎖計算済み）を期間フィルタ（`filterByPeriod`）で絞り、`lib/stats.ts` の純粋関数で集計します。
+平均燃費・円/km を run 単位で求める理由は [10 章](#10-給油の連鎖計算fill-chain) の「統計」を参照してください。
+
+### 単価トレンドとスタンド比較
+
+- **単価**: 記録の `price_per_unit`（正の値）を使い、無ければ支払総額 ÷ 給油量を `calculateFuelMetrics` と同じ 0.1 円単位で丸めて補います（`recordPrice`）。
+- **単価の推移**: `buildPriceSeries` が日付の有効な記録を日付昇順（同日は id 順）に並べます。2 点未満は空表示です。
+  平均線は期間の平均単価（Σ支払総額 ÷ Σ給油量。サマリーカードの「平均単価」と同じ規則）で、目盛りは `buildPriceAxis` が小数第 1 位で作ります。
+  見出しの「前回比 / 30日平均比 / 90日平均比」は `priceDelta` で、最新の単価から 1 つ前の単価、最新の給油日から遡って 30 日 / 90 日以内の
+  ほかの給油の単価の単純平均を引いた値です。最新の給油についての表示なので、比較の基準が欠けないよう期間フィルタを掛けない全記録で求めます。
+- **スタンド別の単価**: `summarizeStations` が店舗名を `lib/stations.ts` の `stationKey` でまとめます。キーは「ブランド + 店舗名」で、
+  NFKC 正規化（全角・半角）、会社の種類（(株)・株式会社・(有) など）、ブランドの別名（ENEOS / エネオス / Dr.Drive、出光 / apollostation / 昭和シェル、
+  JA-SS / JA−SS / JAーSS など）、「セルフ」、空白と区切り記号（U+2212 のマイナス記号、かなの後ろ以外の「ー」を含む）、末尾の「店」「SS」の違いを吸収します
+  （例: 「ENEOS セルフつつじヶ丘」と「ＥＮＥＯＳ　セルフつつじヶ丘店」は同じスタンド）。
+  別名は単語の途中では一致させません。英字の別名は前後が英字でないとき、カタカナの別名は前後がカタカナ・「ー」でないとき（隣が「セルフ」なら可）だけ一致します
+  （「コスモス薬品」「シェルター」「オートモービル」はブランドなし）。他の名前に紛れやすい「日石」「日本石油」「ゼネラル」は辞書に入れていません
+  （「朝日石油」「西日本石油」はブランドなしで、名前全体がキーに残ります）。
+  表示名はグループ内で最も多い表記（`normalizeStationName` で正規化。末尾の「店」は残す）です。
+  平均単価は Σ支払総額 ÷ Σ給油量（両方がある記録のみ。無ければ単価の単純平均）、並びは給油回数の降順で、画面には上位 8 件と「他 n 件」を出します。
+  棒の長さは表示中のスタンドの平均単価の最安を 15%、最高を 100% とした線形の目盛りです（差が数円でも見分けられるように。1 件だけ・全て同額なら 100%）。
+  「最安」は単価の分かる給油（`pricedVisits`）が 2 回以上のスタンドが 2 件以上あるときだけ、その中で平均単価が最も安いものに付けます
+  （同額なら `pricedVisits`、さらに給油回数の多い方）。
+  ブランド辞書（`STATION_BRANDS`）は判定用の小さな一覧で、外部のデータは参照しません。店舗名の無い記録はスタンド別には出ませんが、平均単価には含めます。

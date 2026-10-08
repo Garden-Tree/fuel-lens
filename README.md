@@ -16,7 +16,9 @@ AI（Google Gemini）が給油量・金額・走行距離などを読み取り�
 - **バックアップと復元**: 設定画面（`/settings`）で全車両・全記録を JSON でバックアップし、同じ JSON から復元できます。
   復元は追記のみで、既存のデータは削除・上書きしません。全車両の記録を 1 つの CSV に書き出すこともできます。
 - **PWA（ホーム画面に追加）**: ホーム画面から起動でき、アイコンの長押しメニューから「スキャン」「手動で入力」を直接開けます。
-  オフライン動作（Service Worker）には未対応です。
+  オフライン動作には未対応です。
+- **共有から読み取り（Android）**: インストールした PWA は写真アプリの「共有」先に表示され、選んだ写真をそのままスキャンできます。
+  画像はサーバーに保存せず端末内で受け渡します（Web Share Target。iOS Safari は未対応）。
 - **未ログインでも使える**: 手動入力・履歴・統計はログインなしで使え、記録はブラウザの localStorage に保存されます。
   **写真からの AI 解析のみログインが必要**です。
 - **クラウド同期**: Clerk でログインすると記録は Supabase に保存され、複数端末で共有できます。
@@ -60,6 +62,7 @@ npm run dev                  # http://localhost:3000
 | `NEXT_PUBLIC_SUPABASE_URL` | 必須 | Supabase プロジェクトの URL |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | 必須 | Supabase の anon キー（RLS 前提） |
 | `NEXT_PUBLIC_APP_URL` | 任意 | アプリの公開 URL。`/api/analyze` の Origin 許可ホストと `metadataBase` に使う |
+| `NEXT_PUBLIC_ENABLE_SW` | 任意 | `1` で開発ビルドでも Service Worker（Web Share Target の受け取り）を登録する。本番ビルドでは常に登録 |
 | `ALLOW_ANONYMOUS_SCAN` | 任意 | `true` で未ログインの AI 解析を IP ごとに 3 回まで許可（開発・デモ専用）。既定はログイン必須 |
 | `CRON_SECRET` | 本番で必須 | Vercel Cron → `/api/keepalive` の認証用シークレット |
 | `SUPABASE_SERVICE_ROLE_KEY` | 任意 | `/api/keepalive` で件数取得まで行う場合に設定。サーバー専用（`NEXT_PUBLIC_` を付けない） |
