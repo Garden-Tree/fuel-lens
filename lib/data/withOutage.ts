@@ -175,7 +175,7 @@ export type CachedVehicleStore = VehicleStore & {
 
 /**
  * 最新の list の結果（キーと範囲）を覚え、成功した書き込みをその一覧へ反映してキャッシュへ書き直す。
- * list を呼ぶたびに忘れ、その呼び出しが最新のまま成功したときだけ覚える（古い応答で上書きしない）。
+ * list を呼ぶたびに忘れ、その呼び出しが最新のまま成功したときだけキャッシュへ書いて覚える（古い応答で上書きしない）。
  * 失敗した読み込みの後は書き込みを反映しない（最後に同期した一覧を残す）。
  */
 function createCacheTracker<T, S>(io: CacheIO) {
@@ -186,8 +186,11 @@ function createCacheTracker<T, S>(io: CacheIO) {
       const mine = ++seq;
       current = null;
       const items = await load();
-      io.write(key, items);
-      if (mine === seq) current = { key, scope, items };
+      // 古い応答はキャッシュも覚える一覧も更新しない（後から始まった list や、その間の書き込みの結果を壊さない）
+      if (mine === seq) {
+        io.write(key, items);
+        current = { key, scope, items };
+      }
       return items;
     },
     apply(update: (items: T[], scope: S) => T[]) {

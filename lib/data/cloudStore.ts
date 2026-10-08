@@ -163,8 +163,11 @@ export type CloudStores = DataStores;
 export function createCloudStores(supabase: SupabaseClient, userId: string): CloudStores {
   const records: RecordStore = {
     async list(scope) {
-      // 選択中の車両が UUID でない = 車両一覧が未確定。クエリを発行しない（呼び出し側も事前に確認する）
-      if (!isUuid(scope.vehicleId)) return [];
+      // 選択中の車両が UUID でない = 車両一覧が未確定。クエリを発行しない（呼び出し側のフックは事前に isUuid で確認する）。
+      // [] を返すと withOutageHandling が「読み込み成功」とみなして障害を解除し、withCache が空の一覧を書いてしまうため、投げる
+      if (!isUuid(scope.vehicleId)) {
+        throw new DataError("車両の指定が不正です。画面を再読み込みしてから再度お試しください。", { code: VALIDATION_CODE });
+      }
       // 未分類（vehicle_id が null）の記録は既定車両を選択しているときだけ含める。
       // 常に含めると、車両が複数あるとき全車両に同じ記録が重複表示・重複集計されてしまう。
       // vehicleId は UUID 形式を検証済みなので、フィルタ式に安全に埋め込める。

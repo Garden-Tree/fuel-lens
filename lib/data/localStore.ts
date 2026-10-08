@@ -80,6 +80,27 @@ function parseLocalVehicles(raw: string | null): Vehicle[] {
     .map(v => normalizeVehicle(v));
 }
 
+/**
+ * 車両とその記録を削除する（useVehicles.deleteVehicle が呼ぶ）。順序は保存先で変える。
+ * - local: 先に縮めた車両の一覧を書く。容量超過などで書けなければ何も変わらない（記録も残る）。
+ *   その後の記録の削除は失敗しても車両の削除を続ける（removeByVehicle が console にだけ出す）
+ * - cloud: 先に記録、次に車両。途中で失敗しても車両が残るので、再試行で続きから消せる
+ */
+export async function removeVehicleWithRecords(
+  stores: DataStores,
+  kind: "local" | "cloud",
+  id: string,
+  { includeUnclassified }: { includeUnclassified: boolean }
+): Promise<void> {
+  if (kind === "local") {
+    await stores.vehicles.remove(id);
+    await stores.records.removeByVehicle(id, { includeUnclassified });
+    return;
+  }
+  await stores.records.removeByVehicle(id, { includeUnclassified });
+  await stores.vehicles.remove(id);
+}
+
 /** createLocalStores の戻り値（両インターフェースを満たすことを型で確認する） */
 export type LocalStores = DataStores;
 

@@ -5,6 +5,7 @@ import {
   LOCAL_STORAGE_FULL_MESSAGE,
   LOCAL_VEHICLES_KEY,
   createLocalStores,
+  removeVehicleWithRecords,
   writeLocalJson,
 } from "@/lib/data/localStore";
 import { matchesRecordScope, recordScopeOf } from "@/lib/data/scope";
@@ -252,5 +253,47 @@ describe("writeLocalJson", () => {
       throw new Error("QuotaExceededError");
     };
     expect(() => writeLocalJson("k", [2], storage)).toThrow(LOCAL_STORAGE_FULL_MESSAGE);
+  });
+});
+
+describe("removeVehicleWithRecords", () => {
+  const v = (id: string): Vehicle => ({ id, user_id: "local", name: id, type: "car" });
+
+  it("local: writes the shrunk vehicles list first, so a quota error leaves vehicles and records unchanged", async () => {
+    const records = [rec("1", "a"), rec("2", "b")];
+    const { storage, stores, saved } = setup(records, [v("a"), v("b")]);
+    const real = storage.setItem.bind(storage);
+    storage.setItem = (key: string, value: string) => {
+      if (key === LOCAL_VEHICLES_KEY) throw new DOMException("QuotaExceededError", "QuotaExceededError");
+      real(key, value);
+    };
+    await expect(removeVehicleWithRecords(stores, "local", "a", { includeUnclassified: false })).rejects.toThrow(
+      LOCAL_STORAGE_FULL_MESSAGE
+    );
+    expect(saved<FuelRecord[]>(LOCAL_RECORDS_KEY).map(r => r.id)).toEqual(["1", "2"]);
+    expect(saved<Vehicle[]>(LOCAL_VEHICLES_KEY).map(x => x.id)).toEqual(["a", "b"]);
+  });
+
+  it("local: removes the vehicle and then its records", async () => {
+    const { stores, saved } = setup([rec("1", "a"), rec("2", "b")], [v("a"), v("b")]);
+    await removeVehicleWithRecords(stores, "local", "a", { includeUnclassified: false });
+    expect(saved<Vehicle[]>(LOCAL_VEHICLES_KEY).map(x => x.id)).toEqual(["b"]);
+    expect(saved<FuelRecord[]>(LOCAL_RECORDS_KEY).map(r => r.id)).toEqual(["2"]);
+  });
+
+  it("cloud: removes the records first, then the vehicle (a failed record removal keeps the vehicle)", async () => {
+    const calls: string[] = [];
+    const { stores } = setup();
+    const fake = {
+      records: { ...stores.records, removeByVehicle: vi.fn(async () => void calls.push("records")) },
+      vehicles: { ...stores.vehicles, remove: vi.fn(async () => void calls.push("vehicle")) },
+    };
+    await removeVehicleWithRecords(fake, "cloud", "a", { includeUnclassified: true });
+    expect(calls).toEqual(["records", "vehicle"]);
+
+    calls.length = 0;
+    fake.records.removeByVehicle.mockRejectedValueOnce(new Error("boom"));
+    await expect(removeVehicleWithRecords(fake, "cloud", "a", { includeUnclassified: true })).rejects.toThrow("boom");
+    expect(calls).toEqual([]);
   });
 });

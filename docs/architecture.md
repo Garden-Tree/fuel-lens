@@ -104,17 +104,17 @@ useVehicles / useFuelRecords
 | `localStore.ts` | `createLocalStores(storage?)`。キー `fuel_lens_data` / `fuel_lens_vehicles`、ID（記録 `Date.now()`、復元 `restored-<時刻36進>-<連番>`、車両 `local-vehicle-<時刻>`）、車両が無ければ `default-car`、未分類の保存先は `default-car`、既定車両の削除で未分類も削除。保存失敗は日本語の Error（`writeLocalJson`） |
 | `cloudStore.ts` | `createCloudStores(supabase, userId)`。生の層で、失敗は `status` 付きの Supabase エラーをそのまま投げる（保存前の検証だけ日本語の `DataError`）。クエリの詳細は下 |
 | `withOutage.ts` | `withOutageHandling(store, { isReadOnly, onFailure, onRecover })`: 分類 → `setOutage` → 日本語の `DataError` への変換と、書き込み前の閲覧専用ガードを 1 か所で行う（`list` の成功で `clearOutage`）。`withCache(store, { key })`: `list` の成功でキャッシュを書き、成功した書き込みも反映する。読み込み失敗時はフックが `cached()` で最後に同期した一覧を表示する |
-| `cloudBootstrap.ts` | `bootstrapCloud(supabase, userId)`: `migrateLocalData` → `ensureDefaultVehicle` を userId ごとにタブ内で 1 回（[5 章](#5-ローカル--クラウド移行)） |
+| `cloudBootstrap.ts` | `bootstrapCloud(supabase, userId, deps?, { force? })`: `migrateLocalData` → `ensureDefaultVehicle` を userId ごとにタブ内で 1 回（[5 章](#5-ローカル--クラウド移行)） |
 | `useDataStores.ts` | ログイン状態に応じたストア（クラウドは userId・getToken ごとにメモ化）。フックのアンマウント・ユーザー切り替え後に届いた応答ではキャッシュを書かない |
 | `columns.ts` / `scope.ts` | `pickRecordColumns`（保存する列のホワイトリストと検証）、`sanitizeVehicleSettings`、`applyRecordPatch` / `applyVehiclePatch`、`recordScopeOf` / `matchesRecordScope`（`matchesSelectedVehicle` と同じ判定） |
 
 クラウドのクエリ（`cloudStore.ts`）:
 
-- 記録の一覧: `fuel_records` を `date` の降順で取得し、`vehicle_id.eq.<uuid>`、既定車両なら `.or(vehicle_id.eq.<uuid>,vehicle_id.is.null)`（UUID を検証してから埋め込む。UUID でなければクエリを発行しない）。
+- 記録の一覧: `fuel_records` を `date` の降順で取得し、`vehicle_id.eq.<uuid>`、既定車両なら `.or(vehicle_id.eq.<uuid>,vehicle_id.is.null)`（UUID を検証してから埋め込む。UUID でなければクエリを発行せず、日本語の検証エラー `DataError`（`VALIDATION_CODE`）を投げる。`[]` を返すと「読み込み成功」として障害の解除と空のキャッシュ書き込みが起きるため。フックは事前に `isUuid` で確認する）。
 - 全件（`listAll`）: `user_id` で絞り、`date` 降順 → `id` 昇順で 1,000 件ずつ、空のページが返るまで読む（max-rows が小さくても欠けない）。
 - 追加: `pickRecordColumns` の列だけを `user_id` / `vehicle_id` 付きで insert（`created_at` は DB の既定値）。一括追加は 100 件ずつ `defaultToNull: false` で、`created_at` を全行に正規化して送る。
 - 車両: 一覧は `created_at` → `id` の昇順（1 台も無ければ「メインカー」を作成）。一括追加は 1 台ずつ入力順に `.select().single()`。
-- 車両の削除: フックが先に `removeByVehicle`（既定車両なら `vehicle_id` が null の記録も）を呼び、その後に車両を削除する。
+- 車両の削除: フックが `removeVehicleWithRecords`（`localStore.ts`）で、記録 → 車両の順に削除する（既定車両なら `vehicle_id` が null の記録も）。途中で失敗しても車両が残るので再試行で続きから消せる。未ログインだけは逆順（下の `deleteVehicle`）。
 
 両ストアの戻り値は型注釈（`DataStores`）で `RecordStore` / `VehicleStore` を満たすことを確認しているので、片方の経路だけに操作を足すと typecheck が失敗します。
 
@@ -177,7 +177,8 @@ useVehicles / useFuelRecords
 - 読み込んだ車両（ローカル・クラウド・キャッシュ）は `normalizeVehicle` で新しい列を補います（`0004` 適用前の DB でも動く）。
 - `addVehicles(items: ({ name, type } & VehicleSettings)[])`（復元用）は車両をまとめて追加し、作成した `Vehicle[]` を返します。
   未ログインでは `local-vehicle-<時刻>-<連番>` の ID でローカルに追加し、ログイン中は 1 台ずつ入力順に insert します（閲覧専用中は日本語エラー。途中で失敗しても作成済みの車両は一覧に反映）。
-- `deleteVehicle` は先に `RecordStore.removeByVehicle`（既定車両なら未分類の記録も）、次に `VehicleStore.remove` を呼び、`fuel_records_changed` を発火します。
+- `deleteVehicle` は `removeVehicleWithRecords` で `RecordStore.removeByVehicle`（既定車両なら未分類の記録も）と `VehicleStore.remove` を呼び、`fuel_records_changed` を発火します。
+  順序は保存先で異なります: ログイン中は記録 → 車両。未ログインは縮めた車両の一覧を先に書き（容量超過なら何も変わらず、記録も残る）、その後に記録を削除します（記録の削除に失敗しても車両の削除は続け、console にだけ出す）。
 - 未ログイン時の localStorage への保存（`addVehicle` / `updateVehicle` / `deleteVehicle`）は、画面の一覧を変える前に `writeLocalJson`（`lib/data/localStore.ts`）で行います。
   容量超過などで保存できなければ「ブラウザの保存領域がいっぱいです。…」の日本語エラーを投げ、一覧は変えません（英語の `DOMException` は console にだけ出す）。
 - 選択中の車両は `lib/vehicleSelection.ts` の `pickSelected`（保存値が一覧に無ければ先頭の車両）で決め、ずれたときだけ保存し直します。
@@ -286,6 +287,7 @@ localStorage から Supabase へのコピーは、`lib/migrateLocalData.ts` の 
   ただし移行するローカルデータ（`fuel_lens_data` / `fuel_lens_vehicles` / 退避キー）が残っていれば（ログアウト中に記録した等）やり直します（`hasLocalDataToMigrate`）。
 - 移行が障害（停止・接続不可）で失敗したら初期化ごと失敗し、フックは閲覧専用・キャッシュ表示になります（次の読み込みで再試行）。
   障害以外の失敗（RLS 違反など）は日本語のメッセージ（`migrationErrorMessage`）を両フックの `error` に出して読み込みを続け、30 秒間は同じ結果を返します（退避⇄復元を繰り返さない）。
+  ただし障害バナーの「再試行」（`fuel_lens_retry`）による再読み込みは `bootstrapCloud(…, { force: true })` で、この 30 秒の使い回しを飛ばして移行をやり直します（実行中の初期化には合流）。
   認証トークンの欠落は移行のエラーとしては出さず、続く既定車両の確保の失敗（再ログインの案内）になります。
 - 既定車両の確保の失敗は初期化の失敗として扱い、次の読み込みで最初からやり直します。
 
@@ -328,7 +330,11 @@ Supabase Free のプロジェクトが一時停止すると、API は HTTP 540 �
 - 正常に読み込めた一覧は `fuel_lens_cache_vehicles_<userId>` / `fuel_lens_cache_records_<userId>_<vehicleId>` に保存し、
   障害中はそれを閲覧専用で表示します（キーは `lib/supabaseHealth.ts` の `vehiclesCacheKey` / `recordsCacheKey`。`clearUserCaches` と同じ場所で定義）。
   書き込むのは `withCache`（`lib/data/withOutage.ts`）で、`list` の成功時に一覧を、成功した追加・更新・削除の後にその結果を反映した一覧を書きます。
-  読み込みに失敗した（障害以外の失敗も含む）ときは、フックが `cached()` で最後に同期した一覧を表示します。失敗した読み込みの後の書き込みは反映せず、
+  読み込みに失敗した（障害以外の失敗も含む）ときは、フックが `cached()` で最後に同期した一覧を表示します。
+  書き込みの反映先は「最後に始まった `list` が成功した一覧」だけです。`list` を呼ぶたびに反映先を忘れ、その `list` が最新のまま成功したときだけキャッシュを書いて覚えます。
+  そのため、(1) 失敗した `list` の後は、次に `list` が成功するまで書き込みを反映しません（最後に同期した一覧を残す）。
+  (2) 古い `list` の応答は、後から始まった `list` や、その間の書き込みの結果を上書きしません。
+  (3) 失敗が初期化（`bootstrap`）で起きた場合は `list` が呼ばれないので、前の `list` が成功していればその反映先が残り、その後の書き込みはキャッシュに反映されます。
   フックのアンマウント・ログアウト・ユーザー切り替えの後に届いた応答ではキャッシュを書きません。
 - 閲覧専用中は `/history` / `/stats` / `/settings` に「閲覧専用（クラウド接続待ち）」と表示します（`useVehicles` と `useFuelRecords` の `readOnly` は同じ障害状態から決まる）。
 - `SupabaseStatusBanner` はログイン中かつ障害中にだけ表示されます。

@@ -85,6 +85,8 @@ export function useFuelRecords(
   const [error, setError] = useState<string | null>(null);
   const outage = useSupabaseOutage();
   const fetchCounter = useRef(0);
+  // 「再試行」イベントの再読み込みだけ、クラウドの初期化の失敗メモ（30 秒）を飛ばす
+  const forceBootstrap = useRef(false);
 
   const readOnly = isSignedIn && outage != null;
   const scope = useMemo(() => recordScopeOf(selectedVehicleId, defaultVehicleId), [selectedVehicleId, defaultVehicleId]);
@@ -108,6 +110,8 @@ export function useFuelRecords(
     setLoading(true);
     setError(null);
     const isCurrent = () => fetchId === fetchCounter.current;
+    const force = forceBootstrap.current;
+    forceBootstrap.current = false;
     if (!stores) return;
 
     if (stores.kind === "local") {
@@ -134,7 +138,7 @@ export function useFuelRecords(
 
     try {
       // ローカルデータの移行と既定車両の確保（タブ内で 1 回。useVehicles と共有）
-      const { migrationError } = await stores.bootstrap();
+      const { migrationError } = await stores.bootstrap({ force });
       if (!isCurrent()) return;
       // 障害以外の移行失敗（ローカルデータは復元済み）。未アップロードであることを error で知らせる
       if (migrationError) setError(migrationError);
@@ -253,6 +257,7 @@ export function useFuelRecords(
 
   // 障害バナーの「再試行」・自動再試行で再読み込みする
   useWindowEvent(SUPABASE_RETRY_EVENT, () => {
+    forceBootstrap.current = true;
     void refresh();
   });
 

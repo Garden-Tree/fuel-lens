@@ -298,13 +298,44 @@ describe("withCache (records)", () => {
 
     // 古い list の応答は、後から始まった list の範囲を上書きしない
     failing = false;
+    map.delete("cache_" + V1);
     const scope2 = { vehicleId: V2, includeUnclassified: false };
     const first = store.list(scope1);
     const second = store.list(scope2);
     await Promise.all([first, second]);
     await store.add({ ...rec("x", V2), vehicle_id: V2 });
     expect((map.get("cache_" + V2) as FuelRecord[]).map(r => r.id)).toEqual(["new", `r-${V2}`]);
-    expect((map.get("cache_" + V1) as FuelRecord[]).map(r => r.id)).toEqual([`r-${V1}`]);
+    // 古い list（scope1）はキャッシュを書かない
+    expect(map.has("cache_" + V1)).toBe(false);
+  });
+
+  it("a superseded list that completes after a write does not overwrite the post-write cache", async () => {
+    const { map, io } = memoryCache();
+    const resolvers: ((items: FuelRecord[]) => void)[] = [];
+    let calls = 0;
+    const store = withCache(
+      fakeRecordStore({
+        list: () => {
+          calls++;
+          return new Promise<FuelRecord[]>(resolve => resolvers.push(resolve));
+        },
+      }),
+      { key, io }
+    );
+    const list1 = store.list(scope1);
+    const list2 = store.list(scope1);
+    expect(calls).toBe(2);
+    // list#2 が先に完了 → 書き込みがキャッシュへ反映される
+    resolvers[1]([rec("a", V1), rec("b", V1)]);
+    await list2;
+    await store.remove("a");
+    expect((map.get("cache_" + V1) as FuelRecord[]).map(r => r.id)).toEqual(["b"]);
+
+    // 古い list#1 の応答（書き込み前の内容）が後から届いても、書き込み後のキャッシュを残す
+    resolvers[0]([rec("a", V1), rec("b", V1)]);
+    await list1;
+    expect((map.get("cache_" + V1) as FuelRecord[]).map(r => r.id)).toEqual(["b"]);
+    expect(store.cached(scope1)?.map(r => r.id)).toEqual(["b"]);
   });
 
   it("falls back to the cache on an outage when stacked on withOutageHandling", async () => {

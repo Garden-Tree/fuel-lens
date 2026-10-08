@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createCloudStores } from "@/lib/data/cloudStore";
-import { DataError, PartialWriteError, type RecordStore, type VehicleStore } from "@/lib/data/types";
+import { DataError, PartialWriteError, VALIDATION_CODE, type RecordStore, type VehicleStore } from "@/lib/data/types";
+import { withCache, withOutageHandling } from "@/lib/data/withOutage";
 import type { FuelRecord } from "@/lib/types";
 import { makeStorage, makeSupabase, op, ops, type Handler, type Query } from "./fakeSupabase";
 
@@ -55,11 +56,30 @@ describe("cloud RecordStore.list", () => {
     expect(op(queries[0], "eq")).toBeUndefined();
   });
 
-  it("does not query for a non-UUID vehicle id (vehicles not loaded yet)", async () => {
+  it("does not query for a non-UUID vehicle id (vehicles not loaded yet) and throws a Japanese validation DataError", async () => {
     const { records, queries } = setup();
-    expect(await records.list({ vehicleId: "default-car", includeUnclassified: true })).toEqual([]);
-    expect(await records.list({ vehicleId: null, includeUnclassified: true })).toEqual([]);
+    for (const vehicleId of ["default-car", null]) {
+      const err = await records.list({ vehicleId, includeUnclassified: true }).catch(e => e);
+      expect(err).toBeInstanceOf(DataError);
+      expect(err).toMatchObject({ code: VALIDATION_CODE });
+      expect(err.message).toContain("車両の指定が不正です");
+    }
     expect(queries).toHaveLength(0);
+  });
+
+  it("is not treated as a successful read by the outage wrapper (no recover, no cache write)", async () => {
+    const { records } = setup();
+    const onRecover = vi.fn();
+    const writes: string[] = [];
+    const wrapped = withCache(withOutageHandling(records, { isReadOnly: () => null, onFailure: () => {}, onRecover }), {
+      key: s => `k_${s.vehicleId}`,
+      io: { read: () => null, write: key => void writes.push(key) },
+    });
+    await expect(wrapped.list({ vehicleId: "default-car", includeUnclassified: true })).rejects.toMatchObject({
+      code: VALIDATION_CODE,
+    });
+    expect(onRecover).not.toHaveBeenCalled();
+    expect(writes).toEqual([]);
   });
 
   it("rethrows errors with the HTTP status attached", async () => {

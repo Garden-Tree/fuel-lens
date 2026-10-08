@@ -6,7 +6,7 @@ import { getSupabaseClient, type GetToken } from "../supabaseClient";
 import { CLOUD_LOAD_ERROR_MESSAGE } from "../supabase/errors";
 import { clearOutage, getOutage, setOutage } from "../supabase/outage";
 import { readCache, recordsCacheKey, vehiclesCacheKey, writeCache } from "../supabase/cache";
-import { bootstrapCloud, type CloudBootstrapResult } from "./cloudBootstrap";
+import { bootstrapCloud, type BootstrapOptions, type CloudBootstrapResult } from "./cloudBootstrap";
 import { createCloudStores } from "./cloudStore";
 import { createLocalStores } from "./localStore";
 import { DataError, type RecordStore, type VehicleStore } from "./types";
@@ -29,8 +29,11 @@ export type CloudDataStores = {
   userId: string;
   records: CachedRecordStore;
   vehicles: CachedVehicleStore;
-  /** 移行と既定車両の確保（タブ内で userId ごとに 1 回）。失敗は DataError（障害なら閲覧専用に切り替わる） */
-  bootstrap: () => Promise<CloudBootstrapResult>;
+  /**
+   * 移行と既定車両の確保（タブ内で userId ごとに 1 回）。失敗は DataError（障害なら閲覧専用に切り替わる）。
+   * force: true は障害バナーの「再試行」用で、移行失敗の 30 秒の使い回しを飛ばす
+   */
+  bootstrap: (options?: BootstrapOptions) => Promise<CloudBootstrapResult>;
   /**
    * false の間はキャッシュを書かない。フックのアンマウント・ログアウト・ユーザー切り替えの後に届いた応答で、
    * syncCacheOwner が消した前のユーザーのキャッシュを書き戻さないようにする（useDataStores が切り替える）
@@ -67,7 +70,8 @@ function createCloudDataStores(userId: string, getToken: GetToken): CloudDataSto
       io,
     }),
     vehicles: withCache(withOutageHandling(raw.vehicles, OUTAGE_OPTIONS), { key: vehiclesCacheKey(userId), io }),
-    bootstrap: () => runWithOutageHandling(() => bootstrapCloud(supabase, userId), OUTAGE_OPTIONS, "read"),
+    bootstrap: options =>
+      runWithOutageHandling(() => bootstrapCloud(supabase, userId, undefined, options), OUTAGE_OPTIONS, "read"),
     setActive: value => {
       active = value;
     },

@@ -4,7 +4,7 @@ import { SUPABASE_RETRY_EVENT, syncCacheOwner, useSupabaseOutage } from "./supab
 import { normalizeVehicle } from "./fillChain";
 import { pickSelected, selectedVehicleStorageKey, shouldPersistSelection } from "./vehicleSelection";
 import { applyVehiclePatch, sanitizeVehicleSettings } from "./data/columns";
-import { LOCAL_DEFAULT_VEHICLE } from "./data/localStore";
+import { LOCAL_DEFAULT_VEHICLE, removeVehicleWithRecords } from "./data/localStore";
 import { DataError } from "./data/types";
 import { loadErrorMessage, requireStores, useDataStores } from "./data/useDataStores";
 import type { Vehicle, VehicleSettings, VehicleType } from "./types";
@@ -42,6 +42,8 @@ export function useVehicles() {
   const [error, setError] = useState<string | null>(null);
   const outage = useSupabaseOutage();
   const fetchCounter = useRef(0);
+  // 「再試行」イベントの再読み込みだけ、クラウドの初期化の失敗メモ（30 秒）を飛ばす
+  const forceBootstrap = useRef(false);
 
   const readOnly = isSignedIn && outage != null;
 
@@ -64,6 +66,8 @@ export function useVehicles() {
     setLoading(true);
     setError(null);
     const isCurrent = () => fetchId === fetchCounter.current;
+    const force = forceBootstrap.current;
+    forceBootstrap.current = false;
 
     const cachedSelectedId = readSelectedId(selectedKey);
     // 保存値が一覧に無くフォールバックした場合は、実際の選択を保存し直す（古い ID を残さない）
@@ -89,7 +93,7 @@ export function useVehicles() {
 
     try {
       // ローカルデータの移行と既定車両の確保（タブ内で 1 回。useFuelRecords と共有）
-      const { migrationError } = await stores.bootstrap();
+      const { migrationError } = await stores.bootstrap({ force });
       if (!isCurrent()) return;
       // 障害以外の移行失敗。ローカルデータは復元済みで次回再試行される。
       // アップロードされていないことが利用者に伝わるよう error に表示する
@@ -128,6 +132,7 @@ export function useVehicles() {
 
   // 障害バナーの「再試行」・自動再試行で再読み込みする
   useWindowEvent(SUPABASE_RETRY_EVENT, () => {
+    forceBootstrap.current = true;
     void refreshVehicles();
   });
 
@@ -162,7 +167,8 @@ export function useVehicles() {
   };
 
   /**
-   * 車両を削除する。確認ダイアログの文言どおり、関連する給油記録を先に削除してから車両を削除する。
+   * 車両を削除する。確認ダイアログの文言どおり、関連する給油記録も削除する
+   * （ログイン中は記録 → 車両の順。未ログインは車両の一覧を先に書き、容量超過なら何も変えない）。
    * 既定車両（vehicles[0]）には未分類の記録（vehicle_id が null など）も表示されているため、それらも一緒に削除する。
    */
   const deleteVehicle = async (id: string) => {
@@ -172,8 +178,8 @@ export function useVehicles() {
     }
     const isDefault = vehicles[0]?.id === id;
     const s = requireStores(stores);
-    await s.records.removeByVehicle(id, { includeUnclassified: isDefault });
-    await s.vehicles.remove(id);
+    // 順序は保存先で異なる（local: 車両の一覧を先に書く / cloud: 記録を先に削除）
+    await removeVehicleWithRecords(s, s.kind, id, { includeUnclassified: isDefault });
 
     const updated = vehicles.filter(v => v.id !== id);
     setVehicles(updated);

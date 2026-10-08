@@ -82,6 +82,36 @@ describe("bootstrapCloud", () => {
     expect(deps.migrate).toHaveBeenCalledTimes(2);
   });
 
+  it("force: true bypasses the 30 s memo of a non-outage migration failure (the banner's retry), but joins an in-flight run", async () => {
+    let fail = true;
+    const { deps } = makeDeps({
+      migrate: vi.fn(async () => {
+        if (fail) throw Object.assign({ message: "rls", code: "42501" }, { status: 403 });
+      }),
+      hasLocalData: vi.fn(() => true),
+    });
+    const user = nextUser();
+    const first = await bootstrapCloud(supabase, user, deps);
+    expect(first.migrationError).not.toBeNull();
+
+    // 通常の呼び出しは 30 秒以内なら使い回す
+    await expect(bootstrapCloud(supabase, user, deps)).resolves.toBe(first);
+    expect(deps.migrate).toHaveBeenCalledTimes(1);
+
+    // force は使い回さず再実行する。並行する force 同士は同じ実行に合流する
+    fail = false;
+    deps.hasLocalData.mockReturnValue(false);
+    const p1 = bootstrapCloud(supabase, user, deps, { force: true });
+    const p2 = bootstrapCloud(supabase, user, deps, { force: true });
+    expect(p2).toBe(p1);
+    await expect(p1).resolves.toEqual({ migrationError: null });
+    expect(deps.migrate).toHaveBeenCalledTimes(2);
+
+    // 成功済みの結果はそのまま使い回す（force でもやり直さない）
+    await bootstrapCloud(supabase, user, deps, { force: true });
+    expect(deps.migrate).toHaveBeenCalledTimes(2);
+  });
+
   it("keeps the CrossTabLockError message in migrationError", async () => {
     const { deps } = makeDeps({
       migrate: vi.fn(async () => {
