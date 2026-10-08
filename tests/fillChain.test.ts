@@ -2,14 +2,11 @@ import { describe, expect, it } from "vitest";
 import { calculateFuelMetrics } from "@/lib/calculations";
 import {
   applyFillChain,
-  chainBaseBefore,
   compareForChain,
-  formChainPosition,
   isFuelType,
   normalizeRecord,
   normalizeVehicle,
-  openRunBefore,
-  previousOdometer,
+  previewInChain,
   sanitizeMemo,
   sortForChain,
 } from "@/lib/fillChain";
@@ -340,9 +337,6 @@ describe("applyFillChain — odometer mode", () => {
     expect(out.map(r => r.fuel_efficiency)).toEqual([null, 44.44, null, 50]);
     // 5500 の区間は 200 km（基準は記録漏れの 5300）。記録漏れの 1.5 L は持ち越さない
     expect(out.map(r => r.total_distance)).toEqual([null, 200, null, 200]);
-    // フォームのプレビュー: 5500 の直前の run は空、基準は 5300
-    expect(openRunBefore(list, ODO, { recordId: "e4" })).toEqual({ distance: 0, fuel: 0, valid: true, count: 0, baseStale: false });
-    expect(previousOdometer(list, { recordId: "e4" })).toBe(5300);
   });
 
   it("missed_previous rows are never carry rows; one that cannot advance the base makes the next record a first record", () => {
@@ -384,11 +378,6 @@ describe("applyFillChain — odometer mode", () => {
     const out = applyFillChain(list, ODO);
     expect(distById(out)).toEqual({ s1: null, s2: null, s3: null, s4: null, s5: 300 });
     expect(effById(out)).toEqual({ s1: null, s2: null, s3: null, s4: null, s5: 15 });
-    // フォームの「前回のオドメーター」も同じく、基準が進むまでは無い
-    expect(previousOdometer(list, { recordId: "s3" })).toBeNull();
-    expect(previousOdometer(list, { recordId: "s4" })).toBeNull();
-    expect(previousOdometer(list, { recordId: "s5" })).toBe(1600);
-    expect(previousOdometer(list.slice(0, 3), { date: "2026-10-30" })).toBeNull();
   });
 
   it("partial fills accumulate odometer distances", () => {
@@ -455,28 +444,91 @@ describe("applyFillChain — order and purity", () => {
   });
 });
 
-describe("previousOdometer", () => {
+describe("previewInChain — insert vs replace", () => {
+  const list = [
+    rec({ id: "a", date: "2026-02-01", total_distance: 400, fuel_amount: 30, created_at: "2026-02-01T00:00:00Z" }),
+    rec({ id: "b", date: "2026-02-10", total_distance: 300, fuel_amount: 20, created_at: "2026-02-10T00:00:00Z" }),
+  ];
+
+  it("appends a new candidate (no id) and reads its derived values", () => {
+    expect(previewInChain(list, TRIP, { date: "2026-02-20", total_distance: 450, fuel_amount: 30 })).toEqual({
+      total_distance: 450,
+      fuel_efficiency: 15,
+      runCount: 0,
+      base: null, // トリップモードでは基準を持たない
+      baseStale: false,
+    });
+    expect(previewInChain([], TRIP, { date: "2026-02-20", total_distance: 300, fuel_amount: 20 }).fuel_efficiency).toBe(15);
+  });
+
+  it("replaces the record with the same id (the edited record is not counted twice) and does not mutate the input", () => {
+    const before = JSON.stringify(list);
+    // b を部分給油に変えると、燃費は null で、b 自身は run に 1 回だけ入る
+    const edited = previewInChain(list, TRIP, { id: "b", date: "2026-02-10", is_full: false });
+    expect(edited).toMatchObject({ total_distance: 300, fuel_efficiency: null, runCount: 0 });
+    // 給油量を変えた値で計算する（渡さなかったキーは保存値のまま）
+    expect(previewInChain(list, TRIP, { id: "b", date: "2026-02-10", fuel_amount: 30 }).fuel_efficiency).toBe(10);
+    expect(JSON.stringify(list)).toBe(before);
+  });
+
+  it("an id that is not in the list (deleted / reloaded) is treated as a new record", () => {
+    const pv = previewInChain(list, ODO, { id: "gone", date: "2026-02-20", odometer: 1000 });
+    expect(pv).toMatchObject({ base: null, total_distance: null });
+    const odoList = [rec({ id: "o1", date: "2026-02-01", odometer: 900, created_at: "2026-02-01T00:00:00Z" })];
+    expect(previewInChain(odoList, ODO, { id: "gone", date: "2026-02-20", odometer: 1000, fuel_amount: 10 })).toMatchObject({
+      base: 900,
+      total_distance: 100,
+      fuel_efficiency: 10,
+    });
+  });
+
+  it("matches applyFillChain for the spec example (5000 → 5200 → 5300 missed partial → 5500)", () => {
+    const spec = [
+      rec({ id: "e1", date: "2026-11-01", odometer: 5000, fuel_amount: 4 }),
+      rec({ id: "e2", date: "2026-11-02", odometer: 5200, fuel_amount: 4.5 }),
+      rec({ id: "e3", date: "2026-11-03", odometer: 5300, fuel_amount: 1.5, missed_previous: true, is_full: false }),
+      rec({ id: "e4", date: "2026-11-04", odometer: 5500, fuel_amount: 4 }),
+    ];
+    // 5500 の区間は 200 km（基準は記録漏れの 5300）、直前の run は空（記録漏れの 1.5 L は持ち越さない）
+    expect(previewInChain(spec, ODO, { id: "e4", date: "2026-11-04" })).toEqual({
+      total_distance: 200,
+      fuel_efficiency: 50,
+      runCount: 0,
+      base: 5300,
+      baseStale: false,
+    });
+    // 記録漏れの行そのもの: 区間・燃費とも null
+    expect(previewInChain(spec, ODO, { id: "e3", date: "2026-11-03" })).toMatchObject({
+      total_distance: null,
+      fuel_efficiency: null,
+      base: 5200,
+    });
+  });
+});
+
+describe("previewInChain — base (the form's previous odometer)", () => {
   const list = [
     rec({ id: "p3", date: "2026-03-20", odometer: 1600 }),
     rec({ id: "p1", date: "2026-03-01", odometer: 1000 }),
     rec({ id: "p2", date: "2026-03-10", odometer: null }),
     rec({ id: "p4", date: "2026-03-20", odometer: 1800 }),
   ];
+  const baseOf = (records: FuelRecord[], candidate: Parameters<typeof previewInChain>[2]) =>
+    previewInChain(records, ODO, candidate).base;
 
-  it("returns the max odometer among records before the position (by record id)", () => {
-    expect(previousOdometer(list, { recordId: "p1" })).toBeNull(); // 先頭
-    expect(previousOdometer(list, { recordId: "p2" })).toBe(1000);
-    expect(previousOdometer(list, { recordId: "p3" })).toBe(1000); // 直前（p2）に無くても、それ以前の最大値
-    expect(previousOdometer(list, { recordId: "p4" })).toBe(1600);
-    expect(previousOdometer(list, { recordId: "missing" })).toBeNull();
+  it("editing: the max odometer among the records before it", () => {
+    expect(baseOf(list, { id: "p1", date: "2026-03-01" })).toBeNull(); // 先頭
+    expect(baseOf(list, { id: "p2", date: "2026-03-10" })).toBe(1000);
+    expect(baseOf(list, { id: "p3", date: "2026-03-20" })).toBe(1000); // 直前（p2）に無くても、それ以前の最大値
+    expect(baseOf(list, { id: "p4", date: "2026-03-20" })).toBe(1600);
   });
 
-  it("returns the max odometer among records on or before a date (for a new record)", () => {
-    expect(previousOdometer(list, { date: "2026-02-28" })).toBeNull();
-    expect(previousOdometer(list, { date: "2026-03-05" })).toBe(1000);
-    expect(previousOdometer(list, { date: "2026-03-15" })).toBe(1000); // p2 に無くても、それ以前の最大値
-    expect(previousOdometer(list, { date: "2026-03-20" })).toBe(1800); // 同じ日付の既存記録の後ろ
-    expect(previousOdometer([], { date: "2026-03-20" })).toBeNull();
+  it("new record: the max odometer among the records chained before it", () => {
+    expect(baseOf(list, { date: "2026-02-28" })).toBeNull();
+    expect(baseOf(list, { date: "2026-03-05" })).toBe(1000);
+    expect(baseOf(list, { date: "2026-03-15" })).toBe(1000); // p2 に無くても、それ以前の最大値
+    expect(baseOf(list, { date: "2026-03-20" })).toBe(1800); // オドメーター未入力なら同じ日付の既存記録の後ろ
+    expect(baseOf([], { date: "2026-03-20" })).toBeNull();
   });
 
   it("matches the base the chain uses after a decreased odometer (1000 → 1300 → 130 → 1600)", () => {
@@ -486,75 +538,110 @@ describe("previousOdometer", () => {
       rec({ id: "q3", date: "2026-11-03", odometer: 130 }),
       rec({ id: "q4", date: "2026-11-04", odometer: 1600 }),
     ];
-    expect(previousOdometer(seqList, { date: "2026-11-30" })).toBe(1600);
-    expect(previousOdometer(seqList, { recordId: "q3" })).toBe(1300);
-    expect(previousOdometer(seqList, { recordId: "q4" })).toBe(1300); // 130 は基準にならない
+    expect(baseOf(seqList, { date: "2026-11-30" })).toBe(1600);
+    expect(baseOf(seqList, { id: "q3", date: "2026-11-03" })).toBe(1300);
+    expect(baseOf(seqList, { id: "q4", date: "2026-11-04" })).toBe(1300); // 130 は基準にならない
+  });
+
+  it("reports baseStale after a missed row that could not advance the base, until a record advances it", () => {
+    const stale = [
+      rec({ id: "s1", date: "2026-10-01", odometer: 1000, fuel_amount: 20 }),
+      rec({ id: "s2", date: "2026-10-02", odometer: null, fuel_amount: 20, missed_previous: true }),
+      rec({ id: "s3", date: "2026-10-03", odometer: null, fuel_amount: 10 }), // 持ち越し行
+      rec({ id: "s4", date: "2026-10-04", odometer: 1600, fuel_amount: 20 }), // 先頭扱い
+      rec({ id: "s5", date: "2026-10-05", odometer: 1900, fuel_amount: 20 }),
+    ];
+    expect(previewInChain(stale, ODO, { id: "s3", date: "2026-10-03" })).toMatchObject({ base: null, baseStale: true, runCount: 0 });
+    expect(previewInChain(stale, ODO, { id: "s4", date: "2026-10-04" })).toMatchObject({
+      base: null,
+      baseStale: true,
+      runCount: 1, // s3 の持ち越し行
+      total_distance: null,
+      fuel_efficiency: null,
+    });
+    expect(previewInChain(stale, ODO, { id: "s5", date: "2026-10-05" })).toMatchObject({ base: 1600, baseStale: false });
+    expect(previewInChain(stale.slice(0, 3), ODO, { date: "2026-10-30" })).toMatchObject({ base: null, baseStale: true });
+    // 先頭の記録（理由は記録漏れではない）
+    expect(previewInChain(stale, ODO, { id: "s1", date: "2026-10-01" })).toMatchObject({ base: null, baseStale: false });
+    // 基準を進めた記録漏れの後は stale ではない
+    const advanced = [stale[0], rec({ id: "m2", date: "2026-10-02", odometer: 1300, missed_previous: true })];
+    expect(previewInChain(advanced, ODO, { date: "2026-10-30" })).toMatchObject({ base: 1300, baseStale: false });
+    // トリップモードでは常に false
+    expect(previewInChain(stale, TRIP, { date: "2026-10-30" })).toMatchObject({ base: null, baseStale: false });
   });
 });
 
-describe("openRunBefore", () => {
-  const EMPTY = { distance: 0, fuel: 0, valid: true, count: 0, baseStale: false };
-
-  it("is empty and valid when there is no open run", () => {
-    expect(openRunBefore([], TRIP, { date: "2026-05-01" })).toEqual(EMPTY);
-    const afterFull = [rec({ id: "f1", date: "2026-05-01", total_distance: 400, fuel_amount: 30 })];
-    expect(openRunBefore(afterFull, TRIP, { date: "2026-05-10" })).toEqual(EMPTY);
-    expect(openRunBefore(afterFull, TRIP, { recordId: "f1" })).toEqual(EMPTY);
-    expect(openRunBefore(afterFull, TRIP, { recordId: "missing" })).toEqual(EMPTY);
-  });
-
-  it("sums the partial fills since the last full fill", () => {
+describe("previewInChain — runs (partial fills and carry rows)", () => {
+  it("merges the partial fills since the last full fill and counts them", () => {
     const list = [
       rec({ id: "f1", date: "2026-05-01", total_distance: 400, fuel_amount: 30 }),
       rec({ id: "p1", date: "2026-05-05", total_distance: 149.5, fuel_amount: 2, is_full: false }),
       rec({ id: "p2", date: "2026-05-07", total_distance: 100, fuel_amount: 8, is_full: false }),
       rec({ id: "f2", date: "2026-05-10", total_distance: 250, fuel_amount: 5.2 }),
     ];
-    expect(openRunBefore(list, TRIP, { recordId: "p1" })).toEqual(EMPTY);
-    expect(openRunBefore(list, TRIP, { recordId: "p2" })).toEqual({ ...EMPTY, distance: 149.5, fuel: 2, count: 1 });
-    expect(openRunBefore(list, TRIP, { recordId: "f2" })).toEqual({ ...EMPTY, distance: 249.5, fuel: 10, count: 2 });
-    expect(openRunBefore(list, TRIP, { date: "2026-05-08" })).toEqual({ ...EMPTY, distance: 249.5, fuel: 10, count: 2 });
-    expect(openRunBefore(list, TRIP, { date: "2026-05-06" })).toEqual({ ...EMPTY, distance: 149.5, fuel: 2, count: 1 });
+    expect(previewInChain(list, TRIP, { id: "p1", date: "2026-05-05" })).toMatchObject({ runCount: 0, fuel_efficiency: null });
+    expect(previewInChain(list, TRIP, { id: "p2", date: "2026-05-07" })).toMatchObject({ runCount: 1, fuel_efficiency: null });
+    // (149.5 + 100 + 250) ÷ (2 + 8 + 5.2) = 32.86
+    expect(previewInChain(list, TRIP, { id: "f2", date: "2026-05-10" })).toMatchObject({ runCount: 2, fuel_efficiency: 32.86 });
+    expect(effById(applyFillChain(list, TRIP)).f2).toBe(32.86);
+    const fill = { total_distance: 250, fuel_amount: 5.2 };
+    const without = list.filter(r => r.id !== "f2");
+    expect(previewInChain(without, TRIP, { date: "2026-05-08", ...fill })).toMatchObject({ runCount: 2, fuel_efficiency: 32.86 });
+    // 部分給油 (149.5 km, 2.0 L) の後の満タン給油 (250 km, 5.2 L) → (149.5 + 250) ÷ (2 + 5.2) = 55.49
+    expect(previewInChain(without, TRIP, { date: "2026-05-06", ...fill })).toMatchObject({ runCount: 1, fuel_efficiency: 55.49 });
+    // 直前が満タン給油なら合算なし: 250 ÷ 5.2 = 48.08
+    expect(previewInChain(without, TRIP, { date: "2026-05-02", ...fill })).toMatchObject({ runCount: 0, fuel_efficiency: 48.08 });
   });
 
-  it("matches the efficiency the chain stores for the following full fill (149.5 km / 2.0 L + 250 km / 5.2 L)", () => {
-    const list = [
-      rec({ id: "f1", date: "2026-05-01", total_distance: 400, fuel_amount: 30 }),
-      rec({ id: "p1", date: "2026-05-05", total_distance: 149.5, fuel_amount: 2, is_full: false }),
-      rec({ id: "f2", date: "2026-05-10", total_distance: 250, fuel_amount: 5.2 }),
-    ];
-    const run = openRunBefore(list, TRIP, { recordId: "f2" });
-    const preview = calculateFuelMetrics((run.distance + 250), 5.2 + run.fuel, null).fuel_efficiency;
-    expect(preview).toBe(55.49);
-    expect(effById(applyFillChain(list, TRIP)).f2).toBe(55.49);
-  });
-
-  it("is invalid when a record in the run has a null fuel amount; a null distance (trip mode) cuts the run instead", () => {
+  it("an unknown fuel amount in the run gives null; a null distance (trip mode) cuts the run instead", () => {
     const nullFuel = [
       rec({ id: "f1", date: "2026-06-01", total_distance: 400, fuel_amount: 30 }),
       rec({ id: "p1", date: "2026-06-05", total_distance: 100, fuel_amount: null, is_full: false }),
     ];
-    expect(openRunBefore(nullFuel, TRIP, { date: "2026-06-10" })).toMatchObject({ valid: false, count: 1 });
+    const full = { date: "2026-06-10", total_distance: 300, fuel_amount: 20 };
+    expect(previewInChain(nullFuel, TRIP, full)).toMatchObject({ runCount: 1, fuel_efficiency: null });
     const nullDistance = [
       rec({ id: "f1", date: "2026-06-01", total_distance: 400, fuel_amount: 30 }),
       rec({ id: "p1", date: "2026-06-05", total_distance: null, fuel_amount: 5, is_full: false }),
     ];
     // トリップモードで距離の無い記録は run を切り、その記録自身も run に含めない
-    expect(openRunBefore(nullDistance, TRIP, { date: "2026-06-10" })).toEqual(EMPTY);
+    expect(previewInChain(nullDistance, TRIP, full)).toMatchObject({ runCount: 0, fuel_efficiency: 15 });
+    // 候補自身の区間距離が無い（トリップモード）: run を切るので燃費 null・件数 0
+    expect(previewInChain(nullFuel, TRIP, { ...full, total_distance: null })).toMatchObject({ runCount: 0, fuel_efficiency: null });
   });
 
-  it("odometer mode: a carry row with null fuel makes the run invalid, a carry row with fuel is counted", () => {
-    const base = rec({ id: "a", date: "2026-07-01", odometer: 1000, fuel_amount: 30 });
-    const carryNoFuel = rec({ id: "b", date: "2026-07-05", odometer: null, fuel_amount: null });
-    expect(openRunBefore([base, carryNoFuel], ODO, { date: "2026-07-10" })).toMatchObject({ valid: false, count: 1 });
-    const carry = rec({ id: "b", date: "2026-07-05", odometer: null, fuel_amount: 20 });
-    // 満タンの a の後の持ち越し行: 距離は次の記録の差分に含まれるので run は給油量だけ積む
+  it("merges when the combined fuel is positive even if this fill is 0 L (Σfuel > 0)", () => {
+    const list = [
+      rec({ id: "f1", date: "2026-05-01", total_distance: 400, fuel_amount: 30 }),
+      rec({ id: "p1", date: "2026-05-05", total_distance: 149.5, fuel_amount: 2, is_full: false }),
+    ];
+    const zero = { date: "2026-05-10", total_distance: 250, fuel_amount: 0 };
+    expect(previewInChain(list, TRIP, zero)).toMatchObject({ runCount: 1, fuel_efficiency: 199.75 }); // (149.5 + 250) ÷ 2
+    const zeroRun = [list[0], { ...list[1], fuel_amount: 0 }];
+    expect(previewInChain(zeroRun, TRIP, zero).fuel_efficiency).toBeNull();
+  });
+
+  it("odometer mode: carry rows are merged (fuel only); a carry row with null fuel makes the run invalid", () => {
     const first = rec({ id: "z", date: "2026-06-20", odometer: 500, fuel_amount: 30 });
-    const chain = [first, rec({ id: "a", date: "2026-07-01", odometer: 1000, fuel_amount: 30 }), carry];
-    expect(openRunBefore(chain, ODO, { date: "2026-07-10" })).toEqual({ ...EMPTY, fuel: 20, count: 1 });
-    // C(1600) の区間 600 km は持ち越し行の分を含む: (0 + 600) / (20 + 20) = 15
-    const next = rec({ id: "c", date: "2026-07-10", odometer: 1600, fuel_amount: 20 });
-    expect(effById(applyFillChain([...chain, next], ODO)).c).toBe(15);
+    const a = rec({ id: "a", date: "2026-07-01", odometer: 1000, fuel_amount: 30 });
+    const carry = rec({ id: "b", date: "2026-07-05", odometer: null, fuel_amount: 20 });
+    const next = { date: "2026-07-10", odometer: 1600, fuel_amount: 20 };
+    // C(1600) の区間 600 km は持ち越し行の分を含む: 600 ÷ (20 + 20) = 15
+    expect(previewInChain([first, a, carry], ODO, next)).toEqual({
+      total_distance: 600,
+      fuel_efficiency: 15,
+      runCount: 1,
+      base: 1000,
+      baseStale: false,
+    });
+    const carryNoFuel = { ...carry, fuel_amount: null };
+    expect(previewInChain([first, a, carryNoFuel], ODO, next)).toMatchObject({ runCount: 1, fuel_efficiency: null });
+    // 候補自身が持ち越し行（オドメーター未入力）: 区間・燃費とも null
+    expect(previewInChain([first, a], ODO, { ...next, odometer: null })).toMatchObject({
+      total_distance: null,
+      fuel_efficiency: null,
+      base: 1000,
+    });
   });
 
   it("resets the run after a full fill and at a missed_previous record", () => {
@@ -563,39 +650,25 @@ describe("openRunBefore", () => {
       rec({ id: "p1", date: "2026-08-03", total_distance: 100, fuel_amount: 5, is_full: false }),
       rec({ id: "f2", date: "2026-08-05", total_distance: 200, fuel_amount: 10 }),
     ];
-    expect(openRunBefore(list, TRIP, { date: "2026-08-10" })).toEqual(EMPTY);
+    const full = { date: "2026-08-10", total_distance: 300, fuel_amount: 20 };
+    expect(previewInChain(list, TRIP, full)).toMatchObject({ runCount: 0, fuel_efficiency: 15 });
     // 記録漏れの満タン給油は run を閉じる（その記録自身の分は残らない）
     const missedFull = [...list, rec({ id: "m1", date: "2026-08-07", total_distance: 300, fuel_amount: 20, missed_previous: true })];
-    expect(openRunBefore(missedFull, TRIP, { date: "2026-08-10" })).toEqual(EMPTY);
+    expect(previewInChain(missedFull, TRIP, full)).toMatchObject({ runCount: 0, fuel_efficiency: 15 });
     // 記録漏れの部分給油: それ以前の run は捨て、その記録自身も run に含めない（新しい run は次の記録から）
     const before = rec({ id: "p0", date: "2026-08-06", total_distance: 90, fuel_amount: 4, is_full: false });
     const missedPartial = rec({ id: "m2", date: "2026-08-07", total_distance: 300, fuel_amount: 20, missed_previous: true, is_full: false });
-    expect(openRunBefore([...list, before, missedPartial], TRIP, { date: "2026-08-10" })).toEqual(EMPTY);
-  });
-
-  it("reports baseStale after a missed row that could not advance the base (odometer mode)", () => {
-    const list = [
-      rec({ id: "a", date: "2026-09-01", odometer: 1000, fuel_amount: 20 }),
-      rec({ id: "m", date: "2026-09-02", odometer: null, fuel_amount: 20, missed_previous: true }),
-      rec({ id: "c", date: "2026-09-03", odometer: null, fuel_amount: 10 }), // 持ち越し行
-      rec({ id: "d", date: "2026-09-04", odometer: 1600, fuel_amount: 20 }), // 先頭扱い
-    ];
-    expect(openRunBefore(list, ODO, { recordId: "c" })).toMatchObject({ baseStale: true, count: 0 });
-    expect(openRunBefore(list, ODO, { recordId: "d" })).toMatchObject({ baseStale: true, count: 1, fuel: 10 });
-    expect(openRunBefore(list, ODO, { date: "2026-09-30" })).toMatchObject({ baseStale: false });
-    expect(chainBaseBefore(list, { recordId: "d" })).toEqual({ odometer: null, stale: true });
-    expect(chainBaseBefore(list, { date: "2026-09-30" })).toEqual({ odometer: 1600, stale: false });
-    expect(chainBaseBefore(list, { recordId: "a" })).toEqual({ odometer: null, stale: false }); // 先頭（理由は記録漏れではない）
-    expect(chainBaseBefore(list, { recordId: "missing" })).toEqual({ odometer: null, stale: false });
-    // 基準を進めた記録漏れの後は stale ではない
-    const advanced = [list[0], rec({ id: "m2", date: "2026-09-02", odometer: 1300, missed_previous: true })];
-    expect(chainBaseBefore(advanced, { date: "2026-09-30" })).toEqual({ odometer: 1300, stale: false });
-    // トリップモードでは常に false
-    expect(openRunBefore(list, TRIP, { date: "2026-09-30" }).baseStale).toBe(false);
+    expect(previewInChain([...list, before, missedPartial], TRIP, full)).toMatchObject({ runCount: 0, fuel_efficiency: 15 });
+    // 候補自身が記録漏れ: 燃費 null・件数 0（トリップモードの区間距離は入力値のまま）
+    expect(previewInChain([...list, before], TRIP, { ...full, missed_previous: true })).toMatchObject({
+      total_distance: 300,
+      fuel_efficiency: null,
+      runCount: 0,
+    });
   });
 });
 
-describe("same-date position of a new / moved record (matches the chain order)", () => {
+describe("previewInChain — same-date position of a new / moved record (matches the chain order)", () => {
   /** 新規の記録を保存したときの形（created_at はいま） */
   const saved = (overrides: Partial<FuelRecord>) => rec({ id: "new", created_at: "2026-12-31T12:00:00Z", ...overrides });
 
@@ -604,31 +677,25 @@ describe("same-date position of a new / moved record (matches the chain order)",
       rec({ id: "a", date: "2026-12-01", odometer: 1000, fuel_amount: 30, created_at: "2026-12-01T00:00:00Z" }),
       rec({ id: "x", date: "2026-12-10", odometer: null, fuel_amount: 20, created_at: "2026-12-10T09:00:00Z" }), // 持ち越し行
     ];
-    const at = { date: "2026-12-10", odometer: 1600 };
+    const candidate = { date: "2026-12-10", odometer: 1600, fuel_amount: 20 };
     // 連鎖計算では新しい 1600 の記録が x（オドメーターなし）より前に並ぶ: 600 ÷ 20 = 30。x は次の run の持ち越し行
-    const chained = applyFillChain([...list, saved({ date: "2026-12-10", odometer: 1600, fuel_amount: 20 })], ODO);
+    const chained = applyFillChain([...list, saved(candidate)], ODO);
     expect(effById(chained).new).toBe(30);
-    // プレビューも同じ位置: 基準 1000、直前の run は空（x の 20 L は合算しない）
-    expect(previousOdometer(list, at)).toBe(1000);
-    expect(openRunBefore(list, ODO, at)).toMatchObject({ count: 0, valid: true });
-    const run = openRunBefore(list, ODO, at);
-    expect((run.distance + 600) / (run.fuel + 20)).toBe(30);
-    // オドメーターを渡さなければ、同じ日付の記録の後ろ（従来の位置）
-    expect(openRunBefore(list, ODO, { date: "2026-12-10" })).toMatchObject({ count: 1, fuel: 20 });
+    expect(previewInChain(list, ODO, candidate)).toMatchObject({ base: 1000, runCount: 0, fuel_efficiency: 30 });
+    // オドメーター未入力なら同じ日付の記録の後ろ（x の後ろの持ち越し行）
+    expect(previewInChain(list, ODO, { ...candidate, odometer: null })).toMatchObject({ runCount: 1, fuel_efficiency: null });
   });
 
-  it("a new 1400 goes before a same-date partial at 1500: preview 20.00 instead of null", () => {
+  it("a new 1400 goes before a same-date partial at 1500: 20.00 instead of null", () => {
     const list = [
       rec({ id: "a", date: "2026-12-01", odometer: 1000, fuel_amount: 30, created_at: "2026-12-01T00:00:00Z" }),
       rec({ id: "p", date: "2026-12-10", odometer: 1500, fuel_amount: 5, is_full: false, created_at: "2026-12-10T09:00:00Z" }),
     ];
-    const at = { date: "2026-12-10", odometer: 1400 };
-    expect(previousOdometer(list, at)).toBe(1000);
-    expect(openRunBefore(list, ODO, at)).toMatchObject({ count: 0 });
-    const chained = applyFillChain([...list, saved({ date: "2026-12-10", odometer: 1400, fuel_amount: 20 })], ODO);
-    expect(effById(chained).new).toBe(20); // 400 ÷ 20
-    // 従来の位置（同じ日付の記録の後ろ）だと基準 1500 で区間が出なかった
-    expect(previousOdometer(list, { date: "2026-12-10" })).toBe(1500);
+    const candidate = { date: "2026-12-10", odometer: 1400, fuel_amount: 20 };
+    expect(previewInChain(list, ODO, candidate)).toMatchObject({ base: 1000, runCount: 0, fuel_efficiency: 20 }); // 400 ÷ 20
+    expect(effById(applyFillChain([...list, saved(candidate)], ODO)).new).toBe(20);
+    // オドメーター未入力の位置（同じ日付の記録の後ろ）なら基準は 1500
+    expect(previewInChain(list, ODO, { date: "2026-12-10" }).base).toBe(1500);
   });
 
   it("trip mode: a legacy same-date record without created_at is chained after a new record", () => {
@@ -636,30 +703,44 @@ describe("same-date position of a new / moved record (matches the chain order)",
       rec({ id: "f", date: "2026-12-01", total_distance: 400, fuel_amount: 30, created_at: "2026-12-01T00:00:00Z" }),
       rec({ id: "l", date: "2026-12-10", total_distance: 100, fuel_amount: 10, is_full: false, created_at: null }),
     ];
+    const candidate = { date: "2026-12-10", total_distance: 300, fuel_amount: 20 };
     // 新しい記録（created_at あり）は created_at の無い古い記録より前に並ぶので、l の部分給油は合算されない
-    const chained = applyFillChain([...list, saved({ date: "2026-12-10", total_distance: 300, fuel_amount: 20 })], TRIP);
-    expect(effById(chained).new).toBe(15);
-    expect(openRunBefore(list, TRIP, { date: "2026-12-10" })).toMatchObject({ count: 0 });
-    // created_at のある同じ日付の記録の後ろには並ぶ
+    expect(effById(applyFillChain([...list, saved(candidate)], TRIP)).new).toBe(15);
+    expect(previewInChain(list, TRIP, candidate)).toMatchObject({ runCount: 0, fuel_efficiency: 15 });
+    // created_at のある同じ日付の記録の後ろには並ぶ: (100 + 300) ÷ (10 + 20) = 13.33
     const withCreated = [list[0], { ...list[1], created_at: "2026-12-10T08:00:00Z" }];
-    expect(openRunBefore(withCreated, TRIP, { date: "2026-12-10" })).toMatchObject({ count: 1, fuel: 10 });
+    expect(previewInChain(withCreated, TRIP, candidate)).toMatchObject({ runCount: 1, fuel_efficiency: 13.33 });
   });
 
-  it("{ recordId, date, odometer }: positions the edited record by its new values, excluding itself", () => {
+  it("an edited record is positioned by its new date / odometer, excluding itself", () => {
     const list = [
       rec({ id: "a", date: "2026-12-01", odometer: 1000, created_at: "2026-12-01T00:00:00Z" }),
       rec({ id: "b", date: "2026-12-10", odometer: 1500, created_at: "2026-12-10T00:00:00Z" }),
       rec({ id: "e", date: "2026-12-20", odometer: 2000, created_at: "2026-12-20T00:00:00Z" }),
     ];
-    expect(previousOdometer(list, { recordId: "e" })).toBe(1500);
+    const baseOf = (candidate: Parameters<typeof previewInChain>[2]) => previewInChain(list, ODO, candidate).base;
+    expect(baseOf({ id: "e", date: "2026-12-20" })).toBe(1500);
     // e を 12/10 の 1400 に動かす → a の後ろ、b の前
-    expect(previousOdometer(list, { recordId: "e", date: "2026-12-10", odometer: 1400 })).toBe(1000);
+    expect(baseOf({ id: "e", date: "2026-12-10", odometer: 1400 })).toBe(1000);
     // e を 12/10 に動かす（オドメーターは保存値 2000）→ b の後ろ。自分自身は数えない
-    expect(previousOdometer(list, { recordId: "e", date: "2026-12-10" })).toBe(1500);
-    expect(previousOdometer(list, { recordId: "e", date: "2026-12-30" })).toBe(1500);
+    expect(baseOf({ id: "e", date: "2026-12-10" })).toBe(1500);
+    expect(baseOf({ id: "e", date: "2026-12-30" })).toBe(1500);
     // オドメーターだけ変える
-    expect(previousOdometer(list, { recordId: "b", odometer: 900 })).toBe(1000); // 日付順は変わらない（a の後ろ）
-    expect(previousOdometer(list, { recordId: "missing", date: "2026-12-30" })).toBeNull();
+    expect(baseOf({ id: "b", date: "2026-12-10", odometer: 900 })).toBe(1000); // 日付順は変わらない（a の後ろ）
+  });
+
+  it("keeps the edited record's created_at order among same-date records", () => {
+    // 同じ日付の 3 件（オドメーターなし）は created_at 順: a（部分給油）→ b（満タン）→ c（部分給油）
+    const list = [
+      rec({ id: "z", date: "2026-01-01", total_distance: 100, fuel_amount: 10, created_at: "2026-01-01T00:00:00Z" }),
+      rec({ id: "a", date: "2026-01-05", total_distance: 50, fuel_amount: 5, is_full: false, created_at: "2026-01-05T01:00:00Z" }),
+      rec({ id: "b", date: "2026-01-05", total_distance: 60, fuel_amount: 6, created_at: "2026-01-05T02:00:00Z" }),
+      rec({ id: "c", date: "2026-01-05", total_distance: 40, fuel_amount: 4, is_full: false, created_at: "2026-01-05T03:00:00Z" }),
+    ];
+    // b を編集（日付は同じ）: 直前に開いている run は a だけ（新規扱いにすると c の後ろに並び、c まで合算してしまう）
+    expect(previewInChain(list, TRIP, { id: "b", date: "2026-01-05", fuel_amount: 6 })).toMatchObject({ runCount: 1 });
+    const asNew = previewInChain(list.filter(r => r.id !== "b"), TRIP, { date: "2026-01-05", total_distance: 60, fuel_amount: 6 });
+    expect(asNew).toMatchObject({ runCount: 2 });
   });
 });
 
@@ -730,35 +811,5 @@ describe("pickRecordColumns", () => {
   it("returns an empty object when nothing known is given (old callers send no new columns)", () => {
     expect(pickRecordColumns({})).toEqual({});
     expect(Object.keys(pickRecordColumns({ gas_station: null }))).toEqual(["gas_station"]);
-  });
-});
-
-describe("formChainPosition", () => {
-  it("uses { recordId, date, odometer } while editing a record that is in the list", () => {
-    const list = [{ id: "a" }, { id: "b" }];
-    expect(formChainPosition(list, "2026-01-02", "b", 1200)).toEqual({ recordId: "b", date: "2026-01-02", odometer: 1200 });
-    expect(formChainPosition(list, "2026-01-02", "b")).toEqual({ recordId: "b", date: "2026-01-02", odometer: null });
-  });
-
-  it("treats a new record (or an edited record that is no longer in the list) as new", () => {
-    const list = [{ id: "a" }];
-    expect(formChainPosition(list, "2026-01-02", undefined, 1200)).toEqual({ date: "2026-01-02", odometer: 1200 });
-    expect(formChainPosition(list, "2026-01-02", "gone", null)).toEqual({ date: "2026-01-02", odometer: null });
-  });
-
-  it("keeps the edited record's created_at order among same-date records", () => {
-    // 同じ日付の 3 件（オドメーターなし）は created_at 順: a（部分給油）→ b（満タン）→ c（部分給油）
-    const list = [
-      rec({ id: "z", date: "2026-01-01", total_distance: 100, fuel_amount: 10, created_at: "2026-01-01T00:00:00Z" }),
-      rec({ id: "a", date: "2026-01-05", total_distance: 50, fuel_amount: 5, is_full: false, created_at: "2026-01-05T01:00:00Z" }),
-      rec({ id: "b", date: "2026-01-05", total_distance: 60, fuel_amount: 6, created_at: "2026-01-05T02:00:00Z" }),
-      rec({ id: "c", date: "2026-01-05", total_distance: 40, fuel_amount: 4, is_full: false, created_at: "2026-01-05T03:00:00Z" }),
-    ];
-    // b を編集（日付は同じ）: 直前に開いている run は a だけ（新規扱いにすると c の後ろに並び、c まで合算してしまう）
-    const editing = formChainPosition(list, "2026-01-05", "b", null);
-    expect(openRunBefore(list, TRIP, editing)).toEqual(openRunBefore(list, TRIP, { recordId: "b" }));
-    expect(openRunBefore(list, TRIP, editing)).toMatchObject({ count: 1, distance: 50, fuel: 5 });
-    const asNew = openRunBefore(list.filter(r => r.id !== "b"), TRIP, { date: "2026-01-05", odometer: null });
-    expect(asNew).toMatchObject({ count: 2 });
   });
 });

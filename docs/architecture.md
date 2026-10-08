@@ -8,9 +8,9 @@ FuelLens の構成、データの流れ、主要なモジュールの役割を�
 | パス | 役割 |
 |---|---|
 | `app/page.tsx` | ランディングページ（Server Component）。対話部分は `components/landing/*` |
-| `app/app/page.tsx` | メイン画面。スキャン（画像の選択・ドロップ・貼り付け）、手動入力、最新記録の確認・編集 |
+| `app/app/page.tsx`、`app/app/_components/` | メイン画面。スキャン（画像の選択・ドロップ・貼り付け）、手動入力、最新記録の確認・編集。ページはフックと部品を組み合わせるだけで、部品は `_components/`（`ScanPanel` / `LatestRecordCard` / `ManualEntryCard` / `RecordCardSkeleton` / `HistoryLinkCard` / `ShortcutActionHandler`）に分割（[メイン画面の構成](#メイン画面の構成app)） |
 | `app/history/page.tsx` | 履歴一覧。編集・削除・別車両への移動・年月フィルタ・並べ替え・CSV 出力 |
-| `app/stats/page.tsx` | 統計サマリーとグラフ（recharts）。燃費・支払総額・単価の推移とスタンド別の単価。期間フィルタ（全期間 / 1 年 / 6 ヶ月 / 3 ヶ月）（[11 章](#11-統計)） |
+| `app/stats/page.tsx`、`app/stats/_components/` | 統計サマリーとグラフ（recharts）。ページは車両・期間の状態と `buildStatsModel` の結果を部品に渡すだけで、部品は `_components/` に分割。燃費・支払総額・単価の推移とスタンド別の単価。期間フィルタ（全期間 / 1 年 / 6 ヶ月 / 3 ヶ月）（[11 章](#11-統計)） |
 | `app/settings/page.tsx` | 設定画面（`/settings`）。データ概要とバックアップ・復元（[8 章](#8-バックアップと復元)） |
 | `app/manifest.ts` | PWA の Web App Manifest（`/manifest.webmanifest`。[9 章](#9-pwa)） |
 | `app/api/analyze/route.ts` | Gemini で画像を解析する API（[api-analyze.md](./api-analyze.md)） |
@@ -19,7 +19,10 @@ FuelLens の構成、データの流れ、主要なモジュールの役割を�
 | `app/error.tsx` / `app/global-error.tsx` / `app/not-found.tsx` | エラー画面・404 |
 | `components/ScanReviewSheet.tsx` | スキャン結果の確認シート（保存前に確認・修正する） |
 | `components/EditFuelRecordForm.tsx` | 記録の入力フォーム（手動入力・編集・確認シートで共用） |
+| `components/RecordStats.tsx` | 記録カードの明細（給油量・走行距離 / 区間距離・ODO・スタンド・メモ。`compact` はバッジも）。`variant="card"` は /app の最新記録カード、`variant="compact"` は /history のカード |
 | `components/ManageVehiclesModal.tsx` / `components/VehicleSelector.tsx` | 車両の管理モーダル / 車両の切り替え |
+| `components/Modal.tsx` | 共通モーダル。`useFocusTrap` + `useBackdropClose` + Escape + 任意の本文スクロールロックを束ね、`role="dialog"` / `aria-modal` / `aria-labelledby` を付ける。保存中は `disableClose` で Escape・背景クリック・× を無視。`Modal.Header`（見出しと ×）/ `Modal.Body` / `Modal.Footer`、Escape だけ別処理にする `onEscape` |
+| `components/vehicles/*` / `lib/useVehicleDraft.ts` | 車両の管理モーダルの部品。`VehicleRow`（表示 / 編集行、削除確認文 `deleteConfirmMessage`）、`AddVehicleForm`、`VehicleSettingsFields`（距離の入力方式・既定の燃料種別・車両タイプの切り替え、`modeSwitchNote`）。追加フォーム・編集行の下書きと検証は `useVehicleDraft` |
 | `components/BackupPanel.tsx` | 設定画面の本体。データ概要、JSON / CSV の書き出し、復元（ファイル選択 → 件数プレビュー → 確認 → 追加） |
 | `components/ImportPanel.tsx` | 設定画面の「インポート」。Fuelio / FuelLens の CSV を読み込み、復元と同じ流れで追加する（[8 章](#インポートcsv)） |
 | `components/RestoreCounts.tsx` / `components/settingsUi.ts` | 復元・取り込みの件数プレビュー（と補足の箇条書き） / 設定画面の 2 パネルで共有するクラス名と処理中フラグの型（`SettingsBusy`） |
@@ -32,15 +35,15 @@ FuelLens の構成、データの流れ、主要なモジュールの役割を�
 | `lib/vehicleSelection.ts` | 選択中の車両の決定（`pickSelected` / `shouldPersistSelection`）と保存キー（`selectedVehicleStorageKey`）。純粋関数 |
 | `lib/analyze.ts` | `/api/analyze` の純粋ヘルパーと型。import するのは依存のないドメインモジュール（`lib/types.ts` / `lib/dates.ts` / `lib/calculations.ts`）だけ |
 | `lib/calculations.ts` | `calculateFuelMetrics`（燃費・単価の計算） |
-| `lib/fillChain.ts` | 給油の連鎖計算 `applyFillChain`（オドメーターの差分・部分給油の合算・記録漏れでの連鎖切断）と、燃料種別・距離の入力方式の判定・既定値補完（`normalizeRecord` / `normalizeVehicle`）、フォームの位置（`formChainPosition`）。純粋関数（[10 章](#10-給油の連鎖計算fill-chain)） |
-| `lib/stats/` | 統計ページの純粋な集計ロジック。`period` / `summary` / `series` / `prices` / `stationRows` に分割し、`index.ts` から再エクスポート（`@/lib/stats`）（[11 章](#11-統計)） |
+| `lib/fillChain.ts` | 給油の連鎖計算 `applyFillChain`（オドメーターの差分・部分給油の合算・記録漏れでの連鎖切断）と、燃料種別・距離の入力方式の判定・既定値補完（`normalizeRecord` / `normalizeVehicle`）、フォームのプレビュー（`previewInChain`）。純粋関数（[10 章](#10-給油の連鎖計算fill-chain)） |
+| `lib/stats/` | 統計ページの純粋な集計ロジック。`period` / `summary` / `series` / `prices` / `stationRows` / `model` に分割し、`index.ts` から再エクスポート（`@/lib/stats`）（[11 章](#11-統計)） |
 | `lib/stations.ts` | スタンド名の正規化（`normalizeStationName`）、ブランド判定（`detectBrand` と辞書 `STATION_BRANDS`）、グルーピングキー（`stationKey`）。純粋関数 |
 | `lib/recordFilters.ts` | 車両・未分類の判定と、記録一覧の並び順（`sortRecordsByDateDesc`。日付の無い・不正な記録は最後）。純粋関数 |
 | `lib/backup.ts` | バックアップ JSON の組み立て・検証（`parseBackup`）・復元計画（`planRestore` / `finalizeRestoreRecords`）。純粋関数 |
 | `lib/restore.ts` / `lib/useRestoreRunner.ts` | 復元・取り込みの実行手順 `executeRestore`（データ操作は引数で受け取る。node でテスト可能）と、それを設定画面の UI（処理中フラグ・進捗・toast）につなぐフック（[8 章](#実行の共通化)） |
 | `lib/csv.ts` | CSV の組み立て・エスケープ・ダウンロード。履歴画面の CSV 出力と設定画面の全車両 CSV で共有 |
 | `lib/importers/fuelio.ts` / `lib/importers/fuellensCsv.ts` | CSV の取り込み（Fuelio / FuelLens の CSV → バックアップ形式）。純粋関数 |
-| `lib/useVehicles.ts` / `lib/useFuelRecords.ts` / `lib/useRecordForm.ts` | データフックとフォーム状態（[4 章](#4-フック-api)） |
+| `lib/useVehicles.ts` / `lib/useFuelRecords.ts` / `lib/useRecordForm.ts` | データフックとフォーム状態（[4 章](#4-フック-api)）。フォームの純粋なヘルパーは `lib/recordDraft.ts` |
 | `lib/useBackdropClose.ts` | モーダルの背景クリックで閉じるハンドラ（ドラッグでの誤閉じを防ぐ） |
 | `lib/migrateLocalData.ts` | ローカル → クラウドの移行と既定車両の自動作成（[5 章](#5-ローカル--クラウド移行)） |
 | `lib/supabaseClient.ts` | ユーザーごとの Supabase クライアント（Clerk JWT 付き） |
@@ -48,6 +51,8 @@ FuelLens の構成、データの流れ、主要なモジュールの役割を�
 | `lib/supabase/errors.ts` / `outage.ts` / `retry.ts` / `cache.ts` | `supabaseHealth.ts` の実体。errors = 失敗の分類とエラーメッセージ（純粋関数。`migrateLocalData.ts` はここだけを import）、outage = 障害状態の記録・通知・`useSupabaseOutage`、retry = 再試行イベントと自動再試行、cache = per-user キャッシュ。`supabaseHealth.ts` は互換用の再エクスポート |
 | `lib/format.ts` | 表示用の純粋フォーマット（`efficiencyNullReason` / `formatOdometer` / `formatKm`） |
 | `lib/importers/csvParse.ts` | CSV 取り込みの共有プリミティブ（`parseCsvRows` / `parseCsvNumber` / `parseFlexibleDate` / `hashString` / `isBlankRow`）。`fuelio.ts` は互換のため再エクスポート |
+| `lib/scan/` | メイン画面のスキャン。`analyzeClient.ts`（`compressToDataUrl` / `requestAnalyze`。React に依存しない I/O）、`shortcuts.ts`（`?action=` の判定 `resolveShortcutAction` / `shortcutReadinessOf`。純粋関数）、フック `useScanPipeline` / `useImageDropPaste` / `useShortcutActions`（[メイン画面の構成](#メイン画面の構成app)） |
+| `lib/useRecordEditing.ts` | 記録の編集・手動入力のフォームの開閉と保存（重複確認・toast・車両切り替えで閉じる）。/app と /history で共用 |
 | `lib/shareInbox.ts` | Web Share Target の受け取り箱。Service Worker が IndexedDB に置いた共有画像を、トークン一致かつ 10 分以内のときだけ取り出して削除する（`takeSharedImage` / `clearSharedImage`。[9 章](#9-pwa)） |
 | `public/sw.js` | Service Worker。Web Share Target（POST `/share`）の受け取り専用で、キャッシュはしない（[9 章](#9-pwa)） |
 | `components/ServiceWorkerRegister.tsx` | `public/sw.js` を登録する（本番ビルドのみ。開発中は `NEXT_PUBLIC_ENABLE_SW=1` で有効化）。`app/layout.tsx` にマウント |
@@ -172,11 +177,11 @@ FuelLens の構成、データの流れ、主要なモジュールの役割を�
 戻り値: `vehicles`, `selectedVehicleId`, `setSelectedVehicleId`, `selectedVehicle`（一覧に無ければ `null`）, `distanceMode`, `defaultVehicleId`（`vehicles[0]?.id`）,
 `records`, `loading`（`vehiclesLoading || recordsLoading`）, `vehiclesLoading`, `recordsLoading`, `error`（車両 → 記録の順に最初のエラー）, `readOnly`, `outage`,
 `scopeKey`（`${selectedVehicleId}:${distanceMode}`）, `vehicleActions`（`addVehicle` / `addVehicles` / `updateVehicle` / `deleteVehicle`）,
-`recordActions`（`addRecord` / `addRecords` / `updateRecord` / `deleteRecord` / `fetchAllRecords` / `refresh`）, `getPreviousOdometer`, `getOpenRun`。
+`recordActions`（`addRecord` / `addRecords` / `updateRecord` / `deleteRecord` / `fetchAllRecords` / `refresh`）。
 
 - 記録は車両一覧の読み込み完了後に読み込み（`enabled: !vehiclesLoading`）、`vehicles` を渡して車両ごとの方式で連鎖計算します（上の呼び出し規約どおり）。
-- `getPreviousOdometer` / `getOpenRun` は `useRecordForm` の `reset` に渡すフォーム用の関数です。最新の `records` を ref 経由で読み、
-  位置は `formChainPosition`（編集中の記録自身を除く）で決めます。各画面で同じ実装を持たないこと。
+- フォームには `{ vehicle: selectedVehicle, records }` をそのまま渡します（`useRecordForm` の `reset`、`ScanReviewSheet` の `vehicle` / `records`）。
+  `records` は年・月フィルタなどをかける前の一覧です。プレビューの計算はフォーム側（`previewInChain`）で行い、各画面で同じ実装を持たないこと。
 - 車両または距離の入力方式が変わったら、開いているフォームを閉じます。画面側は `scopeKey` の前回値を state に持ち、レンダー中に比較して調整します。
 - `list: false` は選択中の車両の一覧を読み込みません（`useFuelRecords` に `enabled: false`）。全件取得・一括追加などの操作だけ使う画面用で、
   このとき `recordsLoading` は `false`、`loading` は車両の読み込みだけを表します（未ログイン時はローカルの記録が読まれるので `records` が空とは限らない）。
@@ -196,15 +201,44 @@ FuelLens の構成、データの流れ、主要なモジュールの役割を�
 
 書き込みの失敗は `toUserFacingWriteError` で日本語メッセージの `Error` に変換されます。UI は `useToast()` で表示します。
 
-### `useRecordForm(initial?)`（`lib/useRecordForm.ts`）
+### `useRecordForm(initial?, context?)`（`lib/useRecordForm.ts`）
 
 手動入力・最新記録の編集・履歴の編集・確認シートで共用するフォーム状態です。
-戻り値: `draft`（文字列のまま保持）, `setField`, `reset`, `parsed`, `errors`, `isValid`, `hasCoreValue`, `metrics`,
-`pricePerUnitDisplay`, `toRecord()`。
+`context` は `{ vehicle, records, odometerOptional? }`（`reset(record, context)` で差し替え）。`records` はその車両の記録（`useVehicleScope` の `records`）です。
+戻り値: `draft`（文字列のまま保持）, `setField`, `reset`, `distanceMode`, `parsed`, `errors`, `isValid`, `hasCoreValue`, `metrics`,
+`efficiencyNote`, `mergedRunCount`, `previousOdometer`, `previousOdometerStale`, `odometerRequired`, `odometerHint`, `pricePerUnitDisplay`, `toRecord()`。
 
 - 全角数字・桁区切りカンマを正規化し、負数や数値でない入力はエラーにします。日付は必須です。
-- 単価と燃費は `calculateFuelMetrics` で入力に追従して再計算します。オドメーターモード・部分給油・燃料種別・メモの入力と表示は [10 章](#10-給油の連鎖計算fill-chain) と [設計書](./design-fill-chain.md)の 4 章に従います。
-- 重複判定の `findDuplicateRecord` など、純粋関数も同じファイルから export しています。
+- 燃費・区間距離（オドメーターモード）・前回のオドメーターは、入力中の記録を `records` に差し込んだ連鎖計算の結果（`previewInChain`）をそのまま使います。
+  フォームに連鎖の規則は持たないので、プレビューは保存後に読み取り時の連鎖計算が出す値と一致します（[10 章](#10-給油の連鎖計算fill-chain)）。単価は `calculateFuelMetrics`。
+  オドメーターモード・部分給油・燃料種別・メモの入力と表示は [設計書](./design-fill-chain.md)の 4 章に従います。
+- ドラフトの解析・検証・保存用オブジェクトの組み立て、重複判定の `findDuplicateRecord` などの純粋関数は `lib/recordDraft.ts` にあり、`lib/useRecordForm.ts` からも再エクスポートしています。
+
+### `useRecordEditing({ scope, form, toast, confirm, updatedMessage?, onAdded? })`（`lib/useRecordEditing.ts`）
+
+/app の最新記録カードと /history のカードで共用する、編集・手動入力フォームの開閉と保存です。`scope` は `useVehicleScope()` の戻り値をそのまま渡します。
+戻り値: `editingRecordId`, `isEditing`, `isManualEntry`, `saving`, `startEditing(record)`（閲覧専用中は何もしない）, `startManualEntry()`（今日の日付の新規記録）, `cancel()`, `save()`, `addWithDuplicateCheck(record)`。
+
+- `save()` は手動入力なら `addWithDuplicateCheck`（同じ日付・給油量・支払総額の記録があれば「重複して保存しますか？」を確認。キャンセルならフォームは開いたまま）、編集なら `updateRecord` です。
+  成功の toast は追加が「給油記録を保存しました」、更新が `updatedMessage`（既定「給油記録を更新しました」、/history は「記録を更新しました」）。失敗は日本語メッセージの toast でフォームは開いたまま。
+- `scopeKey`（車両・距離の入力方式）が変わったらフォームを閉じます（レンダー中の state 調整）。/history の移動・削除はページ側の処理です。
+
+### メイン画面の構成（`/app`）
+
+`app/app/page.tsx` は状態をフックから受け取り、`app/app/_components/` の部品に渡すだけです。
+
+| 部品・フック | 役割 |
+|---|---|
+| `useVehicleScope` | 選択中の車両とその記録 |
+| `useScanPipeline({ isSignedIn, toast, confirm })`（`lib/scan/`） | スキャンの状態（`loading` / `loadingStep` / `preview` / `sharedPending` / `scanResult`、同期判定の `isScanning()`）と処理（`processImageFile(file, { confirmBeforeAnalyze })` / `processSharedImage(token)` / `startSharedAnalysis` / `clearPreview` / `discardResult` / `abort`）。圧縮 → `requestAnalyze` → 確認シート。HTTP エラーの文言は `lib/analyze.ts` の `analyzeErrorMessage(status, body, { isSignedIn, retryAfter })`（401 は未ログイン / ログイン中で文言を分ける、422、429 は Retry-After の秒数、504、それ以外は requestId 付き）。アンマウント時は解析リクエストを中断する |
+| `useImageDropPaste({ onImage, isBusy, toast })`（`lib/scan/`） | ドロップ先に付ける `dropZoneProps` と `isDragging`、window 全体のペースト（入力欄にフォーカスがあるときは無視）。最新のハンドラは `useEffectEvent` で参照する |
+| `useRecordEditing` | 手動入力・最新記録の編集。確認シートの保存も `addWithDuplicateCheck` を使う |
+| `ShortcutActionHandler`（`useShortcutActions`） | `?action=scan` / `manual` / `shared` / `share-unavailable` を 1 ページロードにつき 1 回だけ実行し、`router.replace("/app")` で消す。実行条件は `shortcutReadinessOf`、判定は `resolveShortcutAction`。`useSearchParams` を使うので `<Suspense>` の内側に置き、/app の静的プリレンダーを保つ |
+| `ScanPanel` | 左カラム。カメラボタン・アルバム / 手動入力・ヒント・プレビュー（次を撮る / 読み取る / 手動で入力）・ドロップ先と、非表示のファイル入力。ショートカットのスキャンは `ref` の `openCamera()` |
+| `LatestRecordCard` / `ManualEntryCard` / `RecordCardSkeleton` | 右カラムの最新記録カード（表示・その場で編集・記録なしの案内。明細は `components/RecordStats.tsx`）/ 手動入力カード / 読み込み中 |
+| `HistoryLinkCard` | 履歴画面へのリンク |
+
+部品のテストは `tests/components/ScanPanel.test.tsx` / `LatestRecordCard.test.tsx`、純粋関数は `tests/analyze.test.ts` / `scanShortcuts.test.ts` / `scanClient.test.ts`（`requestAnalyze` を fetch のモックで検証）です。
 
 ## 5. ローカル → クラウド移行
 
@@ -383,7 +417,7 @@ CSV を `lib/importers/` の純粋関数でバックアップ形式（`FuelLensB
 - アイコンは `public/icons/` の `icon-192.png` / `icon-512.png`（通常）と `icon-maskable-512.png`（maskable。余白付きの全面塗り）、
   iOS 用の `public/apple-touch-icon.png`（180x180。`metadata.icons.apple`）です。
 - ショートカット（アイコンの長押しメニュー）は「スキャン」`/app?action=scan` と「手動で入力」`/app?action=manual` の 2 つです。
-  `app/app/page.tsx` が `action` パラメータを 1 回だけ処理し、処理後にパラメータを URL から取り除きます（再読み込みで繰り返し開かないため）。
+  `lib/scan/useShortcutActions.ts`（`app/app/page.tsx` の `ShortcutActionHandler`）が `action` パラメータを 1 回だけ処理し、処理後にパラメータを URL から取り除きます（再読み込みで繰り返し開かないため）。
 - **Web Share Target（共有から読み取り）**: `manifest` の `share_target` は `POST /share`（`multipart/form-data`、画像は `image` フィールド、`accept: image/*`）です。
   `params` は `files` だけを宣言し（`title` / `text` / `url` は無し）、テキストやリンクの共有先には FuelLens を出しません。
   **SW が有効なら** 画像はサーバーへ送らず端末内だけで受け渡すので、サイズの上限もサーバー保存もありません。
@@ -394,7 +428,7 @@ CSV を `lib/importers/` の純粋関数でバックアップ形式（`FuelLensB
      `/app?action=shared&t=<token>` へ 303 リダイレクトします。画像が無い・保存に失敗したときは古い `pending` を削除してから
      `/app?action=share-unavailable` へリダイレクトします（前回の共有画像を誤って読み込まないため）。
      それ以外のリクエストには `respondWith` を呼ばず、ネットワークに任せます。
-  3. `app/app/page.tsx` が読み込み完了後（ログイン状態の確定後）に `lib/shareInbox.ts` の `takeSharedImage(t)` で画像を取り出して削除します。
+  3. メイン画面（`lib/scan/useScanPipeline.ts` の `processSharedImage`）が読み込み完了後（ログイン状態の確定後）に `lib/shareInbox.ts` の `takeSharedImage(t)` で画像を取り出して削除します。
      返すのは `token` が URL の `t` と一致し、保存から 10 分以内のものだけです（それ以外は削除して捨て、「共有された画像が見つかりませんでした」と表示）。
      画像は圧縮してプレビューに出しますが、**自動では解析しません**。`/share` へは他のサイトからもフォーム送信（クロスサイト POST）で画像を送り込めるため、
      「共有された画像を読み取りますか？」（`useToast` の confirm、ボタンは「読み取る」）で確認してから、ギャラリーと同じ経路（`/api/analyze` → 確認シート）に流します。
@@ -453,26 +487,27 @@ CSV を `lib/importers/` の純粋関数でバックアップ形式（`FuelLensB
   `lib/stats/` の `summarize` は平均燃費（Σ`run_distance` ÷ Σ`run_fuel`）と円/km（Σ`run_cost` ÷ Σ`run_distance`）を run 単位で求め、
   持ち越し行・部分給油で分子と分母の区間がずれないようにします。平均単価・合計値・燃費の単純平均は記録ごと（部分給油も合計に含める）。
   全件が満タンのトリップモードでは従来の値と同じです。`run_*` は `pickRecordColumns`・移行・バックアップ・CSV のどれにも含まれません。
-- **書き込み**: フォームは自分の記録について導出できる値（トリップモードの `fuel_efficiency`、単価）を計算して保存します。
+- **書き込み**: フォームは自分の記録について導出できる値（`previewInChain` の `fuel_efficiency` と、オドメーターモードの区間距離、単価）を計算して保存します。
   隣の記録の保存値が古くなっても、読み取り時の再計算で正しく表示されるため、DB を追いかけて更新しません。
 - **フォームのオドメーター**: オドメーターモードでオドメーターが必須なのは手動の新規記録だけです（`useRecordForm` の `odometerRequiredFor`）。
   既存の記録の編集とスキャン結果は未入力でも保存でき、「オドメーターを入力すると区間距離を自動計算します」と注意を出します（保存される区間距離は null で、連鎖計算では持ち越し行）。
-  「前回のオドメーター」は開いたときの位置で渡し、フォーム内で日付かオドメーターを変えたら `getPreviousOdometer(date, excludeRecordId, odometer)`
-  （`previousOdometer(records, formChainPosition(records, date, excludeRecordId, odometer))`）で取り直します。`getOpenRun` も同じ位置を使います。
-  新規の位置は `{ date, odometer }` で、`compareForChain` で決めるので、同じ日付の記録の中でもオドメーター順（created_at の無い古い記録より前）に、保存後の連鎖計算と同じ位置になります。
-  編集中の記録は `{ recordId, date, odometer }`（自分自身を除き、created_at と id は保存値のまま）なので、同じ日付の記録の中での位置も保存後と一致します
-  （その記録が再読み込みで一覧から消えていたら新規として扱う）。
-  呼び出し側（`app/app/page.tsx` / `app/history/page.tsx`）は records を ref 経由で読むので、フォームを開いている間に記録が再読み込みされても最新の一覧で計算します。
-  直前の記録漏れで基準が無いときは（`openRunBefore` の `baseStale`）「記録漏れの直後のため区間は計算できません」と表示します。
+- **フォームのプレビュー**: `previewInChain(records, vehicle, candidate)` は、入力中の記録（候補）を 1 台分の記録に差し込んで連鎖計算の本体を走らせ、
+  候補の `total_distance` / `fuel_efficiency`、run に合算した部分給油・持ち越し行の件数 `runCount`、直前の基準 `base`（前回のオドメーター）と `baseStale` を返します。
+  編集中の記録は同じ ID の記録を置き換え（created_at と id は保存値のまま。一覧から消えていたら新規として扱う）、新規は「いま」の代わりの最大の created_at で追加するので、
+  同じ日付の記録の中での位置（オドメーター順、created_at の無い古い記録より前）も含めて保存後の連鎖計算と一致します。
+  `useRecordForm` は日付・オドメーター・区間距離・給油量・支払総額・満タン・記録漏れの入力が変わるたびに計算し直します（入力途中の不正な日付の間は開いたときの日付の位置）。
+  `records` はフォームを開いたとき（`reset`）に渡した一覧です。保存する導出値は読み取り時に再計算されるので、開いている間に一覧が再読み込みされても保存結果は正しく表示されます。
+  直前の記録漏れで基準が無いとき（`baseStale`）は「記録漏れの直後のため区間は計算できません」と表示します。
+  元の記録の燃費は、算出元（日付・区間距離・オドメーター・給油量・満タン・記録漏れ）を変えるまで保存値を表示・保存します（インポートした値などを店舗名だけの編集で書き換えない）。
 - **互換性**: 既存の記録は `is_full = true`・`missed_previous = false`・`odometer = null` として扱われ、トリップモードの車両の表示と計算は変わりません。
-- **補助関数**: `previousOdometer` / `chainBaseBefore`（フォームの「前回から ○○ km」表示用に、連鎖計算が基準にするオドメーター（それまでの最大値）と、記録漏れの直後で基準が無いかを返す）、
-  `openRunBefore`（直前に開いている run。燃費プレビューの合算用）、`normalizeRecord` / `normalizeVehicle`（新しい列の既定値補完）、
+- **補助関数**: `previewInChain`（フォームのプレビュー。上記）、`normalizeRecord` / `normalizeVehicle`（新しい列の既定値補完）、
   `FUEL_TYPES` / `FUEL_TYPE_LABELS`（燃料種別の一覧と表示名）、`MEMO_MAX_LENGTH`（200）。
 
 ## 11. 統計
 
 `/stats` は選択中の車両の記録（連鎖計算済み）を期間フィルタ（`filterByPeriod`）で絞り、`lib/stats/` の純粋関数で集計します。
 平均燃費・円/km を run 単位で求める理由は [10 章](#10-給油の連鎖計算fill-chain) の「統計」を参照してください。
+画面が使う値（期間フィルタ後の記録、サマリー、各グラフの系列と軸、スタンド比較の表示行と棒の長さ、前回比）は純粋関数 `buildStatsModel`（`lib/stats/model.ts`）が一度に導出し、`app/stats/_components/` の部品は model の一部を受け取って描画するだけです。
 
 ### 単価トレンドとスタンド比較
 

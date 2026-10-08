@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { screen } from "@testing-library/react";
+import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import ScanReviewSheet from "@/components/ScanReviewSheet";
 import type { AnalyzeSuccessResponse } from "@/lib/analyze";
@@ -16,7 +16,13 @@ function makeResult(overrides: Partial<AnalyzeSuccessResponse> = {}): AnalyzeSuc
     gas_station: "ENEOS",
     fuel_type: null,
     // トリップメーターの区間距離だけ確信度が低い
-    confidence: { date: 0.95, fuel_amount: 0.95, total_cost: 0.95, total_distance: 0.3, gas_station: 0.9 },
+    confidence: {
+      date: 0.95,
+      fuel_amount: 0.95,
+      total_cost: 0.95,
+      total_distance: 0.3,
+      gas_station: 0.9,
+    },
     requestId: "req-test",
     ...overrides,
   };
@@ -27,7 +33,7 @@ function setup(overrides: Partial<AnalyzeSuccessResponse> = {}) {
   const onDiscard = vi.fn();
   const user = userEvent.setup();
   renderWithProviders(
-    <ScanReviewSheet result={makeResult(overrides)} imageSrc={null} onSave={onSave} onDiscard={onDiscard} />
+    <ScanReviewSheet result={makeResult(overrides)} imageSrc={null} onSave={onSave} onDiscard={onDiscard} />,
   );
   return { user, onSave, onDiscard };
 }
@@ -70,7 +76,7 @@ describe("ScanReviewSheet", () => {
         total_distance: 150,
         gas_station: "ENEOS",
         is_full: true,
-      })
+      }),
     );
     expect(onDiscard).not.toHaveBeenCalled();
   });
@@ -78,6 +84,44 @@ describe("ScanReviewSheet", () => {
   it("給油量・支払総額が両方とも無いと保存できない", () => {
     setup({ fuel_amount: null, total_cost: null, price_per_unit: null });
     expect(screen.getByRole("button", { name: "保存" })).toBeDisabled();
+  });
+
+  it("記録先の車両の記録（records）を渡すと、保存値は連鎖計算のプレビュー（前回からの区間・燃費）になる", async () => {
+    const onSave = vi.fn().mockResolvedValue(undefined);
+    const user = userEvent.setup();
+    const records = [
+      {
+        id: "a",
+        date: "2025-01-01",
+        total_distance: null,
+        fuel_amount: 30,
+        gas_station: null,
+        price_per_unit: null,
+        total_cost: null,
+        fuel_efficiency: null,
+        odometer: 12000,
+      },
+    ];
+    renderWithProviders(
+      <ScanReviewSheet
+        result={makeResult({ odometer: 12150, total_distance: 999 })}
+        imageSrc={null}
+        vehicle={{ distance_mode: "odometer", default_fuel_type: null }}
+        records={records}
+        onSave={onSave}
+        onDiscard={vi.fn()}
+      />,
+    );
+    expect(screen.getByText("前回から 150 km（自動計算）")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "保存" }));
+    // 150 km ÷ 10 L = 15.00（トリップメーターの読み取り値 999 は使わない）
+    expect(onSave).toHaveBeenCalledWith(
+      expect.objectContaining({
+        odometer: 12150,
+        total_distance: 150,
+        fuel_efficiency: 15,
+      }),
+    );
   });
 
   it("破棄ボタンで onDiscard が呼ばれる", async () => {
@@ -89,6 +133,35 @@ describe("ScanReviewSheet", () => {
 
   it("Escape で onDiscard が呼ばれる", async () => {
     const { user, onDiscard } = setup();
+    await user.keyboard("{Escape}");
+    expect(onDiscard).toHaveBeenCalledTimes(1);
+  });
+
+  it("role=dialog が見出しで名前付けされ、aria-labelledby が見出しを指す", () => {
+    setup();
+    const dialog = screen.getByRole("dialog", { name: "読み取り結果の確認" });
+    expect(dialog).toHaveAttribute("aria-modal", "true");
+    const labelledBy = dialog.getAttribute("aria-labelledby");
+    expect(labelledBy).toBeTruthy();
+    expect(document.getElementById(labelledBy as string)).toHaveTextContent("読み取り結果の確認");
+  });
+
+  it("保存中は Escape を無視する", async () => {
+    let finish: () => void = () => {};
+    const onSave = vi.fn(() => new Promise<void>((resolve) => (finish = resolve)));
+    const onDiscard = vi.fn();
+    const user = userEvent.setup();
+    renderWithProviders(
+      <ScanReviewSheet result={makeResult()} imageSrc={null} onSave={onSave} onDiscard={onDiscard} />,
+    );
+    await user.click(screen.getByRole("button", { name: "保存" }));
+    expect(onSave).toHaveBeenCalledTimes(1);
+
+    await user.keyboard("{Escape}");
+    expect(onDiscard).not.toHaveBeenCalled();
+
+    finish();
+    await waitFor(() => expect(screen.getByRole("button", { name: "破棄" })).toBeEnabled());
     await user.keyboard("{Escape}");
     expect(onDiscard).toHaveBeenCalledTimes(1);
   });

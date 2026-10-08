@@ -1,7 +1,6 @@
-import { useCallback, useEffect, useRef } from "react";
 import { useVehicles } from "./useVehicles";
 import { useFuelRecords } from "./useFuelRecords";
-import { distanceModeOf, formChainPosition, openRunBefore, previousOdometer, type OpenRun } from "./fillChain";
+import { distanceModeOf } from "./fillChain";
 import type { DistanceMode, Vehicle } from "./types";
 
 type VehiclesHook = ReturnType<typeof useVehicles>;
@@ -17,11 +16,6 @@ export type UseVehicleScopeOptions = {
   list?: boolean;
 };
 
-/** フォームの「前回のオドメーター」を、日付・オドメーターを変えたときに取り直す関数（useRecordForm の getPreviousOdometer） */
-export type PreviousOdometerGetter = (date: string, excludeRecordId?: string, odometer?: number | null) => number | null;
-/** フォームの「直前に開いている run」を取り直す関数（useRecordForm の getOpenRun） */
-export type OpenRunGetter = (date: string, excludeRecordId?: string, odometer?: number | null) => OpenRun;
-
 export type VehicleScope = {
   vehicles: VehiclesHook["vehicles"];
   selectedVehicleId: string;
@@ -32,7 +26,10 @@ export type VehicleScope = {
   distanceMode: DistanceMode;
   /** 既定車両（vehicles[0] = 最も古い車両）の ID。未分類の記録はこの車両に表示する */
   defaultVehicleId: string | undefined;
-  /** 選択中の車両（と、既定車両なら未分類）の記録。連鎖計算済み・日付の降順 */
+  /**
+   * 選択中の車両（と、既定車両なら未分類）の記録。連鎖計算済み・日付の降順。
+   * フォーム（useRecordForm の reset・ScanReviewSheet）には `{ vehicle: selectedVehicle, records }` をそのまま渡す（プレビューの連鎖計算に使う）
+   */
   records: RecordsHook["records"];
   /** vehiclesLoading || recordsLoading */
   loading: boolean;
@@ -50,10 +47,6 @@ export type VehicleScope = {
     RecordsHook,
     "addRecord" | "addRecords" | "updateRecord" | "deleteRecord" | "fetchAllRecords" | "refresh"
   >;
-  /** 安定した参照（useCallback）。常に最新の records で計算する */
-  getPreviousOdometer: PreviousOdometerGetter;
-  /** 選択中の車両の方式が変わったときだけ参照が変わる。常に最新の records で計算する */
-  getOpenRun: OpenRunGetter;
 };
 
 /** 画面の状態をリセットするキー（車両または距離の入力方式が変わったら変わる） */
@@ -78,8 +71,7 @@ export function combineScopeLoading(vehiclesLoading: boolean, recordsLoading: bo
  * useVehicles と useFuelRecords を組み合わせ、画面が共通で使う「選択中の車両とその記録」をまとめて返す。
  * - 記録は車両一覧の読み込み完了後に読み込む（`enabled: !vehiclesLoading`）。既定車両は vehicles[0]
  * - vehicles を渡し、連鎖計算が各車両の距離の入力方式を使えるようにする
- * - フォームの getPreviousOdometer / getOpenRun は開いたときに渡すため、最新の records を ref 経由で読む
- *   （フォームを開いている間に記録が再読み込みされても反映する）
+ * - フォームの燃費プレビューは、画面が `{ vehicle: selectedVehicle, records }` を useRecordForm に渡して previewInChain で計算する
  * 下のフックはそのまま使うので、データ更新の 2 経路（localStorage / Supabase）と閲覧専用の扱いは変わらない。
  */
 export function useVehicleScope(options: UseVehicleScopeOptions = {}): VehicleScope {
@@ -114,32 +106,6 @@ export function useVehicleScope(options: UseVehicleScopeOptions = {}): VehicleSc
   const distanceMode = distanceModeOf(selectedVehicle);
   const recordsLoading = list && rawRecordsLoading;
 
-  const recordsRef = useRef(records);
-  useEffect(() => {
-    recordsRef.current = records;
-  }, [records]);
-
-  // フォーム内で日付・オドメーターを変えたときの「前回のオドメーター」。
-  // 編集中の記録は自身を除き、created_at・id は保存値のまま並べる（formChainPosition。同じ日付の記録の中の位置を連鎖計算と揃える）。
-  // records は年・月フィルタなどをかける前の、この車両（と表示する未分類）の全記録
-  const getPreviousOdometer = useCallback<PreviousOdometerGetter>((date, excludeRecordId, odometer) => {
-    const current = recordsRef.current;
-    return previousOdometer(current, formChainPosition(current, date, excludeRecordId, odometer));
-  }, []);
-
-  // フォーム内で日付・オドメーターを変えたときの「直前に開いている run」（部分給油の合算用。位置は getPreviousOdometer と同じ）
-  const getOpenRun = useCallback<OpenRunGetter>(
-    (date, excludeRecordId, odometer) => {
-      const current = recordsRef.current;
-      return openRunBefore(
-        current,
-        { distance_mode: distanceMode },
-        formChainPosition(current, date, excludeRecordId, odometer)
-      );
-    },
-    [distanceMode]
-  );
-
   return {
     vehicles,
     selectedVehicleId,
@@ -157,7 +123,5 @@ export function useVehicleScope(options: UseVehicleScopeOptions = {}): VehicleSc
     scopeKey: scopeKeyOf(selectedVehicleId, distanceMode),
     vehicleActions: { addVehicle, addVehicles, updateVehicle, deleteVehicle },
     recordActions: { addRecord, addRecords, updateRecord, deleteRecord, fetchAllRecords, refresh },
-    getPreviousOdometer,
-    getOpenRun,
   };
 }

@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
 
-import { efficiencyNullReason, formatKm, formatOdometer } from "@/lib/format";
+import {
+  efficiencyNullReason,
+  formatDateLabel,
+  formatKm,
+  formatOdometer,
+  formatPriceDiff,
+  priceDiffClass,
+} from "@/lib/format";
 
 describe("efficiencyNullReason", () => {
   it("燃費があれば null", () => {
@@ -48,5 +55,34 @@ describe("formatKm", () => {
     expect(formatKm(1234.567)).toBe("1,234.57");
     expect(formatKm(5.5)).toBe("5.5");
     expect(formatKm(0)).toBe("0");
+  });
+});
+
+describe("formatDateLabel", () => {
+  it("YYYY-MM-DD を YYYY/M/D にする（月日のゼロ埋めを外す）", () => {
+    expect(formatDateLabel("2026-10-01")).toBe("2026/10/1");
+    expect(formatDateLabel("2026-01-09")).toBe("2026/1/9");
+  });
+});
+
+describe("formatPriceDiff", () => {
+  it("符号付きで小数第 1 位まで表示する", () => {
+    expect(formatPriceDiff(2.34)).toBe("+2.3");
+    expect(formatPriceDiff(-1.5)).toBe("−1.5");
+  });
+
+  it("0.1 円未満の差は ±0.0", () => {
+    expect(formatPriceDiff(0)).toBe("±0.0");
+    expect(formatPriceDiff(0.04)).toBe("±0.0");
+    expect(formatPriceDiff(-0.04)).toBe("±0.0");
+  });
+});
+
+describe("priceDiffClass", () => {
+  it("値上がりは赤、値下がりは緑、変わらなければ灰色", () => {
+    expect(priceDiffClass(0.5)).toBe("text-red-400");
+    expect(priceDiffClass(-0.5)).toBe("text-emerald-400");
+    expect(priceDiffClass(0)).toBe("text-gray-400");
+    expect(priceDiffClass(0.04)).toBe("text-gray-400");
   });
 });

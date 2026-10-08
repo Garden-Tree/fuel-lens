@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { calculateFuelMetrics } from "@/lib/calculations";
 import {
   MAX_IMAGE_BASE64_LENGTH,
+  analyzeErrorMessage,
   PLAUSIBILITY_LIMITS,
   derivePricePerUnit,
   detectImageMime,
@@ -500,5 +501,52 @@ describe("isAllowedOrigin", () => {
     expect(isAllowedOrigin("https://app.example.com.evil.com", allowed)).toBe(false);
     expect(isAllowedOrigin("https://app.example.com", [])).toBe(false);
     expect(isAllowedOrigin("https://app.example.com", [null, undefined, ""])).toBe(false);
+  });
+});
+
+describe("analyzeErrorMessage", () => {
+  const SIGNED_OUT_401 =
+    "AIスキャンにはログインが必要です。右上の「ログイン」からサインインするか、「手動で入力」から記録を追加してください（手動入力はログイン不要です）。";
+  const SIGNED_IN_401 = "セッションの有効期限が切れた可能性があります。ページを再読み込みして、もう一度お試しください。";
+
+  it.each<[string, number, unknown, Parameters<typeof analyzeErrorMessage>[2], string]>([
+    ["401 未ログイン", 401, { error: "Unauthorized" }, { isSignedIn: false }, SIGNED_OUT_401],
+    ["401 ログイン状態が未確定は未ログイン扱い", 401, null, { isSignedIn: undefined }, SIGNED_OUT_401],
+    ["401 ログイン中（セッション切れ）", 401, { error: "Unauthorized" }, { isSignedIn: true }, SIGNED_IN_401],
+    ["422 サーバーの文言を優先", 422, { error: "画像を読み取れませんでした" }, {}, "画像を読み取れませんでした"],
+    [
+      "422 文言なし",
+      422,
+      {},
+      {},
+      "レシート/メーターを読み取れませんでした。撮り直すか、「手動で入力」から記録してください。",
+    ],
+    [
+      "429 Retry-After が秒数",
+      429,
+      { error: "混雑しています。" },
+      { retryAfter: "30" },
+      "混雑しています。 約30秒後にもう一度お試しください。",
+    ],
+    [
+      "429 Retry-After が秒数でない",
+      429,
+      null,
+      { retryAfter: "Wed, 21 Oct 2026 07:28:00 GMT" },
+      "リクエストが多すぎます。 しばらくしてからもう一度お試しください。",
+    ],
+    ["429 Retry-After なし", 429, null, { retryAfter: null }, "リクエストが多すぎます。 しばらくしてからもう一度お試しください。"],
+    ["504 サーバーの文言", 504, { error: "AIの応答がありませんでした" }, {}, "AIの応答がありませんでした"],
+    ["504 文言なし", 504, null, {}, "AI解析がタイムアウトしました。しばらくしてから、もう一度お試しください。"],
+    ["500 requestId 付き", 500, { error: "解析に失敗しました。", requestId: "abc123" }, {}, "解析に失敗しました。（ID: abc123）"],
+    ["500 本文なし", 500, null, {}, "サーバーエラーが発生しました。"],
+    ["400 requestId のみ", 400, { requestId: "r1" }, {}, "サーバーエラーが発生しました。（ID: r1）"],
+    ["文字列でない error / requestId は使わない", 502, { error: 42, requestId: { x: 1 } }, {}, "サーバーエラーが発生しました。"],
+  ])("%s", (_label, status, body, options, expected) => {
+    expect(analyzeErrorMessage(status, body, options)).toBe(expected);
+  });
+
+  it("401 の文言は本文の error を使わない", () => {
+    expect(analyzeErrorMessage(401, { error: "Unauthorized" }, { isSignedIn: false })).not.toContain("Unauthorized");
   });
 });

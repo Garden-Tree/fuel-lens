@@ -10,8 +10,9 @@ import VehicleSelector from "@/components/VehicleSelector";
 import { HookErrorLine, PageHeader, ReadOnlyCaption, type HeaderLink } from "@/components/AppShell";
 import { useToast } from "@/components/Toast";
 import { useRecordForm } from "@/lib/useRecordForm";
-import { openRunBefore, previousOdometer } from "@/lib/fillChain";
-import RecordBadges, { efficiencyNullReason, formatOdometer } from "@/components/RecordBadges";
+import { useRecordEditing } from "@/lib/useRecordEditing";
+import RecordStats from "@/components/RecordStats";
+import { efficiencyNullReason } from "@/lib/format";
 import { normalizeDateString } from "@/lib/dates";
 import {
   RECORD_CSV_EXTRA_HEADERS,
@@ -41,27 +42,25 @@ const HISTORY_HEADER_LINKS: readonly HeaderLink[] = [
 export default function HistoryPage() {
   const { toast, confirm } = useToast();
   // 選択中の車両とその記録（useVehicles + useFuelRecords）。records は年・月フィルタ前の、この車両（と表示する未分類）の全記録
+  const scope = useVehicleScope();
   const {
     vehicles,
     selectedVehicleId,
     setSelectedVehicleId,
-    selectedVehicle,
     distanceMode,
     records,
     vehiclesLoading,
     loading: isLoading,
     error: hookError,
     readOnly,
-    scopeKey,
     vehicleActions,
     recordActions: { deleteRecord, updateRecord },
-    getPreviousOdometer,
-    getOpenRun,
-  } = useVehicleScope();
+  } = scope;
 
-  const [editingId, setEditingId] = useState<string | null>(null);
+  // 編集フォームの開閉と保存（/app の最新記録カードと共用）。車両または距離の入力方式を切り替えたら閉じる
+  // （開いたままだと、切り替え前の車両の記録を更新してしまう・入力欄が走行距離 / オドメーターで合わなくなるため）
   const form = useRecordForm();
-  const [saving, setSaving] = useState(false);
+  const editing = useRecordEditing({ scope, form, toast, confirm, updatedMessage: "記録を更新しました" });
 
   const [movingId, setMovingId] = useState<string | null>(null);
   // 進行中の操作（削除・移動）の対象レコードID。二重クリック防止用
@@ -73,15 +72,8 @@ export default function HistoryPage() {
   const [filterYear, setFilterYear] = useState<string>("all");
   const [filterMonth, setFilterMonth] = useState<string>("all");
 
-  // 車両または距離の入力方式を切り替えたら、開いている編集フォームを閉じる。
-  // 開いたままだと、切り替え前の車両の記録を更新してしまう・入力欄が走行距離 / オドメーターで合わなくなるため。
-  // （エフェクトではなく「前回の値を state に保持してレンダー中に調整する」React 推奨パターン）
-  const [formScopeKey, setFormScopeKey] = useState(scopeKey);
-  if (formScopeKey !== scopeKey) {
-    setFormScopeKey(scopeKey);
-    setEditingId(null);
-  }
   // 車両を切り替えたら「移動先の選択」も閉じ、年・月フィルタも解除する（方式の切り替えでは解除しない）
+  // （エフェクトではなく「前回の値を state に保持してレンダー中に調整する」React 推奨パターン）
   const [filterVehicleId, setFilterVehicleId] = useState(selectedVehicleId);
   if (filterVehicleId !== selectedVehicleId) {
     setFilterVehicleId(selectedVehicleId);
@@ -187,34 +179,8 @@ export default function HistoryPage() {
 
   const startEditing = (record: FuelRecord) => {
     if (readOnly) return;
-    form.reset(record, {
-      vehicle: selectedVehicle,
-      previousOdometer: previousOdometer(records, { recordId: record.id }),
-      getPreviousOdometer,
-      openRun: openRunBefore(records, selectedVehicle, { recordId: record.id }),
-      getOpenRun,
-    });
-    setEditingId(record.id);
+    editing.startEditing(record);
     setMovingId(null);
-  };
-
-  const cancelEditing = () => {
-    setEditingId(null);
-  };
-
-  const saveEditing = async () => {
-    if (!editingId || saving || !form.isValid) return;
-    setSaving(true);
-    try {
-      await updateRecord(editingId, form.toRecord());
-      setEditingId(null);
-      toast("記録を更新しました", { type: "success" });
-    } catch (err) {
-      console.error(err);
-      toast(err instanceof Error ? err.message : "保存に失敗しました", { type: "error" });
-    } finally {
-      setSaving(false);
-    }
   };
 
   const exportToCsv = () => {
@@ -438,13 +404,13 @@ export default function HistoryPage() {
                 </div>
               ) : (
                 sortedRecords.map((rec) => (
-                  editingId === rec.id ? (
+                  editing.editingRecordId === rec.id ? (
                     <div key={`edit-${rec.id}`} className="bg-gray-800 border border-blue-500 ring-1 ring-blue-500 rounded-2xl p-5 relative">
                       <EditFuelRecordForm
                         form={form}
-                        onCancel={cancelEditing}
-                        onSave={saveEditing}
-                        saving={saving}
+                        onCancel={editing.cancel}
+                        onSave={editing.save}
+                        saving={editing.saving}
                         disabled={readOnly}
                       />
                     </div>
@@ -510,34 +476,7 @@ export default function HistoryPage() {
                         </div>
                       </div>
 
-                      <RecordBadges record={rec} className="mb-2" />
-
-                      <div className="grid grid-cols-2 gap-2 text-sm bg-black/20 p-3 rounded-lg">
-                        <div className="flex justify-between border-r border-gray-800 pr-2">
-                          <span className="text-gray-500 text-xs">給油量</span>
-                          <span className="font-mono text-gray-300">{rec.fuel_amount ?? "--"} L</span>
-                        </div>
-                        <div className="flex justify-between pl-2">
-                          <span className="text-gray-500 text-xs">{distanceMode === "odometer" ? "区間" : "走行"}</span>
-                          <span className="font-mono text-gray-300">{rec.total_distance ?? "--"} km</span>
-                        </div>
-                        {distanceMode === "odometer" && (
-                          <p className="col-span-2 text-xs font-mono text-gray-400">{formatOdometer(rec.odometer)}</p>
-                        )}
-                      </div>
-
-                      {rec.memo && (
-                        <p className="mt-2 text-xs text-gray-400 truncate" title={rec.memo}>
-                          <span className="sr-only">メモ: </span>{rec.memo}
-                        </p>
-                      )}
-
-                      <div className="mt-3 flex items-center gap-2 text-xs text-gray-500 pr-24">
-                        <MapPin className="w-3 h-3 flex-shrink-0" />
-                        <span className="truncate" title={rec.gas_station || undefined}>
-                          {rec.gas_station || "SS不明"}
-                        </span>
-                      </div>
+                      <RecordStats record={rec} distanceMode={distanceMode} variant="compact" />
 
                       {/* 操作ボタン群 */}
                       <div className="absolute bottom-4 right-4 flex items-center opacity-100 sm:opacity-60 sm:group-hover:opacity-100 focus-visible:opacity-100 group-focus-within:opacity-100 transition duration-200">

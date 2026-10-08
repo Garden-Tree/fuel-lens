@@ -39,3 +39,6 @@ export { priceDelta, recordPrice, summarizeStations } from "./prices";
 export type { PriceDelta, PriceSample, StationComparison, StationSummary } from "./prices";
 
 export { MAX_STATION_ROWS, STATION_BAR_MIN_WIDTH, selectStationRows, stationBarWidth } from "./stationRows";
+
+export { buildStatsModel } from "./model";
+export type { StationRowModel, StatsModel } from "./model";

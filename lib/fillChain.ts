@@ -17,6 +17,9 @@
  *   （missed_previous ではない）。基準が進まないので次に区間が出た記録の距離に持ち越し行の分も含まれる。
  *   したがって run を切らず、燃費は null、給油量は run に積み上げる（部分給油と同じ扱い。満タン給油でも run を閉じない）
  *
+ * フォームのプレビュー（入力中の記録を保存したら連鎖計算が出す値）は previewInChain。連鎖計算の本体に候補を差し込んで読むので、
+ * フォーム側に連鎖の規則を複製しない。
+ *
  * applyFillChain は 1 台分の記録を受け取る前提。複数車両の記録を混ぜて渡さないこと（呼び出し側でグループ化する。
  * 未分類の記録は既定車両のグループに入れる。useFuelRecords の fetchAllRecords を参照）。
  */
@@ -206,12 +209,18 @@ type ChainResult = {
   efficiencies: (number | null)[];
   /** 入力と同じ順序の、その記録が閉じた run の合計（燃費が出た満タン給油の記録だけ。それ以外は null） */
   runs: (ClosedRun | null)[];
-  /** 最後の記録の後で開いている run（まだ満タン給油で閉じていない記録） */
-  openRun: OpenRun;
-  /** 最後の記録の後のオドメーターの基準（running max）。オドメーターモードでのみ意味を持つ */
-  base: number | null;
-  /** 基準が信頼できないか（記録漏れの記録が基準を進められず、その後まだ基準が進んでいない） */
-  baseStale: boolean;
+  /**
+   * 入力と同じ順序の、その記録より前から同じ run に積み上がっていた記録（部分給油・持ち越し行）の件数。
+   * run を切った記録（記録漏れ・トリップモードで区間距離が null）は 0
+   */
+  runCounts: number[];
+  /**
+   * 入力と同じ順序の、その記録の直前のオドメーターの基準（running max）。オドメーターモードのみ（トリップモードは null）。
+   * まだ無い・信頼できない（baseStales が true）ときは null
+   */
+  bases: (number | null)[];
+  /** 入力と同じ順序の、その記録の直前で基準が信頼できないか（記録漏れの記録が基準を進められず、その後まだ基準が進んでいない） */
+  baseStales: boolean[];
 };
 
 /** 連鎖計算の本体（docs/design-fill-chain.md 2 章） */
@@ -221,6 +230,9 @@ function computeChain(records: readonly FuelRecord[], mode: DistanceMode): Chain
   const distances: (number | null)[] = new Array(records.length).fill(null);
   const efficiencies: (number | null)[] = new Array(records.length).fill(null);
   const runs: (ClosedRun | null)[] = new Array(records.length).fill(null);
+  const runCounts: number[] = new Array(records.length).fill(0);
+  const bases: (number | null)[] = new Array(records.length).fill(null);
+  const baseStales: boolean[] = new Array(records.length).fill(false);
 
   // オドメーターモードの基準: それまでの記録で見た最大のオドメーター（値が戻った記録では更新しない）
   let maxOdometer: number | null = null;
@@ -264,6 +276,9 @@ function computeChain(records: readonly FuelRecord[], mode: DistanceMode): Chain
     // 持ち越し行（オドメーターモードのみ）: 区間が出せないが run は切らない記録
     let carry = false;
     if (mode === "odometer") {
+      // この記録の直前の基準（フォームの「前回から ○○ km」。previewInChain の base / baseStale）
+      bases[i] = baseStale ? null : maxOdometer;
+      baseStales[i] = baseStale;
       let advanced = false;
       if (odometer === null) {
         distance = null;
@@ -300,6 +315,7 @@ function computeChain(records: readonly FuelRecord[], mode: DistanceMode): Chain
       continue;
     }
     distances[i] = distance;
+    runCounts[i] = runCount;
 
     if (carry) {
       // 給油量だけを run に積み上げる（距離は次に区間が出た記録の差分に含まれる）。燃費は null で run は閉じない
@@ -325,64 +341,12 @@ function computeChain(records: readonly FuelRecord[], mode: DistanceMode): Chain
     }
   }
 
-  return {
-    distances,
-    efficiencies,
-    runs,
-    openRun: { distance: runDistance, fuel: runFuel, valid: runValid, count: runCount, baseStale },
-    base: maxOdometer,
-    baseStale,
-  };
+  return { distances, efficiencies, runs, runCounts, bases, baseStales };
 }
 
-/** 開いている走行区間（直前の満タン給油の次の記録から、ある位置の手前まで）の合計 */
-export type OpenRun = {
-  /** 区間距離の合計（valid が false なら不完全な値） */
-  distance: number;
-  /** 給油量の合計（valid が false なら不完全な値） */
-  fuel: number;
-  /** run 内のすべての記録で区間距離と給油量が分かっているか。false なら合算した燃費は出せない */
-  valid: boolean;
-  /** run に含まれる記録の件数（部分給油と持ち越し行）。0 なら run は空 */
-  count: number;
-  /**
-   * オドメーターモードで、その位置の基準が信頼できないか（記録漏れの記録が基準を進められず、その後まだ基準が進んでいない）。
-   * true のとき previousOdometer は null で、フォームは「記録漏れの直後のため区間は計算できません」と出す。
-   * openRunBefore は常に入れる（省略は false とみなす）
-   */
-  baseStale?: boolean;
-};
-
-/**
- * 連鎖の中の位置（previousOdometer / openRunBefore / chainBaseBefore）。
- * - `{ date, odometer? }`: 新規に記録するとき。その日付・オドメーターの記録を「いま」保存したときに並ぶ位置
- *   （compareForChain で前に並ぶ既存の記録すべての後ろ。同じ日付の記録もオドメーター → created_at の順に連鎖計算と同じく考慮する）。
- *   odometer が省略・null なら、同じ日付でオドメーターのある記録・created_at のある記録の後ろ、created_at の無い（古い）記録の前
- * - `{ recordId }`: 既存の記録を編集するとき。その記録の直前。見つからなければ位置なし
- * - `{ recordId, date?, odometer? }`: 既存の記録の日付・オドメーターを変えたとき。その記録自身を除き、
- *   変更後の日付・オドメーター（省略した方は保存値。created_at と id は保存値のまま）で並ぶ位置
- */
-export type ChainPosition =
-  | { date: string; odometer?: number | null }
-  | { recordId: string; date?: string; odometer?: number | null };
-
-/**
- * フォームで入力中の日付・オドメーターから ChainPosition を作る（フォームの getPreviousOdometer / getOpenRun 用）。
- * - 編集中の記録（recordId）が records にあれば `{ recordId, date, odometer }`。その記録自身を除き、
- *   created_at と id は保存値のまま並べるので、同じ日付の記録の中の位置が連鎖計算と一致する
- * - 新規の記録、または編集中の記録が records に無い（再読み込みで消えた）ときは新規として `{ date, odometer }`
- * odometer は入力中の値（未入力・省略は null。保存値ではなく入力値で位置を決める）。
- */
-export function formChainPosition(
-  records: readonly Pick<FuelRecord, "id">[],
-  date: string,
-  recordId?: string | null,
-  odometer?: number | null
-): ChainPosition {
-  const odo = odometer ?? null;
-  if (recordId && records.some(r => r.id === recordId)) return { recordId, date, odometer: odo };
-  return { date, odometer: odo };
-}
+// ------------------------------------------------------------------
+// フォームのプレビュー（入力中の記録を連鎖に差し込む）
+// ------------------------------------------------------------------
 
 /**
  * 新規の記録の created_at の代わり。保存時刻（いま）は既存の記録の created_at より後なので、その代わりに最大の時刻を使う
@@ -392,77 +356,65 @@ const NEW_RECORD_CREATED_AT = "9999-12-31T23:59:59.999Z";
 /** 新規の記録の id の代わり（同じ created_at の記録の中で最後） */
 const NEW_RECORD_ID = "￿";
 
-/** 位置より前に並ぶ記録（連鎖順）。位置が無い（recordId が見つからない）なら null */
-function recordsBefore(records: readonly FuelRecord[], at: ChainPosition): FuelRecord[] | null {
-  const sorted = sortForChain(records);
-  if ("recordId" in at) {
-    const idx = sorted.findIndex(r => r.id === at.recordId);
-    if (idx < 0) return null;
-    if (at.date === undefined && at.odometer === undefined) return sorted.slice(0, idx);
-    const self = sorted[idx];
-    const candidate: FuelRecord = {
-      ...self,
-      date: at.date ?? self.date,
-      odometer: at.odometer !== undefined ? sanitizeOdometer(at.odometer) : self.odometer,
-    };
-    return sorted.filter((r, i) => i !== idx && compareForChain(r, candidate) < 0);
-  }
-  const candidate = {
-    id: NEW_RECORD_ID,
-    date: at.date,
-    odometer: sanitizeOdometer(at.odometer),
-    created_at: NEW_RECORD_CREATED_AT,
-  };
-  return sorted.filter(r => compareForChain(r, candidate) < 0);
-}
+/**
+ * フォームで入力中の記録（previewInChain の候補）。
+ * - id: 既存の記録を編集するときはその ID（records にあればその記録を置き換える）。新規なら省略（追加する）
+ * - date: 連鎖の並び順に使う日付（YYYY-MM-DD）
+ * - 他のキー（odometer / total_distance / fuel_amount / total_cost / is_full / missed_previous）: 入力中の値。
+ *   既存の記録を置き換えるときは、渡したキーだけが保存値を上書きする（created_at と id は保存値のまま）
+ */
+export type ChainCandidate = Partial<FuelRecord> & { id?: string; date: string };
+
+/** previewInChain の結果（候補を保存したら連鎖計算が出す値） */
+export type ChainPreview = {
+  /** 区間距離。オドメーターモードは導出値（記録漏れ・先頭・持ち越し行は null）、トリップモードは候補の入力値 */
+  total_distance: number | null;
+  /** 燃費。直前の部分給油・持ち越し行の分を合算した値。部分給油・持ち越し行・記録漏れ・run が不完全なら null */
+  fuel_efficiency: number | null;
+  /** 候補の run に、候補より前から積み上がっていた記録（部分給油・持ち越し行）の件数。run を切る候補は 0 */
+  runCount: number;
+  /** 候補の直前のオドメーターの基準（running max）。オドメーターモードのみ。無い・信頼できない（baseStale）なら null */
+  base: number | null;
+  /** 直前の記録漏れの記録が基準を進められず、基準が信頼できないか（オドメーターモードのみ。連鎖計算でも区間は null） */
+  baseStale: boolean;
+};
 
 /**
- * ある位置の直前で「開いている run」（部分給油・持ち越し行が、直前の満タン給油や run の切れ目の後に積み上がったもの）の合計。
- * フォームの燃費プレビューを、保存後に連鎖計算が出す値（部分給油の分を合算した Σ距離 / Σ給油量）と一致させるために使う。
- * run が無ければ 0 / 0 / valid / count 0。給油量が null の記録や、オドメーターモードで基準の無い記録が含まれると valid は false。
- * baseStale（オドメーターモードで記録漏れの直後のため基準が無い）も返す。
+ * フォームの燃費・区間距離のプレビュー。入力中の記録（候補）を 1 台分の記録に差し込んで連鎖計算（applyFillChain と同じ本体）を走らせ、
+ * 候補の導出値を読む。したがってプレビューは保存後に連鎖計算が出す値と常に一致する（同じ日付の記録の中の位置・部分給油の合算・
+ * 持ち越し行・記録漏れの直後の基準も含む）。
+ * - 編集（candidate.id が records にある）: その記録を候補で置き換える（created_at と id は保存値のまま。同じ日付の中の位置を保つ）
+ * - 新規（id なし・records に無い）: 追加する。created_at は「いま」の代わりの最大時刻（既存の記録の後ろ、created_at の無い古い記録の前）
  *
- * @param records 1 台分の記録（順不同）
+ * @param records 1 台分の記録（順不同。useVehicleScope の records をそのまま渡せる）
  * @param vehicle 記録の車両。省略・null ならトリップモード
- * @param at 位置（ChainPosition。previousOdometer と同じ）
+ * @param candidate 入力中の記録
  */
-export function openRunBefore(
+export function previewInChain(
   records: readonly FuelRecord[],
   vehicle: Pick<Vehicle, "distance_mode"> | null | undefined,
-  at: ChainPosition
-): OpenRun {
-  const before = recordsBefore(records, at);
-  if (before === null) return { distance: 0, fuel: 0, valid: true, count: 0, baseStale: false };
-  return computeChain(before, distanceModeOf(vehicle)).openRun;
-}
-
-/**
- * 連鎖計算がその位置で基準にするオドメーターと、基準が信頼できないか。
- * - odometer: 連鎖順でその位置より前の記録のオドメーターの最大値（running max）。stale なら null。記録が無ければ null
- * - stale: 記録漏れ（missed_previous）の記録が基準を進められず、その後まだ基準が進んでいない（連鎖計算でも区間は null になる）
- */
-export function chainBaseBefore(
-  records: readonly FuelRecord[],
-  at: ChainPosition
-): { odometer: number | null; stale: boolean } {
-  const before = recordsBefore(records, at);
-  if (before === null) return { odometer: null, stale: false };
-  const { base, baseStale } = computeChain(before, "odometer");
-  return { odometer: baseStale ? null : base, stale: baseStale };
-}
-
-/**
- * 連鎖計算がその位置で基準にするオドメーター（フォームの「前回から ○○ km」表示用）。chainBaseBefore の odometer。
- * applyFillChain と同じく、連鎖順でその位置より前の記録のオドメーターの最大値（running max）。無ければ null。
- * 記録漏れ（missed_previous）の記録が基準を進められず、その後まだ基準が進んでいない位置でも null
- * （連鎖計算でも区間は null になる。理由を区別するときは chainBaseBefore の stale か openRunBefore の baseStale を使う）。
- *
- * @param records 1 台分の記録（順不同。useFuelRecords の records をそのまま渡せる）
- * @param at 位置（ChainPosition）
- *   - `{ recordId }`: 既存の記録を編集するとき。その記録より前の記録が対象。見つからなければ null
- *   - `{ date, odometer? }`: 新規に記録するとき。その日付・オドメーターの記録を「いま」保存したときに前に並ぶ記録が対象
- *   - `{ recordId, date?, odometer? }`: 既存の記録の日付・オドメーターを変えたとき（その記録自身は除く）
- */
-export function previousOdometer(records: readonly FuelRecord[], at: ChainPosition): number | null {
-  return chainBaseBefore(records, at).odometer;
+  candidate: ChainCandidate
+): ChainPreview {
+  const mode = distanceModeOf(vehicle);
+  const idx = candidate.id ? records.findIndex(r => r.id === candidate.id) : -1;
+  let list: FuelRecord[];
+  let at: number;
+  if (idx >= 0) {
+    const self = records[idx];
+    list = records.slice();
+    list[idx] = { ...self, ...candidate, id: self.id, created_at: self.created_at };
+    at = idx;
+  } else {
+    const added = { ...candidate, id: NEW_RECORD_ID, created_at: NEW_RECORD_CREATED_AT } as FuelRecord;
+    list = [...records, added];
+    at = records.length;
+  }
+  const chain = computeChain(list, mode);
+  return {
+    total_distance: mode === "odometer" ? chain.distances[at] : finiteOrNull(list[at].total_distance),
+    fuel_efficiency: chain.efficiencies[at],
+    runCount: chain.runCounts[at],
+    base: chain.bases[at],
+    baseStale: chain.baseStales[at],
+  };
 }
