@@ -31,6 +31,7 @@ CI は Node 22 で lint → typecheck → test → build を実行する（[docs
 | `app/` | 画面（`page.tsx` ランディング、`app/` メイン、`history/`、`stats/`、`settings/` バックアップと復元）と API（`api/analyze`、`api/keepalive`） |
 | `components/` | 確認シート、入力フォーム、車両管理、`Toast`（`useToast()`）、`UserSync`、`SupabaseStatusBanner` |
 | `lib/` | 型（`types`）・日付（`dates`）・純粋ロジック（`analyze` / `calculations` / `fillChain` / `stats` / `recordFilters` / `vehicleSelection`）、イベント（`events`）、フック、移行、Supabase クライアントと障害検知 |
+| `lib/data/` | データアダプタ層。`RecordStore` / `VehicleStore`（`types.ts`）を localStorage（`localStore.ts`）と Supabase（`cloudStore.ts`）が実装し、`withOutageHandling` / `withCache`（`withOutage.ts`）が障害・閲覧専用・キャッシュを、`cloudBootstrap.ts` が移行 → 既定車両の確保を受け持つ。フックは `useDataStores()` でストアを選ぶだけ |
 | `lib/fillChain.ts` | 給油の連鎖計算 `applyFillChain`（オドメーター差分・部分給油の合算・記録漏れ）と新しい列の既定値補完。純粋関数 |
 | `lib/backup.ts` | バックアップ JSON の書き出し・検証（`parseBackup`）・復元計画（`planRestore`）。純粋関数 |
 | `lib/csv.ts` | CSV 組み立て・エスケープ（数式インジェクション対策）・ダウンロード。履歴と設定画面で共有 |
@@ -48,8 +49,8 @@ CI は Node 22 で lint → typecheck → test → build を実行する（[docs
    区間距離と燃費の導出は `lib/fillChain.ts` の `applyFillChain` が正本（オドメーターモードの差分、部分給油の合算、記録漏れでの連鎖切断）。読み取り時に適用され、保存値は信頼しない。
    `lib/analyze.ts` の `derivePricePerUnit` も `calculateFuelMetrics` を呼ぶ（丸めを複製しない）。
    analyze.ts が import してよいのは依存のないドメインモジュール（`lib/types.ts`・`lib/dates.ts`・`lib/calculations.ts`）だけ。
-2. **データ更新は「未ログイン = localStorage」と「ログイン = Supabase」の両経路を必ず実装する。**
-   ログイン中かつ障害時は `readOnly`（書き込みは日本語エラーを投げる）。
+2. **データ更新は lib/data/ の RecordStore / VehicleStore インターフェースを通す。local と cloud の両実装が同じインターフェースを満たすことで両経路の実装漏れを型で防ぐ**（未ログイン = `localStore.ts`、ログイン = `cloudStore.ts`。フックから記録・車両の保存先を直接触らない）。
+   ログイン中かつ障害時は `readOnly`（書き込みは `withOutageHandling` が日本語エラーで拒否する）。
 3. **`vehicle_id` が `null` の記録は「未分類」。** 既定車両（`vehicles[0]` = 最も古い車両）を選択中のときだけ表示する。
    判定は `lib/recordFilters.ts` を使う。ログイン中に `vehicle_id: null` で保存しない。
 4. **ローカルデータの移行は `lib/migrateLocalData.ts` 経由のみ。** 他の場所で localStorage → Supabase のコピーを書かない。

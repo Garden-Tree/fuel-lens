@@ -45,10 +45,12 @@ FuelLens の構成、データの流れ、主要なモジュールの役割を�
 | `lib/importers/fuelio.ts` / `lib/importers/fuellensCsv.ts` | CSV の取り込み（Fuelio / FuelLens の CSV → バックアップ形式）。純粋関数 |
 | `lib/useVehicles.ts` / `lib/useFuelRecords.ts` / `lib/useRecordForm.ts` | データフックとフォーム状態（[4 章](#4-フック-api)）。フォームの純粋なヘルパーは `lib/recordDraft.ts` |
 | `lib/useBackdropClose.ts` | モーダルの背景クリックで閉じるハンドラ（ドラッグでの誤閉じを防ぐ） |
-| `lib/migrateLocalData.ts` | ローカル → クラウドの移行と既定車両の自動作成（[5 章](#5-ローカル--クラウド移行)） |
+| `lib/data/` | データアダプタ層（[2 章](#データアダプタ層libdata)）。`types.ts`（`RecordStore` / `VehicleStore` / `DataError`）、`localStore.ts`（localStorage の実装と `LOCAL_*` キー・`writeLocalJson`）、`cloudStore.ts`（Supabase の実装と `ensureDefaultVehicle` / `ensureUserRow` / `withStatus`）、`withOutage.ts`（`withOutageHandling` / `withCache`）、`cloudBootstrap.ts`（移行 → 既定車両の確保をタブ内で 1 回）、`useDataStores.ts`（ログイン状態でストアを選ぶフック）、`columns.ts` / `scope.ts`（列の検証・パッチ、一覧の範囲。純粋関数） |
+| `lib/migrateLocalData.ts` | ローカル → クラウドの移行（[5 章](#5-ローカル--クラウド移行)）。`LOCAL_*` / `writeLocalJson` / `CrossTabLockError` は互換のため再エクスポート |
+| `lib/crossTabLock.ts` | ユーザー単位のクロスタブ排他ロック `withCrossTabLock`（Web Locks + localStorage リース）と `CrossTabLockError` |
 | `lib/supabaseClient.ts` | ユーザーごとの Supabase クライアント（Clerk JWT 付き） |
 | `lib/supabaseHealth.ts` | 障害の分類、閲覧専用モード、キャッシュ、再試行（[6 章](#6-障害時の動作)） |
-| `lib/supabase/errors.ts` / `outage.ts` / `retry.ts` / `cache.ts` | `supabaseHealth.ts` の実体。errors = 失敗の分類とエラーメッセージ（純粋関数。`migrateLocalData.ts` はここだけを import）、outage = 障害状態の記録・通知・`useSupabaseOutage`、retry = 再試行イベントと自動再試行、cache = per-user キャッシュ。`supabaseHealth.ts` は互換用の再エクスポート |
+| `lib/supabase/errors.ts` / `outage.ts` / `retry.ts` / `cache.ts` | `supabaseHealth.ts` の実体。errors = 失敗の分類とエラーメッセージ（純粋関数。`migrateLocalData.ts` は `lib/supabase/` のうちここだけを import）、outage = 障害状態の記録・通知・`useSupabaseOutage`、retry = 再試行イベントと自動再試行、cache = per-user キャッシュ。`supabaseHealth.ts` は互換用の再エクスポート |
 | `lib/format.ts` | 表示用の純粋フォーマット（`efficiencyNullReason` / `formatOdometer` / `formatKm`） |
 | `lib/importers/csvParse.ts` | CSV 取り込みの共有プリミティブ（`parseCsvRows` / `parseCsvNumber` / `parseFlexibleDate` / `hashString` / `isBlankRow`）。`fuelio.ts` は互換のため再エクスポート |
 | `lib/scan/` | メイン画面のスキャン。`analyzeClient.ts`（`compressToDataUrl` / `requestAnalyze`。React に依存しない I/O）、`shortcuts.ts`（`?action=` の判定 `resolveShortcutAction` / `shortcutReadinessOf`。純粋関数）、フック `useScanPipeline` / `useImageDropPaste` / `useShortcutActions`（[メイン画面の構成](#メイン画面の構成app)） |
@@ -58,7 +60,7 @@ FuelLens の構成、データの流れ、主要なモジュールの役割を�
 | `components/ServiceWorkerRegister.tsx` | `public/sw.js` を登録する（本番ビルドのみ。開発中は `NEXT_PUBLIC_ENABLE_SW=1` で有効化）。`app/layout.tsx` にマウント |
 | `public/icons/` / `public/apple-touch-icon.png` | PWA アイコン（`icon-192.png` / `icon-512.png` / `icon-maskable-512.png` と 180x180 の apple-touch-icon）。`scripts/generate-icons.mjs` が生成 |
 | `scripts/generate-icons.mjs` | `app/icon.svg` から PWA アイコンを生成するスクリプト（`node scripts/generate-icons.mjs`） |
-| `tests/*.test.ts` | Vitest の単体テスト（`environment: "node"`。対象は `lib/` の関数） |
+| `tests/*.test.ts`、`tests/data/*.test.ts` | Vitest の単体テスト（`environment: "node"`。対象は `lib/` の関数。`tests/data/` はデータアダプタ層で、偽の Supabase クライアントと Map の Storage は `tests/data/fakeSupabase.ts`） |
 | `supabase/migrations/*.sql` | スキーマ・RLS・keepalive・給油の連鎖計算用の列（`0004_fill_chain.sql`）（冪等）。手順は [supabase/README.md](../supabase/README.md) |
 | `docs/` | このドキュメント群。連鎖計算の仕様は [design-fill-chain.md](./design-fill-chain.md) |
 | `.github/workflows/` | `ci.yml`（CI）と `supabase-keepalive.yml`（keepalive の予備経路） |
@@ -69,7 +71,8 @@ FuelLens の構成、データの流れ、主要なモジュールの役割を�
 
 ## 2. データフロー
 
-保存先はログイン状態で切り替わります。データを更新する処理は必ず両方の経路を実装します。
+保存先はログイン状態で切り替わります。データを更新する処理は必ず両方の経路を実装します
+（`lib/data/` の `RecordStore` / `VehicleStore` に操作を足し、local と cloud の両実装を書く。下の[データアダプタ層](#データアダプタ層libdata)）。
 
 | 状態 | 保存先 | 備考 |
 |---|---|---|
@@ -78,11 +81,42 @@ FuelLens の構成、データの流れ、主要なモジュールの役割を�
 
 - 未ログインでも画面は表示・操作できます（`proxy.ts` は全ルートを公開のままにしている）。
   AI 解析だけは `/api/analyze` がログインを要求します。
-- ログインすると、`useVehicles` / `useFuelRecords` の読み込み時に `migrateLocalData` が走り、
-  ローカルの記録をクラウドへ移します（[5 章](#5-ローカル--クラウド移行)）。
+- ログインすると、`useVehicles` / `useFuelRecords` の最初の読み込みの前にクラウドの初期化（`lib/data/cloudBootstrap.ts`）が走り、
+  `migrateLocalData` でローカルの記録をクラウドへ移してから既定車両を確保します（[5 章](#5-ローカル--クラウド移行)）。
 - スキャンの流れ: 画像を 0.8MB 以下・長辺 1200px の JPEG に圧縮 → `POST /api/analyze` → 確認シートで確認・修正 →
   同じ日付・給油量・支払総額の記録があれば確認ダイアログ → `addRecord`。解析結果を自動保存することはありません。
 - 選択中の車両 ID は localStorage に保存します。未ログイン時は `fuel_lens_selected_vehicle_id`、ログイン時はユーザーごとの `fuel_lens_selected_vehicle_id_<userId>` を使い、保存値が現在の車両一覧に無い場合は既定車両へフォールバックして保存値を書き換えます。
+
+### データアダプタ層（`lib/data/`）
+
+フック（`useVehicles` / `useFuelRecords`）は保存先ごとの処理を持たず、ストアを選んで呼び、状態（`loading` / `error` / 一覧）・楽観更新・連鎖計算・イベント・選択の保存だけを受け持ちます。
+
+```
+useVehicles / useFuelRecords
+  └ useDataStores()  … 未ログイン: createLocalStores()（localStorage）
+                       ログイン:   withCache(withOutageHandling(createCloudStores(supabase, userId)))
+                                   + bootstrap（cloudBootstrap: 移行 → 既定車両。タブ内で 1 回）
+```
+
+| モジュール | 役割 |
+|---|---|
+| `types.ts` | `RecordStore`（`list(scope)` / `listAll()` / `add` / `addMany(inputs, onProgress?)` / `update` / `remove` / `removeByVehicle(vehicleId, { includeUnclassified })`）と `VehicleStore`（`list` / `add` / `addMany` / `update` / `remove`）。`RecordScope = { vehicleId, includeUnclassified }`。エラーの型 `DataError`（日本語の `message`、`status` / `code` / `outage`、一括追加の途中失敗では `done` / `created`）と、生の層が一括追加の途中失敗を知らせる `PartialWriteError` |
+| `localStore.ts` | `createLocalStores(storage?)`。キー `fuel_lens_data` / `fuel_lens_vehicles`、ID（記録 `Date.now()`、復元 `restored-<時刻36進>-<連番>`、車両 `local-vehicle-<時刻>`）、車両が無ければ `default-car`、未分類の保存先は `default-car`、既定車両の削除で未分類も削除。保存失敗は日本語の Error（`writeLocalJson`） |
+| `cloudStore.ts` | `createCloudStores(supabase, userId)`。生の層で、失敗は `status` 付きの Supabase エラーをそのまま投げる（保存前の検証だけ日本語の `DataError`）。クエリの詳細は下 |
+| `withOutage.ts` | `withOutageHandling(store, { isReadOnly, onFailure, onRecover })`: 分類 → `setOutage` → 日本語の `DataError` への変換と、書き込み前の閲覧専用ガードを 1 か所で行う（`list` の成功で `clearOutage`）。`withCache(store, { key })`: `list` の成功でキャッシュを書き、成功した書き込みも反映する。読み込み失敗時はフックが `cached()` で最後に同期した一覧を表示する |
+| `cloudBootstrap.ts` | `bootstrapCloud(supabase, userId)`: `migrateLocalData` → `ensureDefaultVehicle` を userId ごとにタブ内で 1 回（[5 章](#5-ローカル--クラウド移行)） |
+| `useDataStores.ts` | ログイン状態に応じたストア（クラウドは userId・getToken ごとにメモ化）。フックのアンマウント・ユーザー切り替え後に届いた応答ではキャッシュを書かない |
+| `columns.ts` / `scope.ts` | `pickRecordColumns`（保存する列のホワイトリストと検証）、`sanitizeVehicleSettings`、`applyRecordPatch` / `applyVehiclePatch`、`recordScopeOf` / `matchesRecordScope`（`matchesSelectedVehicle` と同じ判定） |
+
+クラウドのクエリ（`cloudStore.ts`）:
+
+- 記録の一覧: `fuel_records` を `date` の降順で取得し、`vehicle_id.eq.<uuid>`、既定車両なら `.or(vehicle_id.eq.<uuid>,vehicle_id.is.null)`（UUID を検証してから埋め込む。UUID でなければクエリを発行しない）。
+- 全件（`listAll`）: `user_id` で絞り、`date` 降順 → `id` 昇順で 1,000 件ずつ、空のページが返るまで読む（max-rows が小さくても欠けない）。
+- 追加: `pickRecordColumns` の列だけを `user_id` / `vehicle_id` 付きで insert（`created_at` は DB の既定値）。一括追加は 100 件ずつ `defaultToNull: false` で、`created_at` を全行に正規化して送る。
+- 車両: 一覧は `created_at` → `id` の昇順（1 台も無ければ「メインカー」を作成）。一括追加は 1 台ずつ入力順に `.select().single()`。
+- 車両の削除: フックが先に `removeByVehicle`（既定車両なら `vehicle_id` が null の記録も）を呼び、その後に車両を削除する。
+
+両ストアの戻り値は型注釈（`DataStores`）で `RecordStore` / `VehicleStore` を満たすことを確認しているので、片方の経路だけに操作を足すと typecheck が失敗します。
 
 ## 3. データモデル
 
@@ -135,14 +169,16 @@ FuelLens の構成、データの流れ、主要なモジュールの役割を�
 戻り値: `vehicles`, `selectedVehicleId`, `loading`, `error`, `outage`, `readOnly`, `setSelectedVehicleId`,
 `addVehicle(name, type, settings?)`, `addVehicles(items)`, `updateVehicle(id, name, type, settings?)`, `deleteVehicle(id)`, `refreshVehicles()`。
 
-- ログイン中は読み込みのたびに `migrateLocalData` → `ensureDefaultVehicle` の順に実行します。
+- ログイン中は一覧を読む前にクラウドの初期化（`migrateLocalData` → `ensureDefaultVehicle`。タブ内で userId ごとに 1 回）を待ちます。
+  一覧は `VehicleStore.list()`（1 台も無ければ既定車両を作成）です。
 - 読み込みに失敗したときはローカルの既定車両へフォールバックせず、最後に同期した一覧（キャッシュ）を表示します。
 - `settings` は `VehicleSettings`（`{ distance_mode?, default_fuel_type? }`）。省略したキーは、追加ではトリップ / 未指定、更新では変更なしです。
   不明な値は `sanitizeVehicleSettings` が捨てます。更新は名前・種別・設定を 1 回の update で保存し、方式を切り替えても既存の記録は変更しません（表示は読み取り時に再計算される）。
 - 読み込んだ車両（ローカル・クラウド・キャッシュ）は `normalizeVehicle` で新しい列を補います（`0004` 適用前の DB でも動く）。
 - `addVehicles(items: ({ name, type } & VehicleSettings)[])`（復元用）は車両をまとめて追加し、作成した `Vehicle[]` を返します。
-  未ログインでは `local-vehicle-<時刻>-<連番>` の ID でローカルに追加し、ログイン中は 1 回の insert で追加します（閲覧専用中は日本語エラー）。
-- 未ログイン時の localStorage への保存（`addVehicle` / `updateVehicle` / `deleteVehicle`）は、画面の一覧を変える前に `writeLocalJson`（`lib/migrateLocalData.ts`）で行います。
+  未ログインでは `local-vehicle-<時刻>-<連番>` の ID でローカルに追加し、ログイン中は 1 台ずつ入力順に insert します（閲覧専用中は日本語エラー。途中で失敗しても作成済みの車両は一覧に反映）。
+- `deleteVehicle` は先に `RecordStore.removeByVehicle`（既定車両なら未分類の記録も）、次に `VehicleStore.remove` を呼び、`fuel_records_changed` を発火します。
+- 未ログイン時の localStorage への保存（`addVehicle` / `updateVehicle` / `deleteVehicle`）は、画面の一覧を変える前に `writeLocalJson`（`lib/data/localStore.ts`）で行います。
   容量超過などで保存できなければ「ブラウザの保存領域がいっぱいです。…」の日本語エラーを投げ、一覧は変えません（英語の `DOMException` は console にだけ出す）。
 - 選択中の車両は `lib/vehicleSelection.ts` の `pickSelected`（保存値が一覧に無ければ先頭の車両）で決め、ずれたときだけ保存し直します。
 
@@ -156,7 +192,8 @@ FuelLens の構成、データの流れ、主要なモジュールの役割を�
   追加・更新・削除で隣の記録の燃費が変わっても、車両の方式を切り替えても即座に反映されます（[10 章](#10-給油の連鎖計算fill-chain)）。
 - `addRecord` / `updateRecord` / `addRecords` は `pickRecordColumns` で既知の列だけを保存し、新しい列を検証します
   （`odometer` は 0 以上の有限数、`fuel_type` は 4 値、`memo` は 200 文字まで、`is_full` / `missed_previous` は真偽値のみ）。新しい列を省略した保存は DB の既定値になり、`0004` 適用前の DB でも成功します。
-- ログイン中は `selectedVehicleId` が UUID になるまでクエリを発行しません。
+- ログイン中は `selectedVehicleId` が UUID になるまでクエリを発行しません。一覧を読む前にクラウドの初期化（`useVehicles` と共有。通常は完了済み）を待ちます。
+- 保存先は `useDataStores()` が選ぶストアです（[2 章](#データアダプタ層libdata)）。読み込みの範囲は `recordScopeOf(selectedVehicleId, defaultVehicleId)`、追加・更新後の絞り込みは `matchesRecordScope` です。
 - 車両削除などで記録が別経路から変わると、`fuel_records_changed` イベント（`lib/events.ts` の `notifyRecordsChanged()` が発火し、`useWindowEvent` で購読）で再読み込みします。
 - `records` の並びは `sortRecordsByDateDesc`（日付の降順、同じ日付は id の降順。日付の無い・不正な記録は最後）です。
 - 未ログイン時の `addRecord` / `updateRecord` / `deleteRecord` は、localStorage へ保存できなければ（容量超過など）
@@ -199,7 +236,7 @@ FuelLens の構成、データの流れ、主要なモジュールの役割を�
 | `outage` | クラウド障害の種別（`"paused"` / `"unreachable"` / `null`）。全フックで共有 |
 | `readOnly` | ログイン中かつ `outage != null`。このとき追加・更新・削除は日本語メッセージの `ReadOnlyError` を投げる |
 
-書き込みの失敗は `toUserFacingWriteError` で日本語メッセージの `Error` に変換されます。UI は `useToast()` で表示します。
+書き込みの失敗は `withOutageHandling`（`lib/data/withOutage.ts`）が `toUserFacingWriteError` で日本語メッセージの `DataError` に変換します。UI は `useToast()` で表示します。
 
 ### `useRecordForm(initial?, context?)`（`lib/useRecordForm.ts`）
 
@@ -243,9 +280,18 @@ FuelLens の構成、データの流れ、主要なモジュールの役割を�
 ## 5. ローカル → クラウド移行
 
 localStorage から Supabase へのコピーは、`lib/migrateLocalData.ts` の `migrateLocalData(supabase, userId)` だけが行います。
-`useVehicles` と `useFuelRecords` の両方から呼ばれますが、次の仕組みで 1 回しか実行されません。
+呼び出し元はクラウドの初期化 `bootstrapCloud`（`lib/data/cloudBootstrap.ts`）だけで、`useVehicles` と `useFuelRecords` はクラウドから一覧を読む前にこれを待ちます。
 
-1. **クロスタブロック**: Web Locks API が使えれば `fuel_lens_migration_<userId>` を exclusive で取得します
+- **初期化は userId ごとにタブ内で 1 回**: `migrateLocalData` → `ensureDefaultVehicle` を実行し、実行中は同じ Promise を共有、完了後は結果を使い回します。
+  ただし移行するローカルデータ（`fuel_lens_data` / `fuel_lens_vehicles` / 退避キー）が残っていれば（ログアウト中に記録した等）やり直します（`hasLocalDataToMigrate`）。
+- 移行が障害（停止・接続不可）で失敗したら初期化ごと失敗し、フックは閲覧専用・キャッシュ表示になります（次の読み込みで再試行）。
+  障害以外の失敗（RLS 違反など）は日本語のメッセージ（`migrationErrorMessage`）を両フックの `error` に出して読み込みを続け、30 秒間は同じ結果を返します（退避⇄復元を繰り返さない）。
+  認証トークンの欠落は移行のエラーとしては出さず、続く既定車両の確保の失敗（再ログインの案内）になります。
+- 既定車両の確保の失敗は初期化の失敗として扱い、次の読み込みで最初からやり直します。
+
+`migrateLocalData` 自体は次の仕組みで 1 回しか実行されません。
+
+1. **クロスタブロック**（`lib/crossTabLock.ts` の `withCrossTabLock`）: Web Locks API が使えれば `fuel_lens_migration_<userId>` を exclusive で取得します
    （取得待ちは約 30 秒で打ち切り）。使えなければ localStorage のリース `fuel_lens_migration_lock_<userId>`
    （20 秒ごとに更新、約 2 分で失効）で代替します。取得できないときは `CrossTabLockError`（日本語メッセージ）を投げます。
 2. **タブ内の共有**: 実行中の Promise を userId ごとに保持し、同時呼び出しには同じ Promise を返します。
@@ -262,13 +308,15 @@ localStorage から Supabase へのコピーは、`lib/migrateLocalData.ts` の 
 7. **失敗時**: 退避データを元キーへマージして戻し、次回の読み込みで再試行します。
    障害以外の失敗では、データがブラウザに残っていることを `error` で利用者に伝えます。
 
-既定車両の自動作成（`ensureDefaultVehicle`）も同じロックで直列化しています。
+既定車両の自動作成（`lib/data/cloudStore.ts` の `ensureDefaultVehicle`）も同じロックで直列化しています。`ensureUserRow` / `withStatus` も `cloudStore.ts` にあり、移行処理はそこから import します。
 
 ## 6. 障害時の動作
 
 Supabase Free のプロジェクトが一時停止すると、API は HTTP 540 を返します
 （停止の仕組みと予防策は [operations.md](./operations.md#3-supabase-の自動停止と-keepalive)）。
 `lib/supabaseHealth.ts` が失敗を分類し、アプリ全体を閲覧専用に切り替えます。
+クラウドのストアの呼び出しとクラウドの初期化は、すべて `withOutageHandling` / `runWithOutageHandling`（`lib/data/withOutage.ts`）を通り、
+分類 → `setOutage` → 日本語の `DataError` への変換と、閲覧専用中の書き込みの拒否（`readOnlyError` と同じ文言）がここ 1 か所で行われます。
 
 | 分類 | 条件（`classifySupabaseFailure`） |
 |---|---|
@@ -279,6 +327,9 @@ Supabase Free のプロジェクトが一時停止すると、API は HTTP 540 �
 - 障害種別は sessionStorage（`fuel_lens_supabase_outage`）と window イベント `supabase_outage` で全コンポーネントに共有します。
 - 正常に読み込めた一覧は `fuel_lens_cache_vehicles_<userId>` / `fuel_lens_cache_records_<userId>_<vehicleId>` に保存し、
   障害中はそれを閲覧専用で表示します（キーは `lib/supabaseHealth.ts` の `vehiclesCacheKey` / `recordsCacheKey`。`clearUserCaches` と同じ場所で定義）。
+  書き込むのは `withCache`（`lib/data/withOutage.ts`）で、`list` の成功時に一覧を、成功した追加・更新・削除の後にその結果を反映した一覧を書きます。
+  読み込みに失敗した（障害以外の失敗も含む）ときは、フックが `cached()` で最後に同期した一覧を表示します。失敗した読み込みの後の書き込みは反映せず、
+  フックのアンマウント・ログアウト・ユーザー切り替えの後に届いた応答ではキャッシュを書きません。
 - 閲覧専用中は `/history` / `/stats` / `/settings` に「閲覧専用（クラウド接続待ち）」と表示します（`useVehicles` と `useFuelRecords` の `readOnly` は同じ障害状態から決まる）。
 - `SupabaseStatusBanner` はログイン中かつ障害中にだけ表示されます。
   「再試行」ボタンと、障害中のネットワーク復帰（`online`）・タブの再表示（自動分は 30 秒に 1 回まで）が
@@ -286,6 +337,7 @@ Supabase Free のプロジェクトが一時停止すると、API は HTTP 540 �
   読み込みに成功すると `clearOutage()` で障害を解除します。
 - ログアウト・ユーザー切り替え時は、`syncCacheOwner` が前のユーザーのキャッシュと障害フラグを削除します。
 - 認証トークンの欠落は障害として扱いません（閲覧専用にすると本当の原因が隠れるため）。
+- テストは `tests/data/withOutage.test.ts`（540 / 0 → 障害とキャッシュ、閲覧専用ガード、42501 の文言）と `tests/supabaseHealth.test.ts` です。
 
 ## 7. 認証
 

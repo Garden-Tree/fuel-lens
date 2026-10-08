@@ -66,10 +66,10 @@ export function isPermissionDeniedError(error: unknown): boolean {
 
 /**
  * メッセージが日本語でそのまま画面に出せるアプリ側のエラー名
- * （SupabaseAuthTokenError / CrossTabLockError / readOnlyError）。
- * 名前で判定するのは、このモジュールを supabaseClient / migrateLocalData に依存させないため。
+ * （SupabaseAuthTokenError / CrossTabLockError / readOnlyError / lib/data の DataError）。
+ * 名前で判定するのは、このモジュールを supabaseClient / crossTabLock / lib/data に依存させないため。
  */
-const USER_FACING_ERROR_NAMES = new Set(["SupabaseAuthTokenError", "CrossTabLockError", "ReadOnlyError"]);
+const USER_FACING_ERROR_NAMES = new Set(["SupabaseAuthTokenError", "CrossTabLockError", "ReadOnlyError", "DataError"]);
 
 /**
  * 書き込み（追加・更新・削除）の失敗を、画面にそのまま出せる日本語メッセージの Error に変換する。

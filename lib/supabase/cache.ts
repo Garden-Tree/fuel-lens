@@ -21,7 +21,7 @@ export function writeCache(key: string, value: unknown): void {
   }
 }
 
-/** 車両一覧のキャッシュキー（useVehicles が書く） */
+/** 車両一覧のキャッシュキー（useVehicles のストアに被せた withCache が書く。lib/data/withOutage.ts） */
 export function vehiclesCacheKey(userId: string): string {
   return `fuel_lens_cache_vehicles_${userId}`;
 }
@@ -31,7 +31,7 @@ function recordsCachePrefix(userId: string): string {
   return `fuel_lens_cache_records_${userId}_`;
 }
 
-/** 車両ごとの記録一覧のキャッシュキー（useFuelRecords が書く）。vehicleId が null なら "all" */
+/** 車両ごとの記録一覧のキャッシュキー（useFuelRecords のストアに被せた withCache が書く）。vehicleId が null なら "all" */
 export function recordsCacheKey(userId: string, vehicleId: string | null): string {
   return `${recordsCachePrefix(userId)}${vehicleId ?? "all"}`;
 }
