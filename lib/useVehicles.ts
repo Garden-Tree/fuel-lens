@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import { notifyRecordsChanged, useWindowEvent } from "./events";
+import { notifyRecordsChanged, useWindowEvent, VEHICLES_CHANGED_EVENT } from "./events";
 import { SUPABASE_RETRY_EVENT, syncCacheOwner, useSupabaseOutage } from "./supabaseHealth";
 import { normalizeVehicle } from "./fillChain";
 import { pickSelected, selectedVehicleStorageKey, shouldPersistSelection } from "./vehicleSelection";
@@ -136,6 +136,12 @@ export function useVehicles() {
     void refreshVehicles();
   });
 
+  // 移行の再実行（useFuelRecords の初期化など）で車両一覧が変わったら再読み込みする。
+  // 初回の読み込みで移行した場合も、このフック自身の読み込みに加えてもう 1 回読み直すことになるが許容する
+  useWindowEvent(VEHICLES_CHANGED_EVENT, () => {
+    void refreshVehicles();
+  });
+
   /**
    * 車両を追加して選択する。settings（距離の入力方式・既定の燃料種別）は省略可（トリップ / 未指定）。
    * 未ログイン時は先に保存し、容量超過なら日本語の Error を投げて画面の一覧は変えない。
@@ -179,7 +185,14 @@ export function useVehicles() {
     const isDefault = vehicles[0]?.id === id;
     const s = requireStores(stores);
     // 順序は保存先で異なる（local: 車両の一覧を先に書く / cloud: 記録を先に削除）
-    await removeVehicleWithRecords(s, s.kind, id, { includeUnclassified: isDefault });
+    try {
+      await removeVehicleWithRecords(s, s.kind, id, { includeUnclassified: isDefault });
+    } catch (e) {
+      // cloud で記録の削除後に車両の削除が失敗すると、消えた記録が画面に残る。記録の一覧だけは読み直させる
+      // （local では何も変わっていないことがあるが、再読み込みが 1 回増えるだけで害はない）
+      notifyRecordsChanged({ vehicleId: id });
+      throw e;
+    }
 
     const updated = vehicles.filter(v => v.id !== id);
     setVehicles(updated);

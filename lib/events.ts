@@ -19,6 +19,18 @@ export function notifyRecordsChanged(detail: FuelRecordsChangedDetail = { bulk: 
   window.dispatchEvent(new CustomEvent(FUEL_RECORDS_CHANGED_EVENT, { detail }));
 }
 
+/** 別経路（移行の再実行など）で車両一覧が変わったことを useVehicles へ知らせる window イベント */
+export const VEHICLES_CHANGED_EVENT = "fuel_lens_vehicles_changed";
+
+/**
+ * 別経路（移行の再実行など）で車両一覧が変わったことを useVehicles へ知らせる（全インスタンスが再読み込みする）。
+ * SSR 中は何もしない。
+ */
+export function notifyVehiclesChanged(): void {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(new CustomEvent(VEHICLES_CHANGED_EVENT));
+}
+
 /**
  * window のイベントを購読するフック。handler は毎回の描画の最新のものを呼ぶ（handler が変わっても購読し直さない）。
  */

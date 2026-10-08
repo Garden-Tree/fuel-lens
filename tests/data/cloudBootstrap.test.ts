@@ -13,7 +13,7 @@ const veh = (id: string): Vehicle => ({ id, user_id: "u", name: id, type: "car" 
 function makeDeps(impl: Partial<Omit<CloudBootstrapDeps, "now">> = {}) {
   let now = 1_000_000;
   const deps = {
-    migrate: vi.fn<CloudBootstrapDeps["migrate"]>(impl.migrate ?? (async () => undefined)),
+    migrate: vi.fn<CloudBootstrapDeps["migrate"]>(impl.migrate ?? (async () => ({ didWrite: false }))),
     ensureDefaultVehicle: vi.fn<CloudBootstrapDeps["ensureDefaultVehicle"]>(impl.ensureDefaultVehicle ?? (async () => [])),
     hasLocalData: vi.fn<CloudBootstrapDeps["hasLocalData"]>(impl.hasLocalData ?? (() => false)),
     now: () => now,
@@ -33,7 +33,10 @@ describe("bootstrapCloud", () => {
   it("runs migrate then ensureDefaultVehicle once per user and shares the in-flight promise", async () => {
     const order: string[] = [];
     const { deps } = makeDeps({
-      migrate: vi.fn(async () => void order.push("migrate")),
+      migrate: vi.fn(async () => {
+        order.push("migrate");
+        return { didWrite: false };
+      }),
       ensureDefaultVehicle: vi.fn(async () => {
         order.push("ensure");
         return [];
@@ -43,7 +46,7 @@ describe("bootstrapCloud", () => {
     const p1 = bootstrapCloud(supabase, user, deps);
     const p2 = bootstrapCloud(supabase, user, deps);
     expect(p2).toBe(p1);
-    await expect(p1).resolves.toEqual({ migrationError: null, vehicles: [] });
+    await expect(p1).resolves.toEqual({ migrationError: null, vehicles: [], migrated: false });
     await bootstrapCloud(supabase, user, deps);
     expect(order).toEqual(["migrate", "ensure"]);
 
@@ -77,7 +80,7 @@ describe("bootstrapCloud", () => {
     expect(deps.ensureDefaultVehicle).toHaveBeenCalledTimes(1);
 
     // 直後（30 秒以内）は同じ結果を返し、退避⇄復元を繰り返さない
-    await expect(bootstrapCloud(supabase, user, deps)).resolves.toEqual({ migrationError: result.migrationError });
+    await expect(bootstrapCloud(supabase, user, deps)).resolves.toEqual({ migrationError: result.migrationError, migrated: false });
     expect(deps.migrate).toHaveBeenCalledTimes(1);
     advance(31_000);
     await bootstrapCloud(supabase, user, deps);
@@ -89,6 +92,7 @@ describe("bootstrapCloud", () => {
     const { deps } = makeDeps({
       migrate: vi.fn(async () => {
         if (fail) throw Object.assign({ message: "rls", code: "42501" }, { status: 403 });
+        return { didWrite: false };
       }),
       hasLocalData: vi.fn(() => true),
     });
@@ -97,7 +101,7 @@ describe("bootstrapCloud", () => {
     expect(first.migrationError).not.toBeNull();
 
     // 通常の呼び出しは 30 秒以内なら使い回す
-    await expect(bootstrapCloud(supabase, user, deps)).resolves.toEqual({ migrationError: first.migrationError });
+    await expect(bootstrapCloud(supabase, user, deps)).resolves.toEqual({ migrationError: first.migrationError, migrated: false });
     expect(deps.migrate).toHaveBeenCalledTimes(1);
 
     // force は使い回さず再実行する。並行する force 同士は同じ実行に合流する
@@ -106,7 +110,7 @@ describe("bootstrapCloud", () => {
     const p1 = bootstrapCloud(supabase, user, deps, { force: true });
     const p2 = bootstrapCloud(supabase, user, deps, { force: true });
     expect(p2).toBe(p1);
-    await expect(p1).resolves.toEqual({ migrationError: null, vehicles: [] });
+    await expect(p1).resolves.toEqual({ migrationError: null, vehicles: [], migrated: false });
     expect(deps.migrate).toHaveBeenCalledTimes(2);
 
     // 成功済みの結果はそのまま使い回す（force でもやり直さない）
@@ -130,7 +134,7 @@ describe("bootstrapCloud", () => {
         throw new SupabaseAuthTokenError();
       }),
     });
-    await expect(bootstrapCloud(supabase, nextUser(), deps)).resolves.toEqual({ migrationError: null, vehicles: [] });
+    await expect(bootstrapCloud(supabase, nextUser(), deps)).resolves.toEqual({ migrationError: null, vehicles: [], migrated: false });
   });
 
   it("rethrows an outage during migration without ensuring the default vehicle, and retries next time", async () => {
@@ -144,8 +148,8 @@ describe("bootstrapCloud", () => {
     await expect(bootstrapCloud(supabase, user, deps)).rejects.toBe(paused);
     expect(deps.ensureDefaultVehicle).not.toHaveBeenCalled();
 
-    deps.migrate.mockResolvedValue(undefined);
-    await expect(bootstrapCloud(supabase, user, deps)).resolves.toEqual({ migrationError: null, vehicles: [] });
+    deps.migrate.mockResolvedValue({ didWrite: false });
+    await expect(bootstrapCloud(supabase, user, deps)).resolves.toEqual({ migrationError: null, vehicles: [], migrated: false });
     expect(deps.migrate).toHaveBeenCalledTimes(2);
   });
 
@@ -158,8 +162,38 @@ describe("bootstrapCloud", () => {
     const user = nextUser();
     await expect(bootstrapCloud(supabase, user, deps)).rejects.toMatchObject({ status: 400 });
     deps.ensureDefaultVehicle.mockResolvedValue([]);
-    await expect(bootstrapCloud(supabase, user, deps)).resolves.toEqual({ migrationError: null, vehicles: [] });
+    await expect(bootstrapCloud(supabase, user, deps)).resolves.toEqual({ migrationError: null, vehicles: [], migrated: false });
     expect(deps.ensureDefaultVehicle).toHaveBeenCalledTimes(2);
+  });
+
+  describe("migrated in the result", () => {
+    it("is true when this run's migration wrote to Supabase (also for a concurrent caller), and false when the settled result is reused", async () => {
+      const { deps } = makeDeps({ migrate: vi.fn(async () => ({ didWrite: true })) });
+      const user = nextUser();
+      const p1 = bootstrapCloud(supabase, user, deps);
+      const p2 = bootstrapCloud(supabase, user, deps);
+      expect((await p1).migrated).toBe(true);
+      expect((await p2).migrated).toBe(true);
+
+      // 完了済みの結果の使い回しでは false（書き込みは前の呼び出しが通知済み）
+      const reused = await bootstrapCloud(supabase, user, deps);
+      expect(reused.migrated).toBe(false);
+      expect(deps.migrate).toHaveBeenCalledTimes(1);
+    });
+
+    it("is false when the migration wrote nothing or failed (non-outage)", async () => {
+      const { deps } = makeDeps();
+      expect((await bootstrapCloud(supabase, nextUser(), deps)).migrated).toBe(false);
+
+      const failing = makeDeps({
+        migrate: vi.fn(async () => {
+          throw Object.assign({ message: "rls", code: "42501" }, { status: 403 });
+        }),
+      });
+      const result = await bootstrapCloud(supabase, nextUser(), failing.deps);
+      expect(result.migrationError).not.toBeNull();
+      expect(result.migrated).toBe(false);
+    });
   });
 
   describe("vehicles in the result", () => {
