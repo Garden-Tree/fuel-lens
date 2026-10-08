@@ -134,7 +134,7 @@ describe("ManageVehiclesModal", () => {
       const { user } = setup();
       await user.click(screen.getByRole("button", { name: "「カブ」を編集" }));
       await user.click(screen.getAllByRole("radio", { name: /トリップメーター/ })[0]);
-      expect(screen.getByText(/トリップメーター方式に切り替えると/)).toBeInTheDocument();
+      expect(screen.getByText(/切り替え時点の値で走行距離として保存/)).toBeInTheDocument();
     });
 
     it("Escape: 1 回目は編集だけを取り消し、2 回目でモーダルを閉じる", async () => {

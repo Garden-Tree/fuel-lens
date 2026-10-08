@@ -351,6 +351,16 @@ describe("summarize", () => {
     expect(s.totalFuel).toBe(0);
   });
 
+  it("sums totals over totalsFrom (partial fills without cost included) while averages use records", () => {
+    const partial = rec({ total_distance: 120, fuel_amount: 8, total_cost: null, is_full: false });
+    const s = summarize(records, [...records, partial]);
+    expect(s.totalFuel).toBe(summarize(records).totalFuel + 8);
+    expect(s.totalDistance).toBe(summarize(records).totalDistance + 120);
+    expect(s.totalCost).toBe(summarize(records).totalCost);
+    expect(s.count).toBe(records.length);
+    expect(s.avgEfficiency).toBe(summarize(records).avgEfficiency);
+  });
+
   it("ignores NaN / Infinity values", () => {
     const s = summarize([
       rec({ total_distance: NaN, fuel_amount: Infinity, total_cost: NaN, fuel_efficiency: Infinity }),

@@ -61,7 +61,8 @@ export function buildStatsModel(records: ReadonlyArray<FuelRecord>, period: Peri
   const filteredRecords = filterByPeriod(records, period, today);
   // 統計に使える値（燃費 or 支払総額）を持つ記録を日付昇順で
   const validRecords = sortByDateAsc(filteredRecords.filter(hasStatsData));
-  const summary = summarize(validRecords);
+  // 平均は validRecords から、合計（走行距離・給油量・支払総額）は燃費も支払総額も無い部分給油・持ち越し行を含む期間内の全記録から
+  const summary = summarize(validRecords, filteredRecords);
 
   const efficiencySeries = buildEfficiencySeries(validRecords);
   // 参照線はサマリーカードと同じ Σkm/ΣL を使い、表示上の数値を一致させる

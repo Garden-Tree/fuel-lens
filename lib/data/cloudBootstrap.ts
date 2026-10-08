@@ -13,6 +13,8 @@
  * - 実行した呼び出し（と、その実行に合流した同時呼び出し）の結果には、既定車両の確保で取得済みの車両一覧（vehicles）が入る。
  *   呼び出し側は直後の一覧取得に使い回して、同じ GET を重ねて発行しない。完了済みの結果を使い回す呼び出しでは古い可能性があるので
  *   vehicles を外す
+ * - migrated は今回の実行で移行が Supabase へ書き込んだときだけ true（失敗・完了済みの結果の使い回しでは false）。
+ *   移行の再実行（useFuelRecords からの呼び出しなど）で車両が増えたことを、呼び出し側が useVehicles へ知らせるのに使う
  *
  * 投げる例外は生のエラー。フックは runWithOutageHandling（withOutage.ts）を通して分類・日本語化する。
  */
@@ -37,11 +39,16 @@ export type CloudBootstrapResult = {
    * （created_at → id 順。正規化前の生の行）。完了済みの結果を使い回すときは古い可能性があるので無い
    */
   vehicles?: Vehicle[];
+  /**
+   * 今回の実行で移行が Supabase へ書き込んだ（車両・記録が増えた）。移行の失敗時と、完了済みの結果を使い回すときは false。
+   * 実行中の呼び出しに合流した呼び出し側も同じ値を受け取る
+   */
+  migrated: boolean;
 };
 
 /** テスト用に差し替えられる依存 */
 export type CloudBootstrapDeps = {
-  migrate: (supabase: SupabaseClient, userId: string) => Promise<unknown>;
+  migrate: (supabase: SupabaseClient, userId: string) => Promise<{ didWrite: boolean }>;
   ensureDefaultVehicle: (supabase: SupabaseClient, userId: string) => Promise<Vehicle[]>;
   hasLocalData: (userId: string) => boolean;
   now: () => number;
@@ -93,19 +100,21 @@ export function bootstrapCloud(
   if (existing && canReuse(existing, userId, deps, force)) {
     // 実行中なら合流する（どちらの呼び出し側も新しい車両一覧を受け取る）。完了済みの結果の一覧は古い可能性があるので外す
     if (!existing.settled) return existing.promise;
-    return existing.promise.then(r => ({ migrationError: r.migrationError }));
+    // migrated も外す（書き込みは前の呼び出しが通知済み。使い回しのたびに再読み込みさせない）
+    return existing.promise.then(r => ({ migrationError: r.migrationError, migrated: false }));
   }
 
   const promise = (async (): Promise<CloudBootstrapResult> => {
     let migrationError: string | null = null;
+    let migrated = false;
     try {
-      await deps.migrate(supabase, userId);
+      ({ didWrite: migrated } = await deps.migrate(supabase, userId));
     } catch (e) {
       if (isOutage(e)) throw e;
       if (!isAuthTokenError(e)) migrationError = migrationErrorMessage(e);
     }
     const vehicles = await deps.ensureDefaultVehicle(supabase, userId);
-    return { migrationError, vehicles };
+    return { migrationError, vehicles, migrated };
   })();
 
   const entry: Entry = { promise };

@@ -6,6 +6,7 @@ import {
   isFuelType,
   normalizeRecord,
   normalizeVehicle,
+  planDistanceWriteBack,
   previewInChain,
   sanitizeMemo,
   sortForChain,
@@ -780,6 +781,55 @@ describe("applyFillChain — closed run totals (derived run_* fields)", () => {
     expect(pickRecordColumns(closed)).not.toHaveProperty("run_distance");
     expect(pickRecordColumns(closed)).not.toHaveProperty("run_fuel");
     expect(pickRecordColumns(closed)).not.toHaveProperty("run_cost");
+  });
+});
+
+describe("planDistanceWriteBack (odometer → trip switch)", () => {
+  it("writes back only the stale derived distance (a record inserted between two saved ones)", () => {
+    // A 01-01 odo 1000 / C 01-10 odo 1600 は 600 で保存 → 後から B 01-05 odo 1300 を追加（C の保存値は 600 のまま）
+    const a = rec({ id: "A", date: "2026-01-01", odometer: 1000, fuel_amount: 20, total_distance: null });
+    const b = rec({ id: "B", date: "2026-01-05", odometer: 1300, fuel_amount: 20, total_distance: 300 });
+    const c = rec({ id: "C", date: "2026-01-10", odometer: 1600, fuel_amount: 20, total_distance: 600 });
+    expect(planDistanceWriteBack([c, b, a])).toEqual([{ id: "C", total_distance: 300 }]);
+    // 書き戻した後のトリップモードの表示は、オドメーターモードの表示と一致する
+    const patched = [a, b, { ...c, total_distance: 300 }];
+    expect(distById(applyFillChain(patched, TRIP))).toEqual(distById(applyFillChain([a, b, c], ODO)));
+    expect(effById(applyFillChain(patched, TRIP))).toEqual({ A: null, B: 15, C: 15 });
+  });
+
+  it("returns nothing when the stored distances already match the chain", () => {
+    const list = [
+      rec({ id: "A", date: "2026-01-01", odometer: 1000, fuel_amount: 20, total_distance: null }),
+      rec({ id: "B", date: "2026-01-05", odometer: 1300, fuel_amount: 20, total_distance: 300 }),
+      rec({ id: "C", date: "2026-01-10", odometer: 1600.4, fuel_amount: 20, total_distance: 300.4 }),
+    ];
+    expect(planDistanceWriteBack(list)).toEqual([]);
+    expect(planDistanceWriteBack([])).toEqual([]);
+  });
+
+  it("writes back a distance that was stored as null / NaN / undefined when the chain now has one", () => {
+    const list = [
+      rec({ id: "A", date: "2026-01-01", odometer: 1000, total_distance: null }),
+      rec({ id: "B", date: "2026-01-05", odometer: 1200, total_distance: Number.NaN }),
+      rec({ id: "C", date: "2026-01-10", odometer: 1500, total_distance: undefined as unknown as null }),
+    ];
+    expect(planDistanceWriteBack(list)).toEqual([
+      { id: "B", total_distance: 200 },
+      { id: "C", total_distance: 300 },
+    ]);
+  });
+
+  it("keeps the stored value of records with no derived distance (first, carry rows, missed_previous)", () => {
+    // 区間が出ない記録の保存値は、トリップモードで入力した値（またはオドメーターモードで保存した null）なので書き戻さない
+    const list = [
+      rec({ id: "A", date: "2026-01-01", odometer: 1000, total_distance: 250 }),
+      rec({ id: "B", date: "2026-01-03", odometer: null, total_distance: 120, is_full: false }),
+      rec({ id: "C", date: "2026-01-04", odometer: null, total_distance: null }),
+      rec({ id: "D", date: "2026-01-05", odometer: 1400, total_distance: 400 }),
+      rec({ id: "E", date: "2026-01-08", odometer: 1700, total_distance: 90, missed_previous: true }),
+      rec({ id: "F", date: "2026-01-10", odometer: 1900, total_distance: 150 }),
+    ];
+    expect(planDistanceWriteBack(list)).toEqual([{ id: "F", total_distance: 200 }]);
   });
 });
 

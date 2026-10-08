@@ -1,10 +1,11 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import { notifyRecordsChanged, useWindowEvent } from "./events";
+import { notifyRecordsChanged, useWindowEvent, VEHICLES_CHANGED_EVENT } from "./events";
 import { SUPABASE_RETRY_EVENT, syncCacheOwner, useSupabaseOutage } from "./supabaseHealth";
-import { normalizeVehicle } from "./fillChain";
+import { distanceModeOf, normalizeVehicle, planDistanceWriteBack } from "./fillChain";
 import { pickSelected, selectedVehicleStorageKey, shouldPersistSelection } from "./vehicleSelection";
 import { applyVehiclePatch, sanitizeVehicleSettings } from "./data/columns";
 import { LOCAL_DEFAULT_VEHICLE, removeVehicleWithRecords } from "./data/localStore";
+import { recordScopeOf } from "./data/scope";
 import { DataError } from "./data/types";
 import { loadErrorMessage, requireStores, useDataStores } from "./data/useDataStores";
 import type { Vehicle, VehicleSettings, VehicleType } from "./types";
@@ -136,6 +137,12 @@ export function useVehicles() {
     void refreshVehicles();
   });
 
+  // 移行の再実行（useFuelRecords の初期化など）で車両一覧が変わったら再読み込みする。
+  // 初回の読み込みで移行した場合も、このフック自身の読み込みに加えてもう 1 回読み直すことになるが許容する
+  useWindowEvent(VEHICLES_CHANGED_EVENT, () => {
+    void refreshVehicles();
+  });
+
   /**
    * 車両を追加して選択する。settings（距離の入力方式・既定の燃料種別）は省略可（トリップ / 未指定）。
    * 未ログイン時は先に保存し、容量超過なら日本語の Error を投げて画面の一覧は変えない。
@@ -179,7 +186,14 @@ export function useVehicles() {
     const isDefault = vehicles[0]?.id === id;
     const s = requireStores(stores);
     // 順序は保存先で異なる（local: 車両の一覧を先に書く / cloud: 記録を先に削除）
-    await removeVehicleWithRecords(s, s.kind, id, { includeUnclassified: isDefault });
+    try {
+      await removeVehicleWithRecords(s, s.kind, id, { includeUnclassified: isDefault });
+    } catch (e) {
+      // cloud で記録の削除後に車両の削除が失敗すると、消えた記録が画面に残る。記録の一覧だけは読み直させる
+      // （local では何も変わっていないことがあるが、再読み込みが 1 回増えるだけで害はない）
+      notifyRecordsChanged({ vehicleId: id });
+      throw e;
+    }
 
     const updated = vehicles.filter(v => v.id !== id);
     setVehicles(updated);
@@ -191,11 +205,32 @@ export function useVehicles() {
 
   /**
    * 車両の名前・種別を更新する。settings を渡すと距離の入力方式・既定の燃料種別も同じ 1 回の更新で保存する
-   * （省略したキーは変更しない）。方式を切り替えても既存の記録は変更しない（表示は読み取り時に再計算される）。
+   * （省略したキーは変更しない）。
+   * オドメーター → トリップメーターへ切り替えるときは、先にその車両の記録の区間距離を連鎖計算（オドメーターモード）の値で
+   * 書き戻す（planDistanceWriteBack。保存値は保存時点の導出値で古いことがあり、トリップモードは保存値をそのまま使うため）。
+   * 書き戻しが途中で失敗したら車両は更新せずにストアの日本語エラーを投げる（方式はオドメーターのままなので表示は変わらない）。
+   * それ以外の切り替えでは記録は変更しない（表示は読み取り時に再計算される）。
    */
   const updateVehicle = async (id: string, name: string, type: VehicleType, settings?: VehicleSettings) => {
+    const s = requireStores(stores);
     const patch = { ...sanitizeVehicleSettings(settings), name, type };
-    await requireStores(stores).vehicles.update(id, patch);
+    const current = vehicles.find(v => v.id === id);
+    let wroteBack = false;
+    try {
+      if (distanceModeOf(current) === "odometer" && patch.distance_mode === "trip") {
+        // useFuelRecords と同じ範囲（既定車両 = vehicles[0] なら未分類の記録も含む）
+        const records = await s.records.list(recordScopeOf(id, vehicles[0]?.id));
+        for (const { id: recordId, total_distance } of planDistanceWriteBack(records)) {
+          await s.records.update(recordId, { total_distance });
+          wroteBack = true;
+        }
+      }
+      await s.vehicles.update(id, patch);
+    } finally {
+      // 途中で失敗しても、書き戻した記録は保存済みなので一覧は読み直させる
+      // （方式がオドメーターのままなら表示は再計算されるので変わらない）
+      if (wroteBack) notifyRecordsChanged({ vehicleId: id });
+    }
     setVehicles(prev => prev.map(v => (v.id === id ? applyVehiclePatch(v, patch) : v)));
   };
 

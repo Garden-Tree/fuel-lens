@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { isUnclassifiedRecord, isUuid, sortRecordsByDateDesc } from "./recordFilters";
-import { FUEL_RECORDS_CHANGED_EVENT, notifyRecordsChanged, useWindowEvent } from "./events";
+import { FUEL_RECORDS_CHANGED_EVENT, notifyRecordsChanged, notifyVehiclesChanged, useWindowEvent } from "./events";
 import { SUPABASE_RETRY_EVENT, useSupabaseOutage } from "./supabaseHealth";
 import { applyFillChain, distanceModeOf, normalizeRecord } from "./fillChain";
 import { applyRecordPatch } from "./data/columns";
@@ -85,11 +85,19 @@ export function useFuelRecords(
   const [error, setError] = useState<string | null>(null);
   const outage = useSupabaseOutage();
   const fetchCounter = useRef(0);
+  // 実行中の一覧の読み込みの数。書き込みの完了時に読み込みが実行中なら、その応答は書き込み前の一覧の可能性があるので読み直す
+  const inFlightLoads = useRef(0);
   // 「再試行」イベントの再読み込みだけ、クラウドの初期化の失敗メモ（30 秒）を飛ばす
   const forceBootstrap = useRef(false);
 
   const readOnly = isSignedIn && outage != null;
   const scope = useMemo(() => recordScopeOf(selectedVehicleId, defaultVehicleId), [selectedVehicleId, defaultVehicleId]);
+  // 最新の描画の scope。書き込みの完了後の絞り込みは、書き込みを始めた描画の scope ではなくこちらを使う
+  // （書き込み中に車両を切り替えると、古い scope で新しい車両の一覧を絞り込んで空にしたり、前の車両の記録を混ぜたりするため）
+  const scopeRef = useRef(scope);
+  useEffect(() => {
+    scopeRef.current = scope;
+  }, [scope]);
 
   // 車両ごとの距離の入力方式。vehicles 配列の参照が変わっても、方式が同じなら同じ Map を保つ
   const modesKey = JSON.stringify((vehicles ?? []).map(v => [v.id, distanceModeOf(v)]));
@@ -115,11 +123,13 @@ export function useFuelRecords(
     if (!stores) return;
 
     if (stores.kind === "local") {
+      inFlightLoads.current++;
       try {
         const list = await stores.records.list(scope);
         if (!isCurrent()) return;
         setRecords(sortRecordsByDateDesc(list));
       } finally {
+        inFlightLoads.current--;
         if (isCurrent()) setLoading(false);
       }
       return;
@@ -136,9 +146,14 @@ export function useFuelRecords(
       return;
     }
 
+    inFlightLoads.current++;
     try {
       // ローカルデータの移行と既定車両の確保（タブ内で 1 回。useVehicles と共有）
-      const { migrationError } = await stores.bootstrap({ force });
+      const { migrationError, migrated } = await stores.bootstrap({ force });
+      // 移行の再実行（車両切り替え・FUEL_RECORDS_CHANGED など）で車両が増えたら useVehicles に読み直させる。
+      // 初回の読み込みで移行した場合は useVehicles も migrated: true を受け取り、もう 1 回読み直すことになるが許容する。
+      // この読み込みが古くなっていても、書き込みが起きた事実は変わらないので isCurrent より先に通知する
+      if (migrated) notifyVehiclesChanged();
       if (!isCurrent()) return;
       // 障害以外の移行失敗（ローカルデータは復元済み）。未アップロードであることを error で知らせる
       if (migrationError) setError(migrationError);
@@ -154,9 +169,16 @@ export function useFuelRecords(
       // 全車両の記録を読み込むフォールバックはしない。最後に同期した一覧があれば閲覧専用で表示する。
       setRecords(sortRecordsByDateDesc(normalizeAll(stores.records.cached(scope) ?? [])));
     } finally {
+      inFlightLoads.current--;
       if (isCurrent()) setLoading(false);
     }
   }, [isLoaded, stores, scope, enabled]);
+
+  // 最新の描画の loadData（書き込みの完了後に読み直すときに、書き込みを始めた描画の古い scope で読まないように）
+  const loadDataRef = useRef(loadData);
+  useEffect(() => {
+    loadDataRef.current = loadData;
+  }, [loadData]);
 
   useEffect(() => {
     const currentFetchId = ++fetchCounter.current;
@@ -169,8 +191,23 @@ export function useFuelRecords(
     loadData(currentFetchId);
   });
 
-  /** 選択中の車両（と、既定車両なら未分類）の記録だけを日付の降順で残す。読み込み時と同じ判定 */
-  const inScope = (list: FuelRecord[]) => sortRecordsByDateDesc(list.filter(r => matchesRecordScope(r, scope)));
+  /**
+   * 選択中の車両（と、既定車両なら未分類）の記録だけを日付の降順で残す。読み込み時と同じ判定。
+   * 書き込みの完了後に呼ぶので、関数を作った描画の scope ではなく最新の scope（scopeRef）で絞り込む
+   */
+  const inScope = (list: FuelRecord[]) =>
+    sortRecordsByDateDesc(list.filter(r => matchesRecordScope(r, scopeRef.current)));
+
+  /**
+   * 書き込みの完了時に一覧の読み込みが実行中なら、読み込みをやり直す。
+   * 実行中の GET が書き込み前の一覧を返すと、書き込みを反映した state とキャッシュをその古い一覧で上書きしてしまうため
+   * （fetchCounter を進めて古い読み込みの結果を捨てる）。読み込みが実行中でなければ何もしない（通常は余計な GET を出さない）
+   */
+  const reloadIfLoadInFlight = () => {
+    if (inFlightLoads.current === 0) return;
+    const currentFetchId = ++fetchCounter.current;
+    void loadDataRef.current(currentFetchId);
+  };
 
   /**
    * 選択中の車両に記録を追加する。0004 の列（odometer / is_full / missed_previous / fuel_type / memo）は省略可
@@ -181,6 +218,7 @@ export function useFuelRecords(
     // vehicle_id は選択中の車両、created_at はストアが決める（呼び出し側の値は使わない）
     const added = await requireStores(stores).records.add({ ...record, vehicle_id: selectedVehicleId ?? null });
     setRecords(prev => inScope([added, ...prev]));
+    reloadIfLoadInFlight();
     return added;
   };
 
@@ -191,11 +229,13 @@ export function useFuelRecords(
   const updateRecord = async (id: string, updates: Partial<FuelRecord>) => {
     await requireStores(stores).records.update(id, updates);
     setRecords(prev => inScope(prev.map(r => (r.id === id ? applyRecordPatch(r, updates) : r))));
+    reloadIfLoadInFlight();
   };
 
   const deleteRecord = async (id: string) => {
     await requireStores(stores).records.remove(id);
     setRecords(prev => prev.filter(r => r.id !== id));
+    reloadIfLoadInFlight();
   };
 
   /**

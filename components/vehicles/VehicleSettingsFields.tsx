@@ -19,9 +19,12 @@ export const DISTANCE_MODE_SHORT_LABELS: Readonly<Record<DistanceMode, string>> 
 const ODOMETER_SWITCH_NOTE =
   "オドメーターが入っていない既存の記録は、区間距離と燃費が「不明」になります（記録は消えません）。";
 
-/** オドメーターからトリップメーターへ戻すときの注意（区間距離はオドメーター差分の導出値で、保存値を使わなくなるため） */
+/**
+ * オドメーターからトリップメーターへ戻すときの注意。切り替え時に、オドメーター差分の区間距離を走行距離として保存し直す
+ * （lib/useVehicles.ts の updateVehicle と planDistanceWriteBack）
+ */
 const TRIP_SWITCH_NOTE =
-  "トリップメーター方式に切り替えると、オドメーターから自動計算していた区間距離は表示されなくなります（走行距離を入力した記録のみ表示）";
+  "トリップメーター方式に切り替えると、オドメーターから自動計算していた区間距離を切り替え時点の値で走行距離として保存し、以後はその値を表示します（記録は消えません）";
 
 /** 既存の車両の方式を from → to に切り替えるときの注意。切り替えないなら null */
 export function modeSwitchNote(from: DistanceMode, to: DistanceMode): string | null {
