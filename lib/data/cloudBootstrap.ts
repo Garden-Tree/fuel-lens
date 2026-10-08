@@ -10,6 +10,9 @@
  *   それ以外（RLS 違反など。ローカルデータは復元済み）は migrationError に日本語メッセージを入れて続行する。
  *   認証トークン欠落は続く既定車両の確保でも失敗し、再ログインの案内になるので migrationError には入れない
  * - 既定車両の確保の失敗はそのまま投げ、次の呼び出しで最初からやり直す
+ * - 実行した呼び出し（と、その実行に合流した同時呼び出し）の結果には、既定車両の確保で取得済みの車両一覧（vehicles）が入る。
+ *   呼び出し側は直後の一覧取得に使い回して、同じ GET を重ねて発行しない。完了済みの結果を使い回す呼び出しでは古い可能性があるので
+ *   vehicles を外す
  *
  * 投げる例外は生のエラー。フックは runWithOutageHandling（withOutage.ts）を通して分類・日本語化する。
  */
@@ -18,6 +21,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { hasLocalDataToMigrate, migrateLocalData, migrationErrorMessage } from "../migrateLocalData";
 import { classifySupabaseFailure } from "../supabase/errors";
 import { isAuthTokenError } from "../supabaseClient";
+import type { Vehicle } from "../types";
 import { ensureDefaultVehicle } from "./cloudStore";
 
 export type BootstrapOptions = {
@@ -28,12 +32,17 @@ export type BootstrapOptions = {
 export type CloudBootstrapResult = {
   /** 移行が障害以外の理由で失敗した（ローカルデータはブラウザに残っている）。画面の error に出す日本語。成功なら null */
   migrationError: string | null;
+  /**
+   * 今回の呼び出しが実際に初期化を実行したときだけ入る、ensureDefaultVehicle が返した車両一覧
+   * （created_at → id 順。正規化前の生の行）。完了済みの結果を使い回すときは古い可能性があるので無い
+   */
+  vehicles?: Vehicle[];
 };
 
 /** テスト用に差し替えられる依存 */
 export type CloudBootstrapDeps = {
   migrate: (supabase: SupabaseClient, userId: string) => Promise<unknown>;
-  ensureDefaultVehicle: (supabase: SupabaseClient, userId: string) => Promise<unknown>;
+  ensureDefaultVehicle: (supabase: SupabaseClient, userId: string) => Promise<Vehicle[]>;
   hasLocalData: (userId: string) => boolean;
   now: () => number;
 };
@@ -81,7 +90,11 @@ export function bootstrapCloud(
   { force = false }: BootstrapOptions = {}
 ): Promise<CloudBootstrapResult> {
   const existing = entries.get(userId);
-  if (existing && canReuse(existing, userId, deps, force)) return existing.promise;
+  if (existing && canReuse(existing, userId, deps, force)) {
+    // 実行中なら合流する（どちらの呼び出し側も新しい車両一覧を受け取る）。完了済みの結果の一覧は古い可能性があるので外す
+    if (!existing.settled) return existing.promise;
+    return existing.promise.then(r => ({ migrationError: r.migrationError }));
+  }
 
   const promise = (async (): Promise<CloudBootstrapResult> => {
     let migrationError: string | null = null;
@@ -91,8 +104,8 @@ export function bootstrapCloud(
       if (isOutage(e)) throw e;
       if (!isAuthTokenError(e)) migrationError = migrationErrorMessage(e);
     }
-    await deps.ensureDefaultVehicle(supabase, userId);
-    return { migrationError };
+    const vehicles = await deps.ensureDefaultVehicle(supabase, userId);
+    return { migrationError, vehicles };
   })();
 
   const entry: Entry = { promise };

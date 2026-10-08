@@ -99,7 +99,7 @@ export function useVehicles() {
       // アップロードされていないことが利用者に伝わるよう error に表示する
       if (migrationError) setError(migrationError);
 
-      // クラウドから車両一覧を取得（1 台もなければ既定車両を自動生成。新しい列は既定値で補完済み）
+      // 車両一覧を取得（初期化で取得済みならそれを使い回して再取得しない。1 台もなければ既定車両を自動生成済み。新しい列は既定値で補完済み）
       const list = await stores.vehicles.list();
       if (!isCurrent()) return;
       setVehicles(list);

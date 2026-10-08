@@ -45,7 +45,7 @@ FuelLens の構成、データの流れ、主要なモジュールの役割を�
 | `lib/importers/fuelio.ts` / `lib/importers/fuellensCsv.ts` | CSV の取り込み（Fuelio / FuelLens の CSV → バックアップ形式）。純粋関数 |
 | `lib/useVehicles.ts` / `lib/useFuelRecords.ts` / `lib/useRecordForm.ts` | データフックとフォーム状態（[4 章](#4-フック-api)）。フォームの純粋なヘルパーは `lib/recordDraft.ts` |
 | `lib/useBackdropClose.ts` | モーダルの背景クリックで閉じるハンドラ（ドラッグでの誤閉じを防ぐ） |
-| `lib/data/` | データアダプタ層（[2 章](#データアダプタ層libdata)）。`types.ts`（`RecordStore` / `VehicleStore` / `DataError`）、`localStore.ts`（localStorage の実装と `LOCAL_*` キー・`writeLocalJson`）、`cloudStore.ts`（Supabase の実装と `ensureDefaultVehicle` / `ensureUserRow` / `withStatus`）、`withOutage.ts`（`withOutageHandling` / `withCache`）、`cloudBootstrap.ts`（移行 → 既定車両の確保をタブ内で 1 回）、`useDataStores.ts`（ログイン状態でストアを選ぶフック）、`columns.ts` / `scope.ts`（列の検証・パッチ、一覧の範囲。純粋関数） |
+| `lib/data/` | データアダプタ層（[2 章](#データアダプタ層libdata)）。`types.ts`（`RecordStore` / `VehicleStore` / `DataError`）、`localStore.ts`（localStorage の実装と `LOCAL_*` キー・`writeLocalJson`）、`cloudStore.ts`（Supabase の実装と `ensureDefaultVehicle` / `ensureUserRow` / `withStatus`）、`withOutage.ts`（`withOutageHandling` / `withCache`）、`cloudBootstrap.ts`（移行 → 既定車両の確保をタブ内で 1 回）、`primedVehicles.ts`（取得済みの車両一覧を最初の `list()` に 1 回だけ返す）、`useDataStores.ts`（ログイン状態でストアを選ぶフック）、`columns.ts` / `scope.ts`（列の検証・パッチ、一覧の範囲。純粋関数） |
 | `lib/migrateLocalData.ts` | ローカル → クラウドの移行（[5 章](#5-ローカル--クラウド移行)）。`LOCAL_*` / `writeLocalJson` / `CrossTabLockError` は互換のため再エクスポート |
 | `lib/crossTabLock.ts` | ユーザー単位のクロスタブ排他ロック `withCrossTabLock`（Web Locks + localStorage リース）と `CrossTabLockError` |
 | `lib/supabaseClient.ts` | ユーザーごとの Supabase クライアント（Clerk JWT 付き） |
@@ -104,7 +104,7 @@ useVehicles / useFuelRecords
 | `localStore.ts` | `createLocalStores(storage?)`。キー `fuel_lens_data` / `fuel_lens_vehicles`、ID（記録 `Date.now()`、復元 `restored-<時刻36進>-<連番>`、車両 `local-vehicle-<時刻>`）、車両が無ければ `default-car`、未分類の保存先は `default-car`、既定車両の削除で未分類も削除。保存失敗は日本語の Error（`writeLocalJson`） |
 | `cloudStore.ts` | `createCloudStores(supabase, userId)`。生の層で、失敗は `status` 付きの Supabase エラーをそのまま投げる（保存前の検証だけ日本語の `DataError`）。クエリの詳細は下 |
 | `withOutage.ts` | `withOutageHandling(store, { isReadOnly, onFailure, onRecover })`: 分類 → `setOutage` → 日本語の `DataError` への変換と、書き込み前の閲覧専用ガードを 1 か所で行う（`list` の成功で `clearOutage`）。`withCache(store, { key })`: `list` の成功でキャッシュを書き、成功した書き込みも反映する。読み込み失敗時はフックが `cached()` で最後に同期した一覧を表示する |
-| `cloudBootstrap.ts` | `bootstrapCloud(supabase, userId, deps?, { force? })`: `migrateLocalData` → `ensureDefaultVehicle` を userId ごとにタブ内で 1 回（[5 章](#5-ローカル--クラウド移行)） |
+| `cloudBootstrap.ts` | `bootstrapCloud(supabase, userId, deps?, { force? })`: `migrateLocalData` → `ensureDefaultVehicle` を userId ごとにタブ内で 1 回（[5 章](#5-ローカル--クラウド移行)）。結果は取得済みの車両一覧（`vehicles`）を運び、直後の最初の `vehicles.list()` はそれを使い回す（2 回目の GET を発行しない。`primedVehicles.ts`） |
 | `useDataStores.ts` | ログイン状態に応じたストア（クラウドは userId・getToken ごとにメモ化）。フックのアンマウント・ユーザー切り替え後に届いた応答ではキャッシュを書かない |
 | `columns.ts` / `scope.ts` | `pickRecordColumns`（保存する列のホワイトリストと検証）、`sanitizeVehicleSettings`、`applyRecordPatch` / `applyVehiclePatch`、`recordScopeOf` / `matchesRecordScope`（`matchesSelectedVehicle` と同じ判定） |
 
@@ -170,7 +170,7 @@ useVehicles / useFuelRecords
 `addVehicle(name, type, settings?)`, `addVehicles(items)`, `updateVehicle(id, name, type, settings?)`, `deleteVehicle(id)`, `refreshVehicles()`。
 
 - ログイン中は一覧を読む前にクラウドの初期化（`migrateLocalData` → `ensureDefaultVehicle`。タブ内で userId ごとに 1 回）を待ちます。
-  一覧は `VehicleStore.list()`（1 台も無ければ既定車両を作成）です。
+  一覧は `VehicleStore.list()`（1 台も無ければ既定車両を作成）です。初期化の結果が取得済みの車両一覧を運ぶので、その直後の最初の `list()` は再取得せず使い回します（`lib/data/primedVehicles.ts`）。
 - 読み込みに失敗したときはローカルの既定車両へフォールバックせず、最後に同期した一覧（キャッシュ）を表示します。
 - `settings` は `VehicleSettings`（`{ distance_mode?, default_fuel_type? }`）。省略したキーは、追加ではトリップ / 未指定、更新では変更なしです。
   不明な値は `sanitizeVehicleSettings` が捨てます。更新は名前・種別・設定を 1 回の update で保存し、方式を切り替えても既存の記録は変更しません（表示は読み取り時に再計算される）。
@@ -282,6 +282,7 @@ useVehicles / useFuelRecords
 
 localStorage から Supabase へのコピーは、`lib/migrateLocalData.ts` の `migrateLocalData(supabase, userId)` だけが行います。
 呼び出し元はクラウドの初期化 `bootstrapCloud`（`lib/data/cloudBootstrap.ts`）だけで、`useVehicles` と `useFuelRecords` はクラウドから一覧を読む前にこれを待ちます。
+初期化を実行した呼び出し（実行中に合流した呼び出しを含む）の結果は、取得済みの車両一覧 `vehicles` を運びます（完了済みの結果の使い回しでは古い可能性があるので外す）。`useDataStores` が次の `vehicles.list()` に 1 回だけ使い回すので、起動直後に同じ GET が 2 回飛びません。
 
 - **初期化は userId ごとにタブ内で 1 回**: `migrateLocalData` → `ensureDefaultVehicle` を実行し、実行中は同じ Promise を共有、完了後は結果を使い回します。
   ただし移行するローカルデータ（`fuel_lens_data` / `fuel_lens_vehicles` / 退避キー）が残っていれば（ログアウト中に記録した等）やり直します（`hasLocalDataToMigrate`）。
