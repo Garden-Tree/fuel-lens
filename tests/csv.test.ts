@@ -10,7 +10,7 @@ import {
   formatRecordExtraCsvFields,
   toSafeFilenamePart,
 } from "@/lib/csv";
-import { parseCsvRows } from "@/lib/importers/fuelio";
+import { parseCsvRows } from "@/lib/importers/csvParse";
 import { parseFuelLensCsv } from "@/lib/importers/fuellensCsv";
 import type { FuelRecord } from "@/lib/types";
 

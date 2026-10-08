@@ -1,25 +1,14 @@
 import { isFuelType } from "@/lib/fillChain";
+import { efficiencyNullReason, formatOdometer } from "@/lib/format";
 import { FUEL_TYPE_LABELS, type FuelRecord } from "@/lib/types";
+
+// 互換: 実体は lib/format.ts（既存の import を壊さないため再エクスポートする）
+export { efficiencyNullReason, formatOdometer };
 
 /**
  * 記録カード（/app の最新記録・/history）の表示用ヘルパー。
  * 仕様は docs/design-fill-chain.md 4 章「履歴カード」。
  */
-
-/** 燃費が null の理由（短い文言）。燃費があれば null */
-export function efficiencyNullReason(record: Pick<FuelRecord, "fuel_efficiency" | "is_full" | "fuel_amount">): string | null {
-  if (record.fuel_efficiency) return null;
-  if (record.is_full === false) return "部分給油（次の満タンで計算）";
-  if (record.fuel_amount == null || record.fuel_amount <= 0) return "給油量不明";
-  return "区間不明";
-}
-
-/** オドメーターの表示（例: 「ODO 12,345 km」）。未入力なら「ODO 未入力」 */
-export function formatOdometer(odometer: number | null | undefined): string {
-  return typeof odometer === "number" && Number.isFinite(odometer)
-    ? `ODO ${odometer.toLocaleString("ja-JP", { maximumFractionDigits: 1 })} km`
-    : "ODO 未入力";
-}
 
 /** 部分給油・記録漏れ・燃料種別のバッジ。どれも無ければ何も描画しない */
 export default function RecordBadges({

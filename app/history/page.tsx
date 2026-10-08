@@ -1,18 +1,16 @@
 "use client";
 
-import { useState, useMemo, useCallback, useEffect, useRef } from "react";
-import Link from "next/link";
-import { SignedIn, SignedOut, SignInButton, UserButton } from "@clerk/nextjs";
-import { ArrowLeft, Trash2, MapPin, Calendar, BarChart3, Edit2, Download, Car } from "lucide-react";
+import { useState, useMemo } from "react";
+import { Trash2, MapPin, Calendar, BarChart3, Edit2, Download, Car } from "lucide-react";
 
-import { useFuelRecords } from "@/lib/useFuelRecords";
 import type { FuelRecord } from "@/lib/types";
 import EditFuelRecordForm from "@/components/EditFuelRecordForm";
-import { useVehicles } from "@/lib/useVehicles";
+import { useVehicleScope } from "@/lib/useVehicleScope";
 import VehicleSelector from "@/components/VehicleSelector";
+import { HookErrorLine, PageHeader, ReadOnlyCaption, type HeaderLink } from "@/components/AppShell";
 import { useToast } from "@/components/Toast";
 import { useRecordForm } from "@/lib/useRecordForm";
-import { distanceModeOf, formChainPosition, openRunBefore, previousOdometer } from "@/lib/fillChain";
+import { openRunBefore, previousOdometer } from "@/lib/fillChain";
 import RecordBadges, { efficiencyNullReason, formatOdometer } from "@/components/RecordBadges";
 import { normalizeDateString } from "@/lib/dates";
 import {
@@ -35,37 +33,31 @@ function createdAtMs(createdAt: string | null | undefined): number {
 /** 月フィルタの選択肢（"1"〜"12"） */
 const MONTH_OPTIONS: readonly string[] = Array.from({ length: 12 }, (_, i) => String(i + 1));
 
+/** ヘッダーのリンク（グラフを見る） */
+const HISTORY_HEADER_LINKS: readonly HeaderLink[] = [
+  { href: "/stats", label: "グラフを見る", icon: BarChart3, showLabelFrom: "sm", tone: "solid" },
+];
+
 export default function HistoryPage() {
   const { toast, confirm } = useToast();
+  // 選択中の車両とその記録（useVehicles + useFuelRecords）。records は年・月フィルタ前の、この車両（と表示する未分類）の全記録
   const {
     vehicles,
     selectedVehicleId,
     setSelectedVehicleId,
-    addVehicle,
-    deleteVehicle,
-    updateVehicle,
-    loading: vehiclesLoading,
-    error: vehiclesError,
-    readOnly: vehiclesReadOnly,
-  } = useVehicles();
-  // 車両一覧の読み込みが終わるまでレコードの読み込みは保留する。
-  // vehicles は連鎖計算（オドメーターモードの区間距離・部分給油の燃費）で各車両の方式を知るために渡す
-  const {
+    selectedVehicle,
+    distanceMode,
     records,
-    deleteRecord,
-    updateRecord,
-    loading: recordsLoading,
-    error: recordsError,
+    vehiclesLoading,
+    loading: isLoading,
+    error: hookError,
     readOnly,
-  } = useFuelRecords(selectedVehicleId, vehicles[0]?.id, { enabled: !vehiclesLoading, vehicles });
-  const selectedVehicle = vehicles.find(v => v.id === selectedVehicleId) ?? null;
-  const distanceMode = distanceModeOf(selectedVehicle);
-  // フォームの getPreviousOdometer / getOpenRun は開いたときに渡すため、最新の records を ref 経由で読む
-  // （フォームを開いている間に記録が再読み込みされても反映する）
-  const recordsRef = useRef(records);
-  useEffect(() => {
-    recordsRef.current = records;
-  }, [records]);
+    scopeKey,
+    vehicleActions,
+    recordActions: { deleteRecord, updateRecord },
+    getPreviousOdometer,
+    getOpenRun,
+  } = useVehicleScope();
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const form = useRecordForm();
@@ -81,22 +73,21 @@ export default function HistoryPage() {
   const [filterYear, setFilterYear] = useState<string>("all");
   const [filterMonth, setFilterMonth] = useState<string>("all");
 
-  // 車両を切り替えたら、開いている編集フォームと「移動先の選択」を閉じ、年・月フィルタも解除する。
-  // 開いたままだと、切り替え前の車両の記録を更新してしまうため。
+  // 車両または距離の入力方式を切り替えたら、開いている編集フォームを閉じる。
+  // 開いたままだと、切り替え前の車両の記録を更新してしまう・入力欄が走行距離 / オドメーターで合わなくなるため。
   // （エフェクトではなく「前回の値を state に保持してレンダー中に調整する」React 推奨パターン）
-  const [formVehicleId, setFormVehicleId] = useState(selectedVehicleId);
-  if (formVehicleId !== selectedVehicleId) {
-    setFormVehicleId(selectedVehicleId);
+  const [formScopeKey, setFormScopeKey] = useState(scopeKey);
+  if (formScopeKey !== scopeKey) {
+    setFormScopeKey(scopeKey);
     setEditingId(null);
+  }
+  // 車両を切り替えたら「移動先の選択」も閉じ、年・月フィルタも解除する（方式の切り替えでは解除しない）
+  const [filterVehicleId, setFilterVehicleId] = useState(selectedVehicleId);
+  if (filterVehicleId !== selectedVehicleId) {
+    setFilterVehicleId(selectedVehicleId);
     setMovingId(null);
     setFilterYear("all");
     setFilterMonth("all");
-  }
-  // 距離の入力方式を切り替えたら、開いている編集フォームを閉じる（入力欄が走行距離 / オドメーターで合わなくなるため）
-  const [formDistanceMode, setFormDistanceMode] = useState(distanceMode);
-  if (formDistanceMode !== distanceMode) {
-    setFormDistanceMode(distanceMode);
-    setEditingId(null);
   }
 
   const availableYears = useMemo(() => {
@@ -154,8 +145,6 @@ export default function HistoryPage() {
     });
   }, [filteredRecords, sortType]);
 
-  const isLoading = vehiclesLoading || recordsLoading;
-
   const handleDelete = async (id: string) => {
     if (busyId || readOnly) return;
     // 確認ダイアログ表示中も busy 扱いにして、同じカードの編集・移動を無効化する
@@ -195,26 +184,6 @@ export default function HistoryPage() {
       setBusyId(null);
     }
   };
-
-  // フォーム内で日付・オドメーターを変えたときの「前回のオドメーター」。
-  // 編集中の記録は自身を除き、created_at・id は保存値のまま並べる（formChainPosition。同じ日付の記録の中の位置を連鎖計算と揃える）。
-  // records は年・月フィルタ前の、この車両（と表示する未分類）の全記録
-  const getPreviousOdometer = useCallback(
-    (date: string, excludeRecordId?: string, odometer?: number | null) => {
-      const list = recordsRef.current;
-      return previousOdometer(list, formChainPosition(list, date, excludeRecordId, odometer));
-    },
-    []
-  );
-
-  // フォーム内で日付・オドメーターを変えたときの「直前に開いている run」（部分給油の合算用。位置は getPreviousOdometer と同じ）
-  const getOpenRun = useCallback(
-    (date: string, excludeRecordId?: string, odometer?: number | null) => {
-      const list = recordsRef.current;
-      return openRunBefore(list, selectedVehicle, formChainPosition(list, date, excludeRecordId, odometer));
-    },
-    [selectedVehicle]
-  );
 
   const startEditing = (record: FuelRecord) => {
     if (readOnly) return;
@@ -288,67 +257,27 @@ export default function HistoryPage() {
       <div className="w-full max-w-5xl">
 
         {/* ヘッダー */}
-        <header className="flex items-center justify-between py-4 mb-2 sticky top-0 bg-black/80 backdrop-blur-md z-10 w-full">
-          <div className="flex items-center gap-4">
-            <Link href="/app" aria-label="ホームに戻る" className="p-2 bg-gray-900 rounded-full hover:bg-gray-800 transition">
-              <ArrowLeft className="w-5 h-5 text-gray-300" aria-hidden="true" />
-            </Link>
-            <h1 className="text-xl md:text-2xl font-bold">給油履歴</h1>
-          </div>
-          
-          <div className="flex items-center gap-3">
-            <Link href="/stats" aria-label="グラフを見る" className="p-2 bg-gray-900 rounded-full hover:bg-gray-800 transition text-gray-300 group flex items-center gap-2">
-              <span className="hidden sm:inline text-sm font-bold pr-1">グラフを見る</span>
-              <BarChart3 className="w-5 h-5 text-blue-400" aria-hidden="true" />
-            </Link>
-
-            <SignedOut>
-              <SignInButton forceRedirectUrl="/history">
-                <button className="bg-blue-600 hover:bg-blue-500 text-white text-sm font-bold py-1.5 px-4 rounded-full transition shadow-lg">
-                  ログイン
-                </button>
-              </SignInButton>
-            </SignedOut>
-            <SignedIn>
-              <UserButton />
-            </SignedIn>
-          </div>
-        </header>
+        <PageHeader title="給油履歴" backHref="/app" links={HISTORY_HEADER_LINKS} />
 
         {/* データ取得エラー / 閲覧専用の表示 */}
-        {(vehiclesError || recordsError) && (
-          <p role="alert" className="text-xs text-red-400 mb-2 px-1">{vehiclesError || recordsError}</p>
-        )}
-        {readOnly && (
-          <p role="status" className="text-[11px] text-amber-400/90 mb-2 px-1">閲覧専用（クラウド接続待ち）</p>
-        )}
+        <HookErrorLine error={hookError} />
+        <ReadOnlyCaption show={readOnly} />
 
         {/* 車両セレクター & CSV出力ボタン */}
         <div className="flex items-center justify-between gap-4 mb-6 w-full">
-          {/* 左側：車両セレクター */}
+          {/* 左側：車両セレクター（車両の読み込み中はスケルトン） */}
           <div className="flex-grow min-w-0">
-            {vehiclesLoading ? (
-              <div className="w-full">
-                <div className="flex items-center gap-2 overflow-x-auto pb-2 scrollbar-none">
-                  <div className="flex items-center gap-2 p-1.5 bg-gray-950/40 border border-gray-800/80 rounded-2xl shadow-inner">
-                    <div className="w-20 h-8 md:h-[36px] bg-gray-850 rounded-xl animate-pulse" />
-                    <div className="w-20 h-8 md:h-[36px] bg-gray-850 rounded-xl animate-pulse" />
-                    <div className="w-[34px] h-[34px] bg-gray-850 rounded-xl animate-pulse" />
-                  </div>
-                </div>
-              </div>
-            ) : (
-              <VehicleSelector 
-                vehicles={vehicles} 
-                selectedVehicleId={selectedVehicleId} 
-                onSelect={setSelectedVehicleId} 
-                onAddVehicle={addVehicle} 
-                onDeleteVehicle={deleteVehicle}
-                onUpdateVehicle={updateVehicle}
-                readOnly={vehiclesReadOnly}
-                className="w-full"
-              />
-            )}
+            <VehicleSelector
+              loading={vehiclesLoading}
+              vehicles={vehicles}
+              selectedVehicleId={selectedVehicleId}
+              onSelect={setSelectedVehicleId}
+              onAddVehicle={vehicleActions.addVehicle}
+              onDeleteVehicle={vehicleActions.deleteVehicle}
+              onUpdateVehicle={vehicleActions.updateVehicle}
+              readOnly={readOnly}
+              className="w-full"
+            />
           </div>
 
           {/* 右側：CSV出力ボタン */}

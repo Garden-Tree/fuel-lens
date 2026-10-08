@@ -14,6 +14,11 @@ interface VehicleSelectorProps {
   onUpdateVehicle: (id: string, name: string, type: VehicleType, settings?: VehicleSettings) => Promise<void>;
   /** 閲覧専用（クラウド障害中）。車両の追加・編集・削除を無効化する（切り替えは可能） */
   readOnly?: boolean;
+  /**
+   * 車両一覧の読み込み中。true の間はタブの代わりにスケルトンを表示する。
+   * 読み込みが始まったら開いている「車両を管理」モーダルは閉じる（以前の「スケルトンと差し替えて再マウント」と同じ動作）。
+   */
+  loading?: boolean;
   className?: string;
 }
 
@@ -25,9 +30,29 @@ export default function VehicleSelector({
   onDeleteVehicle,
   onUpdateVehicle,
   readOnly = false,
+  loading = false,
   className = "w-full mb-6"
 }: VehicleSelectorProps) {
   const [isModalOpen, setIsModalOpen] = useState(false);
+  // 読み込み中はモーダルを描画しないので、開いていたら閉じておく（読み込み後に勝手に開き直さない）。
+  // エフェクトではなく「レンダー中に state を調整する」React 推奨パターン
+  if (loading && isModalOpen) {
+    setIsModalOpen(false);
+  }
+
+  if (loading) {
+    return (
+      <div className={className}>
+        <div className="flex items-center gap-2 overflow-x-auto pb-2 scrollbar-none">
+          <div className="flex items-center gap-2 p-1.5 bg-gray-950/40 border border-gray-800/80 rounded-2xl shadow-inner">
+            <div className="w-20 h-8 md:h-[36px] bg-gray-850 rounded-xl animate-pulse" />
+            <div className="w-20 h-8 md:h-[36px] bg-gray-850 rounded-xl animate-pulse" />
+            <div className="w-[34px] h-[34px] bg-gray-850 rounded-xl animate-pulse" />
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className={className}>

@@ -3,14 +3,13 @@
 import { useMemo, useRef, useState, type ChangeEvent } from "react";
 import { Bike, Car, FileInput, FileSpreadsheet, Loader2 } from "lucide-react";
 
+import RestoreCounts from "@/components/RestoreCounts";
+import { buttonClass, sectionClass, type SettingsBusy } from "@/components/settingsUi";
 import { useToast } from "@/components/Toast";
-import type { FuelRecord, Vehicle, VehicleSettings, VehicleType } from "@/lib/types";
-import {
-  BACKUP_MAX_TEXT_LENGTH,
-  finalizeRestoreRecords,
-  planRestore,
-  type FuelLensBackup,
-} from "@/lib/backup";
+import type { FuelRecord, Vehicle, VehicleType } from "@/lib/types";
+import { BACKUP_MAX_TEXT_LENGTH, planRestore, type FuelLensBackup } from "@/lib/backup";
+import { errorText, type RestoreDataAccess } from "@/lib/restore";
+import { useRestoreRunner } from "@/lib/useRestoreRunner";
 import { fuelioToBackup, isFuelioCsv, parseFuelioCsv, type ParsedFuelio } from "@/lib/importers/fuelio";
 import {
   FUELLENS_CSV_DEFAULT_VEHICLE_NAME,
@@ -20,7 +19,9 @@ import {
   type ParsedFuelLensCsv,
 } from "@/lib/importers/fuellensCsv";
 
-export interface ImportPanelProps {
+export type { ImportBusy } from "@/components/settingsUi";
+
+export interface ImportPanelProps extends RestoreDataAccess {
   vehicles: Vehicle[];
   /** 車両一覧の読み込み中 */
   loading: boolean;
@@ -30,23 +31,18 @@ export interface ImportPanelProps {
   readOnly: boolean;
   /** 車両一覧の読み込みエラー（あれば取り込みを無効化する） */
   vehiclesError: string | null;
-  fetchAllRecords: () => Promise<FuelRecord[]>;
-  addVehicles: (items: ({ name: string; type: VehicleType } & VehicleSettings)[]) => Promise<Vehicle[]>;
-  addRecords: (
-    items: Omit<FuelRecord, "id">[],
-    options?: { onProgress?: (done: number, total: number) => void }
-  ) => Promise<number>;
-  /** 取り込みが終わった（一部でも追加した）ときに呼ぶ。データ概要の再読み込み用 */
-  onImported?: () => void;
+  /**
+   * 取り込みが終わったとき（成功・失敗とも）に呼ぶ。changed = 書き込みを行った（失敗時は途中まで追加済みの可能性がある）。
+   * 設定画面は changed のときデータ概要を読み込み直す
+   */
+  onDone?: (changed: boolean) => void;
   /**
    * 設定画面で共有する処理中フラグ（BackupPanel と同時に動かさないため）。
    * null 以外なら、どちらかのパネルで処理中
    */
   busy: string | null;
-  setBusy: (busy: ImportBusy | null) => void;
+  setBusy: (busy: SettingsBusy | null) => void;
 }
-
-export type ImportBusy = "import-prepare" | "import";
 
 type Source = { kind: "fuelio"; parsed: ParsedFuelio } | { kind: "fuellens"; parsed: ParsedFuelLensCsv };
 
@@ -58,10 +54,6 @@ type PendingImport = {
 };
 
 const MAX_VEHICLE_NAME_LENGTH = 50;
-
-function errorText(e: unknown, fallback: string): string {
-  return e instanceof Error && e.message ? e.message : fallback;
-}
 
 /** UTF-8 として読み、壊れていれば Shift_JIS（Excel で保存し直した CSV）として読む */
 async function readCsvText(file: File): Promise<string> {
@@ -120,10 +112,6 @@ function toBackup(
   });
 }
 
-const sectionClass = "bg-gray-900 border border-gray-800 rounded-2xl p-5 md:p-6";
-const buttonClass =
-  "flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-bold rounded-xl border transition focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed";
-
 export default function ImportPanel({
   vehicles,
   loading,
@@ -133,15 +121,23 @@ export default function ImportPanel({
   fetchAllRecords,
   addVehicles,
   addRecords,
-  onImported,
+  onDone,
   busy,
   setBusy,
 }: ImportPanelProps) {
   const { toast, confirm } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const [progress, setProgress] = useState<string | null>(null);
   const [pending, setPending] = useState<PendingImport | null>(null);
+  const { run: runRestore, progress } = useRestoreRunner({
+    vehicles,
+    fetchAllRecords,
+    addVehicles,
+    addRecords,
+    setBusy,
+    toast,
+    onDone,
+  });
   const [vehicleName, setVehicleName] = useState("");
   const [vehicleType, setVehicleType] = useState<VehicleType>("car");
 
@@ -239,62 +235,9 @@ export default function ImportPanel({
     );
     if (!ok) return;
 
-    const backup = preview.backup;
-    setBusy("import");
-    setProgress("準備中…");
-    let changed = false;
-    try {
-      // 確認中に別タブ等でデータが変わっていても二重登録しないよう、最新の状態で計画を立て直す
-      const existing = await fetchAllRecords();
-      const plan = planRestore(backup, vehicles, existing);
-
-      // プロトタイプを持たないオブジェクトにする（"__proto__" などの車両IDでも対応が失われないように）
-      const createdIdMap = Object.create(null) as Record<string, string>;
-      if (plan.vehiclesToCreate.length > 0) {
-        setProgress(`車両を追加中…（${plan.vehiclesToCreate.length} 台）`);
-        // 距離の入力方式・既定の燃料種別も引き継ぐ（未指定のキーは addVehicles が既定値にする）
-        const created = await addVehicles(
-          plan.vehiclesToCreate.map(v => ({
-            name: v.name,
-            type: v.type,
-            distance_mode: v.distance_mode,
-            default_fuel_type: v.default_fuel_type,
-          }))
-        );
-        changed = true;
-        plan.vehiclesToCreate.forEach((v, i) => {
-          const c = created[i];
-          if (c) createdIdMap[v.backupId] = c.id;
-        });
-      }
-
-      const records = finalizeRestoreRecords(plan, createdIdMap);
-      let added = 0;
-      if (records.length > 0) {
-        setProgress(`記録を追加中… 0 / ${records.length} 件`);
-        changed = true;
-        added = await addRecords(records, {
-          onProgress: (done, total) => setProgress(`記録を追加中… ${done} / ${total} 件`),
-        });
-      }
-
-      setPending(null);
-      const skippedNote = plan.counts.recordsSkipped > 0 ? `（重複 ${plan.counts.recordsSkipped} 件はスキップ）` : "";
-      toast(`取り込みました: 車両 ${plan.vehiclesToCreate.length} 台・記録 ${added} 件を追加${skippedNote}`, {
-        type: "success",
-      });
-    } catch (e) {
-      console.error(e);
-      // 途中まで追加済みの可能性があるため、古い計画（件数表示・確認文言）は破棄する。
-      // もう一度ファイルを選ぶと、追加済みの分は重複としてスキップされ、残りだけが計画される。
-      setPending(null);
-      toast(`${errorText(e, "取り込みに失敗しました")}
-もう一度ファイルを選ぶと、残りを取り込めます。`, { type: "error" });
-    } finally {
-      setBusy(null);
-      setProgress(null);
-      if (changed) onImported?.();
-    }
+    // 成功・失敗とも古い計画は破棄する（失敗時は途中まで追加済みの可能性があるため。
+    // もう一度ファイルを選ぶと、追加済みの分は重複としてスキップされ、残りだけが計画される）
+    await runRestore({ backup: preview.backup, kind: "import", onSettled: () => setPending(null) });
   };
 
   const source = pending?.source;
@@ -458,34 +401,7 @@ export default function ImportPanel({
             )
           )}
 
-          {counts && (
-            <dl className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center">
-              <div className="bg-gray-900 rounded-lg p-2">
-                <dt className="text-[11px] text-gray-500">新規車両</dt>
-                <dd className="text-lg font-bold font-mono">{counts.vehiclesNew}</dd>
-              </div>
-              <div className="bg-gray-900 rounded-lg p-2">
-                <dt className="text-[11px] text-gray-500">既存に一致</dt>
-                <dd className="text-lg font-bold font-mono">{counts.vehiclesMatched}</dd>
-              </div>
-              <div className="bg-gray-900 rounded-lg p-2">
-                <dt className="text-[11px] text-gray-500">追加される記録</dt>
-                <dd className="text-lg font-bold font-mono text-green-400">{counts.recordsNew}</dd>
-              </div>
-              <div className="bg-gray-900 rounded-lg p-2">
-                <dt className="text-[11px] text-gray-500">重複でスキップ</dt>
-                <dd className="text-lg font-bold font-mono text-gray-400">{counts.recordsSkipped}</dd>
-              </div>
-            </dl>
-          )}
-
-          {notes.length > 0 && (
-            <ul className="mt-3 text-[11px] text-gray-400 list-disc pl-4 space-y-0.5">
-              {notes.map(n => (
-                <li key={n}>{n}</li>
-              ))}
-            </ul>
-          )}
+          <RestoreCounts counts={counts} notes={notes} />
 
           {nothingToImport && <p className="text-xs text-gray-400 mt-3">追加される車両・記録はありません。</p>}
 
