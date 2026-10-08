@@ -46,7 +46,7 @@ export default function SupabaseStatusBanner() {
         <button
           type="button"
           onClick={requestSupabaseRetry}
-          className="flex-shrink-0 inline-flex items-center gap-1 rounded-md border border-amber-700/50 bg-amber-400/60 px-2 py-0.5 hover:bg-amber-300 transition focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-900"
+          className="flex-shrink-0 inline-flex items-center gap-1 rounded-md border border-amber-700/50 bg-amber-400/60 px-2.5 py-2 min-h-10 sm:min-h-0 sm:px-2 sm:py-0.5 hover:bg-amber-300 transition focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-900"
         >
           <RefreshCw className="w-3.5 h-3.5" aria-hidden="true" />
           再試行

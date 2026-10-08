@@ -12,7 +12,7 @@ import type { DistanceMode, FuelRecord } from "@/lib/types";
 /** 右カラムのカードの見出し行（「Latest Record」など + 右側の操作）と外枠 */
 export function RecordCardFrame({ label, action, children }: { label: string; action?: ReactNode; children: ReactNode }) {
   return (
-    <div className="mb-8 w-full">
+    <div className="md:mb-8 w-full">
       <div className="flex items-center justify-between px-2 mb-2">
         <h3 className="text-sm font-bold text-gray-400 uppercase tracking-wider flex items-center gap-2">
           <Calculator className="w-4 h-4" /> {label}
@@ -98,7 +98,7 @@ export default function LatestRecordCard({
       type="button"
       onClick={() => onEdit(record)}
       disabled={readOnly}
-      className="text-xs text-blue-400 flex items-center gap-1 hover:text-blue-300 transition disabled:opacity-50 disabled:cursor-not-allowed"
+      className="text-xs text-blue-400 flex items-center gap-1 px-2 py-3 -my-3 -mr-2 hover:text-blue-300 transition disabled:opacity-50 disabled:cursor-not-allowed"
     >
       <Edit2 className="w-3 h-3" aria-hidden="true" /> 編集
     </button>
@@ -120,8 +120,8 @@ export default function LatestRecordCard({
             />
           ) : (
             /* 表示モード */
-            <div className="p-6">
-              <div className="flex justify-between items-start mb-6">
+            <div className="p-5 sm:p-6">
+              <div className="flex justify-between items-start gap-3 mb-6">
                 <div>
                   <p className="text-xs text-gray-500 mb-1 flex items-center gap-1">
                     <Calendar className="w-3 h-3" /> {record.date || "日付不明"}

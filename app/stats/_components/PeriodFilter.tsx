@@ -25,7 +25,7 @@ export default function PeriodFilter({ period, onChange, unknownDateCount }: Per
           <button
             key={opt.value}
             onClick={() => onChange(opt.value)}
-            className={`px-3 py-1.5 text-xs font-bold rounded-md transition ${
+            className={`px-3 py-3 sm:py-1.5 text-xs font-bold rounded-md transition ${
               period === opt.value ? "bg-blue-600 text-white shadow-sm" : "text-gray-400 hover:text-white"
             }`}
           >

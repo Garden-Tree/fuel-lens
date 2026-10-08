@@ -76,9 +76,9 @@ export default function RecordStats({
         {odometerLine}
       </div>
 
-      {memoLine("mt-2 text-xs text-gray-400 truncate")}
+      {memoLine("mt-2 text-xs text-gray-400 line-clamp-2 break-words")}
 
-      <div className="mt-3 flex items-center gap-2 text-xs text-gray-500 pr-24">
+      <div className="mt-3 flex items-center gap-2 text-xs text-gray-500 pr-28 sm:pr-24">
         <MapPin className="w-3 h-3 flex-shrink-0" />
         <span className="truncate" title={record.gas_station || undefined}>
           {record.gas_station || "SS不明"}

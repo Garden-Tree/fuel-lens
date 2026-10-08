@@ -570,6 +570,8 @@ CSV を `lib/importers/` の純粋関数でバックアップ形式（`FuelLensB
 
 ### 単価トレンドとスタンド比較
 
+> スタンド比較（店舗別の平均単価）は 2026-10-08 に画面から外しました（利用者の要望）。部品 `app/stats/_components/StationComparison.tsx` と `lib/stats/prices.ts` / `stationRows.ts` の計算・テストは残しています。
+
 - **単価**: 記録の `price_per_unit`（正の値）を使い、無ければ支払総額 ÷ 給油量を `calculateFuelMetrics` と同じ 0.1 円単位で丸めて補います（`recordPrice`）。
 - **単価の推移**: `buildPriceSeries` が日付の有効な記録を日付昇順（同日は id 順）に並べます。2 点未満は空表示です。
   平均線は期間の平均単価（Σ支払総額 ÷ Σ給油量。サマリーカードの「平均単価」と同じ規則）で、目盛りは `buildPriceAxis` が小数第 1 位で作ります。

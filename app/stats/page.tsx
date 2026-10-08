@@ -12,7 +12,6 @@ import SummaryCards from "./_components/SummaryCards";
 import EfficiencyChart from "./_components/EfficiencyChart";
 import MonthlyCostChart from "./_components/MonthlyCostChart";
 import PriceTrendChart from "./_components/PriceTrendChart";
-import StationComparison from "./_components/StationComparison";
 import StatsSkeleton from "./_components/StatsSkeleton";
 
 export default function StatsPage() {
@@ -86,7 +85,7 @@ export default function StatsPage() {
                 />
                 <MonthlyCostChart period={period} data={model.monthlyCost} />
                 <PriceTrendChart period={period} price={model.price} />
-                <StationComparison period={period} stations={model.stations} />
+                {/* スタンド比較（店舗別の平均単価）は表示しない方針。部品 _components/StationComparison と lib/stats の計算は残している */}
               </div>
             )}
           </>

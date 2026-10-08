@@ -239,8 +239,8 @@ export default function HistoryPage() {
         <HookErrorLine error={hookError} />
         <ReadOnlyCaption show={readOnly} />
 
-        {/* 車両セレクター & CSV出力ボタン */}
-        <div className="flex items-center justify-between gap-4 mb-6 w-full">
+        {/* 車両セレクター & CSV出力ボタン（並ばない幅では折り返し、車両タブの幅を確保する） */}
+        <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 mb-4 sm:mb-6 w-full">
           {/* 左側：車両セレクター（車両の読み込み中はスケルトン） */}
           <div className="flex-grow min-w-0">
             <VehicleSelector
@@ -257,11 +257,11 @@ export default function HistoryPage() {
           </div>
 
           {/* 右側：CSV出力ボタン */}
-          <div className="flex-shrink-0 pb-2">
+          <div className="flex-shrink-0 ml-auto pb-2">
             {isLoading ? (
               <button
                 disabled
-                className="flex items-center gap-2 px-3 py-2 bg-gray-900/50 text-gray-500 text-xs font-bold rounded-xl border border-gray-800/80 cursor-not-allowed"
+                className="flex items-center gap-2 px-3 py-2 min-h-10 bg-gray-900/50 text-gray-500 text-xs font-bold rounded-xl border border-gray-800/80 cursor-not-allowed"
               >
                 <Download className="w-4 h-4 text-green-700/50" />
                 <span>CSV出力</span>
@@ -270,7 +270,7 @@ export default function HistoryPage() {
               <button
                 disabled={sortedRecords.length === 0}
                 onClick={exportToCsv}
-                className={`flex items-center gap-2 px-3 py-2 text-xs font-bold rounded-xl border transition ${
+                className={`flex items-center gap-2 px-3 py-2 min-h-10 text-xs font-bold rounded-xl border transition ${
                   sortedRecords.length > 0
                     ? "bg-gray-900 hover:bg-gray-800 text-gray-300 hover:text-white border-gray-800 hover:border-gray-700"
                     : "bg-gray-900/50 text-gray-550/40 border-gray-800/50 cursor-not-allowed"
@@ -348,7 +348,7 @@ export default function HistoryPage() {
                       value={effectiveYear}
                       aria-label="年で絞り込み"
                       onChange={(e) => setFilterYear(e.target.value)}
-                      className="bg-gray-900 border border-gray-800 rounded-lg px-2 py-1.5 text-xs font-bold text-gray-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus:border-blue-500 transition"
+                      className="bg-gray-900 border border-gray-800 rounded-lg px-2 py-1.5 min-h-10 sm:min-h-0 text-base sm:text-xs font-bold text-gray-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus:border-blue-500 transition"
                     >
                       <option value="all">全ての年</option>
                       {availableYears.map(y => (
@@ -359,7 +359,7 @@ export default function HistoryPage() {
                       value={effectiveMonth}
                       aria-label="月で絞り込み"
                       onChange={(e) => setFilterMonth(e.target.value)}
-                      className="bg-gray-900 border border-gray-800 rounded-lg px-2 py-1.5 text-xs font-bold text-gray-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus:border-blue-500 transition"
+                      className="bg-gray-900 border border-gray-800 rounded-lg px-2 py-1.5 min-h-10 sm:min-h-0 text-base sm:text-xs font-bold text-gray-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus:border-blue-500 transition"
                     >
                       <option value="all">全ての月</option>
                       {MONTH_OPTIONS.map(m => (
@@ -372,13 +372,13 @@ export default function HistoryPage() {
                   <div className="flex items-center gap-1 bg-gray-900 rounded-lg p-1 border border-gray-800">
                     <button
                       onClick={() => setSortType("date")}
-                      className={`px-3 py-1.5 text-xs font-bold rounded-md transition ${sortType === "date" ? "bg-blue-600 text-white shadow-sm" : "text-gray-400 hover:text-white"}`}
+                      className={`px-3 py-3 sm:py-1.5 text-xs font-bold rounded-md transition ${sortType === "date" ? "bg-blue-600 text-white shadow-sm" : "text-gray-400 hover:text-white"}`}
                     >
                       給油日順
                     </button>
                     <button
                       onClick={() => setSortType("created_at")}
-                      className={`px-3 py-1.5 text-xs font-bold rounded-md transition ${sortType === "created_at" ? "bg-blue-600 text-white shadow-sm" : "text-gray-400 hover:text-white"}`}
+                      className={`px-3 py-3 sm:py-1.5 text-xs font-bold rounded-md transition ${sortType === "created_at" ? "bg-blue-600 text-white shadow-sm" : "text-gray-400 hover:text-white"}`}
                     >
                       登録順
                     </button>
@@ -388,13 +388,13 @@ export default function HistoryPage() {
                 <div className="flex items-center gap-1 bg-gray-950/20 rounded-lg p-1 border border-gray-900/50 opacity-40">
                   <button
                     disabled
-                    className="px-3 py-1.5 text-xs font-bold rounded-md text-gray-500 cursor-not-allowed"
+                    className="px-3 py-3 sm:py-1.5 text-xs font-bold rounded-md text-gray-500 cursor-not-allowed"
                   >
                     給油日順
                   </button>
                   <button
                     disabled
-                    className="px-3 py-1.5 text-xs font-bold rounded-md text-gray-500 cursor-not-allowed"
+                    className="px-3 py-3 sm:py-1.5 text-xs font-bold rounded-md text-gray-500 cursor-not-allowed"
                   >
                     登録順
                   </button>
@@ -443,7 +443,7 @@ export default function HistoryPage() {
                                 type="button"
                                 onClick={() => handleMoveVehicle(rec.id, v.id)}
                                 disabled={busyId === rec.id}
-                                className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold rounded-lg transition disabled:opacity-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-300"
+                                className="px-3 py-3 sm:py-1.5 max-w-full truncate bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold rounded-lg transition disabled:opacity-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-300"
                               >
                                 {v.name}
                               </button>
@@ -453,7 +453,7 @@ export default function HistoryPage() {
                               autoFocus
                               onClick={() => setMovingId(null)}
                               disabled={busyId === rec.id}
-                              className="px-3 py-1.5 bg-gray-800 hover:bg-gray-700 text-gray-400 hover:text-white text-xs font-bold rounded-lg transition focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-400"
+                              className="px-3 py-3 sm:py-1.5 bg-gray-800 hover:bg-gray-700 text-gray-400 hover:text-white text-xs font-bold rounded-lg transition focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-400"
                             >
                               キャンセル
                             </button>
@@ -489,13 +489,13 @@ export default function HistoryPage() {
                       <RecordStats record={rec} distanceMode={distanceMode} variant="compact" />
 
                       {/* 操作ボタン群 */}
-                      <div className="absolute bottom-4 right-4 flex items-center opacity-100 sm:opacity-60 sm:group-hover:opacity-100 focus-visible:opacity-100 group-focus-within:opacity-100 transition duration-200">
+                      <div className="absolute bottom-2 right-2 sm:bottom-4 sm:right-4 flex items-center opacity-100 sm:opacity-60 sm:group-hover:opacity-100 focus-visible:opacity-100 group-focus-within:opacity-100 transition duration-200">
                         {vehicles.length > 1 && (
                           <button
                             type="button"
                             onClick={() => setMovingId(rec.id)}
                             disabled={readOnly || busyId === rec.id}
-                            className="p-1.5 text-gray-500 hover:text-blue-400 transition disabled:opacity-40 disabled:cursor-not-allowed focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 rounded"
+                            className="p-3 sm:p-1.5 text-gray-500 hover:text-blue-400 transition disabled:opacity-40 disabled:cursor-not-allowed focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 rounded"
                             title="他の車両へ移動"
                             aria-label="他の車両へ移動"
                           >
@@ -506,7 +506,7 @@ export default function HistoryPage() {
                           type="button"
                           onClick={() => startEditing(rec)}
                           disabled={readOnly || busyId === rec.id}
-                          className="p-1.5 text-gray-500 hover:text-blue-400 transition disabled:opacity-40 disabled:cursor-not-allowed focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 rounded"
+                          className="p-3 sm:p-1.5 text-gray-500 hover:text-blue-400 transition disabled:opacity-40 disabled:cursor-not-allowed focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 rounded"
                           title="編集"
                           aria-label="この記録を編集"
                         >
@@ -516,7 +516,7 @@ export default function HistoryPage() {
                           type="button"
                           onClick={() => handleDelete(rec.id)}
                           disabled={readOnly || busyId === rec.id}
-                          className="p-1.5 text-gray-500 hover:text-red-500 transition disabled:opacity-40 disabled:cursor-not-allowed focus:outline-none focus-visible:ring-2 focus-visible:ring-red-400 rounded"
+                          className="p-3 sm:p-1.5 text-gray-500 hover:text-red-500 transition disabled:opacity-40 disabled:cursor-not-allowed focus:outline-none focus-visible:ring-2 focus-visible:ring-red-400 rounded"
                           title="削除"
                           aria-label="この記録を削除"
                         >

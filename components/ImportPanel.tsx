@@ -350,7 +350,7 @@ export default function ImportPanel({
                   disabled={busy !== null}
                   aria-invalid={!!nameError}
                   aria-describedby="import-vehicle-hint"
-                  className="flex-1 min-w-0 bg-gray-950 border border-gray-800 rounded-xl p-2.5 text-sm text-white placeholder-gray-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus:border-blue-500 transition disabled:opacity-60"
+                  className="flex-1 min-w-0 bg-gray-950 border border-gray-800 rounded-xl p-2.5 text-base sm:text-sm text-white placeholder-gray-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus:border-blue-500 transition disabled:opacity-60"
                 />
                 <datalist id="import-vehicle-names">
                   {vehicles.map(v => (

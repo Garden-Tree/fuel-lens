@@ -35,7 +35,7 @@ function CustomPriceTooltip({ active, payload }: PriceTooltipProps) {
 export default function PriceTrendChart({ period, price }: { period: Period; price: StatsModel["price"] }) {
   const { series: priceData, axis: priceAxis, timeDomain: priceTimeDomain, delta: latestPriceDelta } = price;
   return (
-    <div className="bg-gray-900/50 border border-gray-800 rounded-3xl p-5 md:p-8">
+    <div className="bg-gray-900/50 border border-gray-800 rounded-3xl p-4 sm:p-5 md:p-8">
       <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-2 mb-6">
         <h2 className="text-lg font-bold text-gray-300 flex items-center gap-2">
           <span className="w-3 h-3 rounded-full bg-amber-500 shadow-[0_0_10px_#f59e0b]"></span>
@@ -86,7 +86,7 @@ export default function PriceTrendChart({ period, price }: { period: Period; pri
         ) : (
           <ResponsiveContainer width="100%" height="100%">
             {/* key={period}: 期間切替時は再マウントして新規描画 (燃費グラフと同じ理由) */}
-            <LineChart key={period} data={priceData} margin={{ top: 10, right: 10, left: 30, bottom: 0 }}>
+            <LineChart key={period} data={priceData} margin={{ top: 10, right: 10, left: 8, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#2d3748" vertical={false} />
               <XAxis
                 type="number"

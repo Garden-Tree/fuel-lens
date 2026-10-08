@@ -151,7 +151,7 @@ function ModalHeader({ icon, className = "mb-6" }: { icon?: ReactNode; className
         onClick={requestClose}
         disabled={disableClose}
         aria-label="閉じる"
-        className="p-1.5 rounded-full text-gray-500 hover:text-white hover:bg-gray-800 transition disabled:opacity-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-400"
+        className="p-2.5 -m-1 sm:m-0 sm:p-1.5 rounded-full text-gray-500 hover:text-white hover:bg-gray-800 transition disabled:opacity-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-400"
       >
         <X className="w-5 h-5" aria-hidden="true" />
       </button>

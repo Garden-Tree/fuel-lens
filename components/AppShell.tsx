@@ -35,8 +35,8 @@ export const HOME_HEADER_LINKS: readonly HeaderLink[] = [
 
 /** Tailwind はクラス名を静的に検出するため、組み立てずに完全な文字列で持つ */
 const LINK_CLASS: Record<NonNullable<HeaderLink["tone"]>, string> = {
-  pill: "p-2 bg-gray-800/50 rounded-full border border-gray-700/50 text-gray-400 hover:text-white transition group flex items-center gap-2",
-  solid: "p-2 bg-gray-900 rounded-full hover:bg-gray-800 transition text-gray-300 group flex items-center gap-2",
+  pill: "p-2 min-w-10 min-h-10 shrink-0 justify-center bg-gray-800/50 rounded-full border border-gray-700/50 text-gray-400 hover:text-white transition group flex items-center gap-2",
+  solid: "p-2 min-w-10 min-h-10 shrink-0 justify-center bg-gray-900 rounded-full hover:bg-gray-800 transition text-gray-300 group flex items-center gap-2",
 };
 const LABEL_CLASS: Record<NonNullable<HeaderLink["tone"]>, Record<NonNullable<HeaderLink["showLabelFrom"]>, string>> = {
   pill: {
@@ -98,36 +98,42 @@ export function PageHeader({
   const redirectUrl = pathname || "/app";
   const isSubPage = backHref !== undefined;
 
+  // 上の余白に safe-area-inset-top を足す（ホーム画面から開いた PWA は black-translucent のステータスバーの下まで描画されるため）。
+  // スマホ幅のサブページでは sticky ヘッダーを画面端まで広げ、左右の余白からスクロール中の内容が透けないようにする
   return (
     <header
       className={
         isSubPage
-          ? "flex items-center justify-between py-4 mb-2 sticky top-0 bg-black/80 backdrop-blur-md z-10 w-full"
-          : "flex items-center justify-between py-4 mb-2 w-full"
+          ? "flex items-center justify-between gap-2 pb-3 pt-[calc(env(safe-area-inset-top)+0.75rem)] sm:pb-4 sm:pt-[calc(env(safe-area-inset-top)+1rem)] mb-2 sticky top-0 bg-black/80 backdrop-blur-md z-10 w-auto -mx-4 px-4 md:mx-0 md:px-0 md:w-full"
+          : "flex items-center justify-between gap-2 pb-3 pt-[calc(env(safe-area-inset-top)+0.75rem)] sm:pb-4 sm:pt-[calc(env(safe-area-inset-top)+1rem)] mb-2 w-full"
       }
     >
       {isSubPage ? (
-        <div className="flex items-center gap-4">
-          <Link href={backHref} aria-label={backLabel} className="p-2 bg-gray-900 rounded-full hover:bg-gray-800 transition">
+        <div className="flex items-center gap-3 sm:gap-4 min-w-0">
+          <Link
+            href={backHref}
+            aria-label={backLabel}
+            className="p-2.5 shrink-0 bg-gray-900 rounded-full hover:bg-gray-800 transition"
+          >
             <ArrowLeft className="w-5 h-5 text-gray-300" aria-hidden="true" />
           </Link>
-          <h1 className="text-xl md:text-2xl font-bold flex items-center gap-2">
-            {Icon && <Icon className="w-6 h-6 text-blue-500" aria-hidden="true" />}
-            {title}
+          <h1 className="text-lg sm:text-xl md:text-2xl font-bold flex items-center gap-2 min-w-0">
+            {Icon && <Icon className="w-6 h-6 shrink-0 text-blue-500" aria-hidden="true" />}
+            <span className="truncate">{title}</span>
           </h1>
         </div>
       ) : (
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 min-w-0">
           {Icon && (
-            <div className="w-10 h-10 bg-gradient-to-tr from-blue-600 to-cyan-400 rounded-xl flex items-center justify-center shadow-lg shadow-blue-900/20">
+            <div className="w-10 h-10 shrink-0 bg-gradient-to-tr from-blue-600 to-cyan-400 rounded-xl flex items-center justify-center shadow-lg shadow-blue-900/20">
               <Icon className="text-white w-6 h-6 fill-current" aria-hidden="true" />
             </div>
           )}
-          <h1 className="text-xl font-bold tracking-tight">{title}</h1>
+          <h1 className="text-lg sm:text-xl font-bold tracking-tight truncate">{title}</h1>
         </div>
       )}
 
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-1 sm:gap-3 shrink-0">
         {links.map(link => (
           <HeaderNavLink key={link.href} link={link} />
         ))}
@@ -135,7 +141,7 @@ export function PageHeader({
 
         <SignedOut>
           <SignInButton forceRedirectUrl={redirectUrl}>
-            <button className="bg-blue-600 hover:bg-blue-500 text-white text-sm font-bold py-1.5 px-4 rounded-full transition shadow-lg">
+            <button className="bg-blue-600 hover:bg-blue-500 text-white text-sm font-bold py-1.5 px-2.5 sm:px-4 min-h-10 whitespace-nowrap rounded-full transition shadow-lg">
               ログイン
             </button>
           </SignInButton>

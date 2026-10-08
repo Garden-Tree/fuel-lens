@@ -141,20 +141,20 @@ export default function ScanPanel({
                     type="button"
                     onClick={onClearPreview}
                     aria-label="プレビューを閉じる"
-                    className="absolute top-3 right-3 p-2 bg-black/50 rounded-full text-white backdrop-blur hover:bg-black/70 transition pointer-events-auto focus:outline-none focus-visible:ring-2 focus-visible:ring-white/70"
+                    className="absolute top-3 right-3 p-2.5 bg-black/50 rounded-full text-white backdrop-blur hover:bg-black/70 transition pointer-events-auto focus:outline-none focus-visible:ring-2 focus-visible:ring-white/70"
                   >
                     <X className="w-5 h-5" aria-hidden="true" />
                   </button>
                 )}
                 {!scanning && (
-                  <div className="absolute bottom-3 right-3 flex flex-wrap justify-end gap-2">
+                  <div className="absolute bottom-3 left-3 right-3 flex flex-wrap justify-end gap-2">
                     {/* 共有で受け取り、確認ダイアログで読み取らなかった画像 */}
                     {sharedPending && (
                       <>
                         <button
                           type="button"
                           onClick={() => onAnalyzeShared(sharedPending)}
-                          className="bg-emerald-600/90 hover:bg-emerald-500 text-white text-xs font-bold py-2 px-4 rounded-full shadow-lg backdrop-blur flex items-center gap-2 pointer-events-auto"
+                          className="bg-emerald-600/90 hover:bg-emerald-500 text-white text-xs font-bold py-2 px-4 min-h-10 rounded-full shadow-lg backdrop-blur flex items-center gap-2 pointer-events-auto"
                         >
                           <Calculator className="w-3 h-3" aria-hidden="true" /> 読み取る
                         </button>
@@ -162,7 +162,7 @@ export default function ScanPanel({
                           type="button"
                           onClick={onManualEntry}
                           disabled={readOnly}
-                          className="bg-gray-800/90 hover:bg-gray-700 text-white text-xs font-bold py-2 px-4 rounded-full shadow-lg backdrop-blur flex items-center gap-2 pointer-events-auto disabled:opacity-50 disabled:cursor-not-allowed"
+                          className="bg-gray-800/90 hover:bg-gray-700 text-white text-xs font-bold py-2 px-4 min-h-10 rounded-full shadow-lg backdrop-blur flex items-center gap-2 pointer-events-auto disabled:opacity-50 disabled:cursor-not-allowed"
                         >
                           <Edit2 className="w-3 h-3" aria-hidden="true" /> 手動で入力
                         </button>
@@ -171,7 +171,7 @@ export default function ScanPanel({
                     <button
                       type="button"
                       onClick={openCamera}
-                      className="bg-blue-600/90 hover:bg-blue-500 text-white text-xs font-bold py-2 px-4 rounded-full shadow-lg backdrop-blur flex items-center gap-2 pointer-events-auto"
+                      className="bg-blue-600/90 hover:bg-blue-500 text-white text-xs font-bold py-2 px-4 min-h-10 rounded-full shadow-lg backdrop-blur flex items-center gap-2 pointer-events-auto"
                     >
                       <Camera className="w-3 h-3" aria-hidden="true" /> 次を撮る
                     </button>
@@ -179,7 +179,7 @@ export default function ScanPanel({
                 )}
               </div>
             ) : (
-              <div className="p-6 flex flex-col items-center gap-6">
+              <div className="p-5 sm:p-6 flex flex-col items-center gap-5 sm:gap-6">
                 <div className="text-center space-y-1">
                   <h2 className="text-lg font-semibold text-white">スキャンして記録</h2>
                   <p className="text-xs text-blue-400 font-semibold">対象: {vehicleName}</p>
@@ -203,12 +203,12 @@ export default function ScanPanel({
                   <Camera className="w-10 h-10 text-white fill-blue-500" aria-hidden="true" />
                 </button>
 
-                <div className="flex items-center gap-4">
+                <div className="flex flex-wrap items-center justify-center gap-x-2 gap-y-1 sm:gap-4">
                   <button
                     type="button"
                     onClick={() => galleryInputRef.current?.click()}
                     disabled={scanning}
-                    className="flex items-center gap-2 text-sm text-gray-500 hover:text-blue-400 transition-colors py-2 px-4 rounded-full hover:bg-gray-800"
+                    className="flex items-center gap-2 text-sm text-gray-500 hover:text-blue-400 transition-colors py-2 px-3 sm:px-4 min-h-10 whitespace-nowrap rounded-full hover:bg-gray-800"
                   >
                     <ImageIcon className="w-4 h-4" aria-hidden="true" />
                     <span>アルバムから選択</span>
@@ -217,14 +217,15 @@ export default function ScanPanel({
                     type="button"
                     onClick={onManualEntry}
                     disabled={scanning || readOnly}
-                    className="flex items-center gap-2 text-sm text-gray-500 hover:text-blue-400 transition-colors py-2 px-4 rounded-full hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="flex items-center gap-2 text-sm text-gray-500 hover:text-blue-400 transition-colors py-2 px-3 sm:px-4 min-h-10 whitespace-nowrap rounded-full hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     <Edit2 className="w-4 h-4" aria-hidden="true" />
                     <span>手動で入力</span>
                   </button>
                 </div>
 
-                <p className="text-xs text-gray-500">画像のペースト（Ctrl+V）にも対応</p>
+                {/* スマホでは貼り付けの操作をほぼ使わないため sm 以上でだけ案内する */}
+                <p className="hidden sm:block text-xs text-gray-500">画像のペースト（Ctrl+V）にも対応</p>
                 {showSignInHint && (
                   <p className="text-xs text-amber-500/80 text-center">
                     AIスキャンはログイン後に利用できます。「手動で入力」はログインなしでも使えます。
