@@ -402,3 +402,54 @@ export function plausibilityWarnings(
 
   return warnings;
 }
+
+// ---------------------------------------------------------------------------
+// クライアント向けのエラーメッセージ
+// ---------------------------------------------------------------------------
+
+export type AnalyzeErrorMessageOptions = {
+  /** ログイン中か（401 の案内を切り替える）。未確定（undefined）は未ログインとして扱う */
+  isSignedIn?: boolean | null;
+  /** 429 の Retry-After ヘッダーの値（秒数の文字列のときだけ「約N秒後に」と出す） */
+  retryAfter?: string | null;
+};
+
+/**
+ * /api/analyze の失敗レスポンス（HTTP ステータスと本文）を、画面に出す日本語メッセージに変換する。
+ * 本文は信頼しない（`error` / `requestId` が文字列のときだけ使う）。
+ * - 401: ログイン必須。ログイン中ならセッション切れ、未ログインなら手動入力はログイン不要と案内する
+ * - 422: 読み取れなかった（サーバーの文言を優先）
+ * - 429: 混雑。Retry-After が秒数なら「約N秒後に」
+ * - 504: AI 解析のタイムアウト
+ * - それ以外: サーバーの文言（無ければ汎用文）に requestId を添える
+ */
+export function analyzeErrorMessage(
+  status: number,
+  body: unknown,
+  options: AnalyzeErrorMessageOptions = {}
+): string {
+  const data = typeof body === "object" && body !== null ? (body as Record<string, unknown>) : null;
+  const serverMessage = typeof data?.error === "string" ? data.error : "";
+  const requestId = typeof data?.requestId === "string" ? data.requestId : "";
+  const suffix = requestId ? `（ID: ${requestId}）` : "";
+
+  if (status === 401) {
+    // ログイン必須。手動入力はログインなしでも使えることを伝える
+    return options.isSignedIn
+      ? "セッションの有効期限が切れた可能性があります。ページを再読み込みして、もう一度お試しください。"
+      : "AIスキャンにはログインが必要です。右上の「ログイン」からサインインするか、「手動で入力」から記録を追加してください（手動入力はログイン不要です）。";
+  }
+  if (status === 422) {
+    // 読み取れなかった／ブロックされた。プレビューは残すので撮り直し・手動入力に切り替えられる
+    return serverMessage || "レシート/メーターを読み取れませんでした。撮り直すか、「手動で入力」から記録してください。";
+  }
+  if (status === 429) {
+    const retryAfter = options.retryAfter;
+    const wait = retryAfter && /^\d+$/.test(retryAfter) ? `約${retryAfter}秒後に` : "しばらくしてから";
+    return `${serverMessage || "リクエストが多すぎます。"} ${wait}もう一度お試しください。`;
+  }
+  if (status === 504) {
+    return serverMessage || "AI解析がタイムアウトしました。しばらくしてから、もう一度お試しください。";
+  }
+  return (serverMessage || "サーバーエラーが発生しました。") + suffix;
+}

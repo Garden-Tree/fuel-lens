@@ -8,7 +8,7 @@ FuelLens の構成、データの流れ、主要なモジュールの役割を�
 | パス | 役割 |
 |---|---|
 | `app/page.tsx` | ランディングページ（Server Component）。対話部分は `components/landing/*` |
-| `app/app/page.tsx` | メイン画面。スキャン（画像の選択・ドロップ・貼り付け）、手動入力、最新記録の確認・編集 |
+| `app/app/page.tsx`、`app/app/_components/` | メイン画面。スキャン（画像の選択・ドロップ・貼り付け）、手動入力、最新記録の確認・編集。ページはフックと部品を組み合わせるだけで、部品は `_components/`（`ScanPanel` / `LatestRecordCard` / `ManualEntryCard` / `RecordCardSkeleton` / `HistoryLinkCard` / `ShortcutActionHandler`）に分割（[メイン画面の構成](#メイン画面の構成app)） |
 | `app/history/page.tsx` | 履歴一覧。編集・削除・別車両への移動・年月フィルタ・並べ替え・CSV 出力 |
 | `app/stats/page.tsx`、`app/stats/_components/` | 統計サマリーとグラフ（recharts）。ページは車両・期間の状態と `buildStatsModel` の結果を部品に渡すだけで、部品は `_components/` に分割。燃費・支払総額・単価の推移とスタンド別の単価。期間フィルタ（全期間 / 1 年 / 6 ヶ月 / 3 ヶ月）（[11 章](#11-統計)） |
 | `app/settings/page.tsx` | 設定画面（`/settings`）。データ概要とバックアップ・復元（[8 章](#8-バックアップと復元)） |
@@ -19,6 +19,7 @@ FuelLens の構成、データの流れ、主要なモジュールの役割を�
 | `app/error.tsx` / `app/global-error.tsx` / `app/not-found.tsx` | エラー画面・404 |
 | `components/ScanReviewSheet.tsx` | スキャン結果の確認シート（保存前に確認・修正する） |
 | `components/EditFuelRecordForm.tsx` | 記録の入力フォーム（手動入力・編集・確認シートで共用） |
+| `components/RecordStats.tsx` | 記録カードの明細（給油量・走行距離 / 区間距離・ODO・スタンド・メモ。`compact` はバッジも）。`variant="card"` は /app の最新記録カード、`variant="compact"` は /history のカード |
 | `components/ManageVehiclesModal.tsx` / `components/VehicleSelector.tsx` | 車両の管理モーダル / 車両の切り替え |
 | `components/Modal.tsx` | 共通モーダル。`useFocusTrap` + `useBackdropClose` + Escape + 任意の本文スクロールロックを束ね、`role="dialog"` / `aria-modal` / `aria-labelledby` を付ける。保存中は `disableClose` で Escape・背景クリック・× を無視。`Modal.Header`（見出しと ×）/ `Modal.Body` / `Modal.Footer`、Escape だけ別処理にする `onEscape` |
 | `components/vehicles/*` / `lib/useVehicleDraft.ts` | 車両の管理モーダルの部品。`VehicleRow`（表示 / 編集行、削除確認文 `deleteConfirmMessage`）、`AddVehicleForm`、`VehicleSettingsFields`（距離の入力方式・既定の燃料種別・車両タイプの切り替え、`modeSwitchNote`）。追加フォーム・編集行の下書きと検証は `useVehicleDraft` |
@@ -50,6 +51,8 @@ FuelLens の構成、データの流れ、主要なモジュールの役割を�
 | `lib/supabase/errors.ts` / `outage.ts` / `retry.ts` / `cache.ts` | `supabaseHealth.ts` の実体。errors = 失敗の分類とエラーメッセージ（純粋関数。`migrateLocalData.ts` はここだけを import）、outage = 障害状態の記録・通知・`useSupabaseOutage`、retry = 再試行イベントと自動再試行、cache = per-user キャッシュ。`supabaseHealth.ts` は互換用の再エクスポート |
 | `lib/format.ts` | 表示用の純粋フォーマット（`efficiencyNullReason` / `formatOdometer` / `formatKm`） |
 | `lib/importers/csvParse.ts` | CSV 取り込みの共有プリミティブ（`parseCsvRows` / `parseCsvNumber` / `parseFlexibleDate` / `hashString` / `isBlankRow`）。`fuelio.ts` は互換のため再エクスポート |
+| `lib/scan/` | メイン画面のスキャン。`analyzeClient.ts`（`compressToDataUrl` / `requestAnalyze`。React に依存しない I/O）、`shortcuts.ts`（`?action=` の判定 `resolveShortcutAction` / `shortcutReadinessOf`。純粋関数）、フック `useScanPipeline` / `useImageDropPaste` / `useShortcutActions`（[メイン画面の構成](#メイン画面の構成app)） |
+| `lib/useRecordEditing.ts` | 記録の編集・手動入力のフォームの開閉と保存（重複確認・toast・車両切り替えで閉じる）。/app と /history で共用 |
 | `lib/shareInbox.ts` | Web Share Target の受け取り箱。Service Worker が IndexedDB に置いた共有画像を、トークン一致かつ 10 分以内のときだけ取り出して削除する（`takeSharedImage` / `clearSharedImage`。[9 章](#9-pwa)） |
 | `public/sw.js` | Service Worker。Web Share Target（POST `/share`）の受け取り専用で、キャッシュはしない（[9 章](#9-pwa)） |
 | `components/ServiceWorkerRegister.tsx` | `public/sw.js` を登録する（本番ビルドのみ。開発中は `NEXT_PUBLIC_ENABLE_SW=1` で有効化）。`app/layout.tsx` にマウント |
@@ -210,6 +213,32 @@ FuelLens の構成、データの流れ、主要なモジュールの役割を�
   フォームに連鎖の規則は持たないので、プレビューは保存後に読み取り時の連鎖計算が出す値と一致します（[10 章](#10-給油の連鎖計算fill-chain)）。単価は `calculateFuelMetrics`。
   オドメーターモード・部分給油・燃料種別・メモの入力と表示は [設計書](./design-fill-chain.md)の 4 章に従います。
 - ドラフトの解析・検証・保存用オブジェクトの組み立て、重複判定の `findDuplicateRecord` などの純粋関数は `lib/recordDraft.ts` にあり、`lib/useRecordForm.ts` からも再エクスポートしています。
+
+### `useRecordEditing({ scope, form, toast, confirm, updatedMessage?, onAdded? })`（`lib/useRecordEditing.ts`）
+
+/app の最新記録カードと /history のカードで共用する、編集・手動入力フォームの開閉と保存です。`scope` は `useVehicleScope()` の戻り値をそのまま渡します。
+戻り値: `editingRecordId`, `isEditing`, `isManualEntry`, `saving`, `startEditing(record)`（閲覧専用中は何もしない）, `startManualEntry()`（今日の日付の新規記録）, `cancel()`, `save()`, `addWithDuplicateCheck(record)`。
+
+- `save()` は手動入力なら `addWithDuplicateCheck`（同じ日付・給油量・支払総額の記録があれば「重複して保存しますか？」を確認。キャンセルならフォームは開いたまま）、編集なら `updateRecord` です。
+  成功の toast は追加が「給油記録を保存しました」、更新が `updatedMessage`（既定「給油記録を更新しました」、/history は「記録を更新しました」）。失敗は日本語メッセージの toast でフォームは開いたまま。
+- `scopeKey`（車両・距離の入力方式）が変わったらフォームを閉じます（レンダー中の state 調整）。/history の移動・削除はページ側の処理です。
+
+### メイン画面の構成（`/app`）
+
+`app/app/page.tsx` は状態をフックから受け取り、`app/app/_components/` の部品に渡すだけです。
+
+| 部品・フック | 役割 |
+|---|---|
+| `useVehicleScope` | 選択中の車両とその記録 |
+| `useScanPipeline({ isSignedIn, toast, confirm })`（`lib/scan/`） | スキャンの状態（`loading` / `loadingStep` / `preview` / `sharedPending` / `scanResult`、同期判定の `isScanning()`）と処理（`processImageFile(file, { confirmBeforeAnalyze })` / `processSharedImage(token)` / `startSharedAnalysis` / `clearPreview` / `discardResult` / `abort`）。圧縮 → `requestAnalyze` → 確認シート。HTTP エラーの文言は `lib/analyze.ts` の `analyzeErrorMessage(status, body, { isSignedIn, retryAfter })`（401 は未ログイン / ログイン中で文言を分ける、422、429 は Retry-After の秒数、504、それ以外は requestId 付き）。アンマウント時は解析リクエストを中断する |
+| `useImageDropPaste({ onImage, isBusy, toast })`（`lib/scan/`） | ドロップ先に付ける `dropZoneProps` と `isDragging`、window 全体のペースト（入力欄にフォーカスがあるときは無視）。最新のハンドラは `useEffectEvent` で参照する |
+| `useRecordEditing` | 手動入力・最新記録の編集。確認シートの保存も `addWithDuplicateCheck` を使う |
+| `ShortcutActionHandler`（`useShortcutActions`） | `?action=scan` / `manual` / `shared` / `share-unavailable` を 1 ページロードにつき 1 回だけ実行し、`router.replace("/app")` で消す。実行条件は `shortcutReadinessOf`、判定は `resolveShortcutAction`。`useSearchParams` を使うので `<Suspense>` の内側に置き、/app の静的プリレンダーを保つ |
+| `ScanPanel` | 左カラム。カメラボタン・アルバム / 手動入力・ヒント・プレビュー（次を撮る / 読み取る / 手動で入力）・ドロップ先と、非表示のファイル入力。ショートカットのスキャンは `ref` の `openCamera()` |
+| `LatestRecordCard` / `ManualEntryCard` / `RecordCardSkeleton` | 右カラムの最新記録カード（表示・その場で編集・記録なしの案内。明細は `components/RecordStats.tsx`）/ 手動入力カード / 読み込み中 |
+| `HistoryLinkCard` | 履歴画面へのリンク |
+
+部品のテストは `tests/components/ScanPanel.test.tsx` / `LatestRecordCard.test.tsx`、純粋関数は `tests/analyze.test.ts` / `scanShortcuts.test.ts` / `scanClient.test.ts`（`requestAnalyze` を fetch のモックで検証）です。
 
 ## 5. ローカル → クラウド移行
 
@@ -388,7 +417,7 @@ CSV を `lib/importers/` の純粋関数でバックアップ形式（`FuelLensB
 - アイコンは `public/icons/` の `icon-192.png` / `icon-512.png`（通常）と `icon-maskable-512.png`（maskable。余白付きの全面塗り）、
   iOS 用の `public/apple-touch-icon.png`（180x180。`metadata.icons.apple`）です。
 - ショートカット（アイコンの長押しメニュー）は「スキャン」`/app?action=scan` と「手動で入力」`/app?action=manual` の 2 つです。
-  `app/app/page.tsx` が `action` パラメータを 1 回だけ処理し、処理後にパラメータを URL から取り除きます（再読み込みで繰り返し開かないため）。
+  `lib/scan/useShortcutActions.ts`（`app/app/page.tsx` の `ShortcutActionHandler`）が `action` パラメータを 1 回だけ処理し、処理後にパラメータを URL から取り除きます（再読み込みで繰り返し開かないため）。
 - **Web Share Target（共有から読み取り）**: `manifest` の `share_target` は `POST /share`（`multipart/form-data`、画像は `image` フィールド、`accept: image/*`）です。
   `params` は `files` だけを宣言し（`title` / `text` / `url` は無し）、テキストやリンクの共有先には FuelLens を出しません。
   **SW が有効なら** 画像はサーバーへ送らず端末内だけで受け渡すので、サイズの上限もサーバー保存もありません。
@@ -399,7 +428,7 @@ CSV を `lib/importers/` の純粋関数でバックアップ形式（`FuelLensB
      `/app?action=shared&t=<token>` へ 303 リダイレクトします。画像が無い・保存に失敗したときは古い `pending` を削除してから
      `/app?action=share-unavailable` へリダイレクトします（前回の共有画像を誤って読み込まないため）。
      それ以外のリクエストには `respondWith` を呼ばず、ネットワークに任せます。
-  3. `app/app/page.tsx` が読み込み完了後（ログイン状態の確定後）に `lib/shareInbox.ts` の `takeSharedImage(t)` で画像を取り出して削除します。
+  3. メイン画面（`lib/scan/useScanPipeline.ts` の `processSharedImage`）が読み込み完了後（ログイン状態の確定後）に `lib/shareInbox.ts` の `takeSharedImage(t)` で画像を取り出して削除します。
      返すのは `token` が URL の `t` と一致し、保存から 10 分以内のものだけです（それ以外は削除して捨て、「共有された画像が見つかりませんでした」と表示）。
      画像は圧縮してプレビューに出しますが、**自動では解析しません**。`/share` へは他のサイトからもフォーム送信（クロスサイト POST）で画像を送り込めるため、
      「共有された画像を読み取りますか？」（`useToast` の confirm、ボタンは「読み取る」）で確認してから、ギャラリーと同じ経路（`/api/analyze` → 確認シート）に流します。
