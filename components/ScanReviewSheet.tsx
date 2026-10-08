@@ -3,15 +3,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, ScanLine } from "lucide-react";
 import type { AnalyzeSuccessResponse, ConfidenceField } from "@/lib/analyze";
-import {
-  useRecordForm,
-  visibleScanWarnings,
-  type DraftField,
-  type RecordFormContext,
-} from "@/lib/useRecordForm";
+import { useRecordForm, visibleScanWarnings, type DraftField } from "@/lib/useRecordForm";
 import { distanceModeOf } from "@/lib/fillChain";
 import { todayLocalISO } from "@/lib/dates";
-import type { RecordInput, Vehicle } from "@/lib/types";
+import type { FuelRecord, RecordInput, Vehicle } from "@/lib/types";
 import { useBackdropClose } from "@/lib/useBackdropClose";
 import { useFocusTrap } from "@/lib/useFocusTrap";
 import { formatPricePerUnit } from "@/lib/calculations";
@@ -27,14 +22,11 @@ interface Props {
   imageSrc: string | null;
   /** 記録先の車両（距離の入力方式・既定の燃料種別）。省略はトリップモード */
   vehicle?: Pick<Vehicle, "distance_mode" | "default_fuel_type"> | null;
-  /** 連鎖計算で直前になる記録のオドメーター（オドメーターモードの「前回から ○○ km」に使う） */
-  previousOdometer?: number | null;
-  /** 確認シートで日付を直したときに、その日付での前回のオドメーターを返す（lib/fillChain.ts の previousOdometer） */
-  getPreviousOdometer?: RecordFormContext["getPreviousOdometer"];
-  /** 連鎖計算で直前に開いている run（部分給油の合算。lib/fillChain.ts の openRunBefore） */
-  openRun?: RecordFormContext["openRun"];
-  /** 確認シートで日付を直したときに、その日付での openRun を返す */
-  getOpenRun?: RecordFormContext["getOpenRun"];
+  /**
+   * 記録先の車両の記録（useVehicleScope の records）。燃費・区間距離のプレビューは、読み取り結果をここに差し込んだ連鎖計算の結果
+   * （lib/fillChain.ts の previewInChain。前回のオドメーター・部分給油の合算・同じ日付の中の位置も含む）。省略は記録なし
+   */
+  records?: readonly FuelRecord[];
   /** 閲覧専用（クラウド障害中）なら保存を無効化する */
   readOnly?: boolean;
   /**
@@ -55,10 +47,7 @@ export default function ScanReviewSheet({
   result,
   imageSrc,
   vehicle = null,
-  previousOdometer = null,
-  getPreviousOdometer,
-  openRun = null,
-  getOpenRun,
+  records,
   readOnly = false,
   onSave,
   onDiscard,
@@ -79,7 +68,7 @@ export default function ScanReviewSheet({
       price_per_unit: result.price_per_unit,
       fuel_type: result.fuel_type,
     },
-    { vehicle, previousOdometer, getPreviousOdometer, openRun, getOpenRun, odometerOptional: true }
+    { vehicle, records, odometerOptional: true }
   );
 
   const [saving, setSaving] = useState(false);

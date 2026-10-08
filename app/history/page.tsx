@@ -10,7 +10,6 @@ import VehicleSelector from "@/components/VehicleSelector";
 import { HookErrorLine, PageHeader, ReadOnlyCaption, type HeaderLink } from "@/components/AppShell";
 import { useToast } from "@/components/Toast";
 import { useRecordForm } from "@/lib/useRecordForm";
-import { openRunBefore, previousOdometer } from "@/lib/fillChain";
 import RecordBadges, { efficiencyNullReason, formatOdometer } from "@/components/RecordBadges";
 import { normalizeDateString } from "@/lib/dates";
 import {
@@ -55,8 +54,6 @@ export default function HistoryPage() {
     scopeKey,
     vehicleActions,
     recordActions: { deleteRecord, updateRecord },
-    getPreviousOdometer,
-    getOpenRun,
   } = useVehicleScope();
 
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -187,13 +184,7 @@ export default function HistoryPage() {
 
   const startEditing = (record: FuelRecord) => {
     if (readOnly) return;
-    form.reset(record, {
-      vehicle: selectedVehicle,
-      previousOdometer: previousOdometer(records, { recordId: record.id }),
-      getPreviousOdometer,
-      openRun: openRunBefore(records, selectedVehicle, { recordId: record.id }),
-      getOpenRun,
-    });
+    form.reset(record, { vehicle: selectedVehicle, records });
     setEditingId(record.id);
     setMovingId(null);
   };

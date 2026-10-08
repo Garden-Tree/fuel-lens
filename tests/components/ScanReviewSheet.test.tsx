@@ -80,6 +80,40 @@ describe("ScanReviewSheet", () => {
     expect(screen.getByRole("button", { name: "保存" })).toBeDisabled();
   });
 
+  it("記録先の車両の記録（records）を渡すと、保存値は連鎖計算のプレビュー（前回からの区間・燃費）になる", async () => {
+    const onSave = vi.fn().mockResolvedValue(undefined);
+    const user = userEvent.setup();
+    const records = [
+      {
+        id: "a",
+        date: "2025-01-01",
+        total_distance: null,
+        fuel_amount: 30,
+        gas_station: null,
+        price_per_unit: null,
+        total_cost: null,
+        fuel_efficiency: null,
+        odometer: 12000,
+      },
+    ];
+    renderWithProviders(
+      <ScanReviewSheet
+        result={makeResult({ odometer: 12150, total_distance: 999 })}
+        imageSrc={null}
+        vehicle={{ distance_mode: "odometer", default_fuel_type: null }}
+        records={records}
+        onSave={onSave}
+        onDiscard={vi.fn()}
+      />
+    );
+    expect(screen.getByText("前回から 150 km（自動計算）")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "保存" }));
+    // 150 km ÷ 10 L = 15.00（トリップメーターの読み取り値 999 は使わない）
+    expect(onSave).toHaveBeenCalledWith(
+      expect.objectContaining({ odometer: 12150, total_distance: 150, fuel_efficiency: 15 })
+    );
+  });
+
   it("破棄ボタンで onDiscard が呼ばれる", async () => {
     const { user, onSave, onDiscard } = setup();
     await user.click(screen.getByRole("button", { name: "破棄" }));

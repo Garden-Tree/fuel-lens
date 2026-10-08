@@ -27,7 +27,6 @@ import { useToast } from "@/components/Toast";
 import { HOME_HEADER_LINKS, HookErrorLine, PageHeader, ReadOnlyCaption } from "@/components/AppShell";
 import { useRecordForm, findDuplicateRecord } from "@/lib/useRecordForm";
 import { todayLocalISO } from "@/lib/dates";
-import { openRunBefore, previousOdometer } from "@/lib/fillChain";
 import RecordBadges, { efficiencyNullReason, formatOdometer } from "@/components/RecordBadges";
 import type { AnalyzeErrorResponse, AnalyzeSuccessResponse } from "@/lib/analyze";
 import { takeSharedImage } from "@/lib/shareInbox";
@@ -133,8 +132,6 @@ export default function Home() {
     scopeKey,
     vehicleActions,
     recordActions: { addRecord, updateRecord },
-    getPreviousOdometer,
-    getOpenRun,
   } = useVehicleScope();
 
   const [loading, setLoading] = useState(false);
@@ -471,30 +468,14 @@ export default function Home() {
   };
 
   const startEditing = (record: FuelRecord) => {
-    form.reset(record, {
-      vehicle: selectedVehicle,
-      previousOdometer: previousOdometer(records, { recordId: record.id }),
-      getPreviousOdometer,
-      openRun: openRunBefore(records, selectedVehicle, { recordId: record.id }),
-      getOpenRun,
-    });
+    form.reset(record, { vehicle: selectedVehicle, records });
     setEditingRecordId(record.id);
     setIsManualEntry(false);
     setIsEditing(true);
   };
 
   const startManualEntry = () => {
-    const today = todayLocalISO();
-    form.reset(
-      { date: today },
-      {
-        vehicle: selectedVehicle,
-        previousOdometer: previousOdometer(records, { date: today }),
-        getPreviousOdometer,
-        openRun: openRunBefore(records, selectedVehicle, { date: today }),
-        getOpenRun,
-      }
-    );
+    form.reset({ date: todayLocalISO() }, { vehicle: selectedVehicle, records });
     setEditingRecordId(null);
     setIsManualEntry(true);
     setIsEditing(true);
@@ -962,10 +943,7 @@ export default function Home() {
           result={scanResult.data}
           imageSrc={scanResult.image}
           vehicle={selectedVehicle}
-          previousOdometer={previousOdometer(records, { date: scanResult.data.date ?? todayLocalISO() })}
-          getPreviousOdometer={getPreviousOdometer}
-          openRun={openRunBefore(records, selectedVehicle, { date: scanResult.data.date ?? todayLocalISO() })}
-          getOpenRun={getOpenRun}
+          records={records}
           readOnly={readOnly}
           onSave={handleScanSave}
           onDiscard={handleScanDiscard}
