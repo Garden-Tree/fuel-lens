@@ -2,7 +2,7 @@
  * 統計ページ（/stats）用の純粋な集計ロジック。
  *
  * React / DOM に依存しない関数のみを置く（単体テスト対象）。
- * 給油記録の型は useFuelRecords から型のみ import する。
+ * 給油記録の型は lib/types.ts、日付の検証・変換は lib/dates.ts。
  *
  * 【燃費の平均について（満タン法）】
  * 本アプリの燃費は満タン法（燃費 = 前回の満タン給油からの走行距離 ÷ 給油量）で算出する。
@@ -26,8 +26,9 @@
  * 店舗名のまとめ方は lib/stations.ts の stationKey。平均単価は Σ支払総額 ÷ Σ給油量（summarize の avgPricePerUnit と同じ考え方）。
  */
 
-import type { FuelRecord } from "./useFuelRecords";
+import type { FuelRecord } from "./types";
 import { calculateFuelMetrics } from "./calculations";
+import { localDateString, normalizeDateString, parseLocalDate, subtractMonthsClamped } from "./dates";
 import { detectStationBrand, normalizeStationName, stationKey } from "./stations";
 
 /** 期間フィルタの種別（全期間 / 1年 / 6ヶ月 / 3ヶ月） */
@@ -87,6 +88,9 @@ export type StatsSummary = {
 };
 
 /** 燃費グラフの Y 軸設定 */
+/** グラフの時間軸の範囲 [最小, 最大]（epoch ms。buildTimeDomain） */
+export type TimeDomain = [number, number];
+
 export type EfficiencyAxis = {
   /** [min, max]。データなしは undefined（recharts の auto に任せる） */
   domain: [number, number] | undefined;
@@ -110,27 +114,6 @@ export function hasPositiveNumber(v: unknown): v is number {
   return hasNumber(v) && v > 0;
 }
 
-const DATE_PREFIX_RE = /^(\d{4})-(\d{2})-(\d{2})/;
-
-/**
- * 記録の date を正規化して "YYYY-MM-DD" を返す。
- * 先頭が YYYY-MM-DD 形式でない、または実在しない日付（2月30日など）の場合は null。
- * ISO 日時 ("2025-01-05T00:00:00Z" など) は日付部分だけを採用する。
- */
-export function normalizeDateString(date: unknown): string | null {
-  if (typeof date !== "string") return null;
-  const m = DATE_PREFIX_RE.exec(date);
-  if (!m) return null;
-  const y = Number(m[1]);
-  const mo = Number(m[2]);
-  const d = Number(m[3]);
-  if (mo < 1 || mo > 12 || d < 1 || d > 31) return null;
-  // 実在チェック（ローカル日付として構築し、繰り上がりが起きていないか確認）
-  const dt = new Date(y, mo - 1, d);
-  if (dt.getFullYear() !== y || dt.getMonth() !== mo - 1 || dt.getDate() !== d) return null;
-  return `${m[1]}-${m[2]}-${m[3]}`;
-}
-
 /** 記録に有効な日付があるか */
 export function hasValidDate(record: Pick<FuelRecord, "date">): boolean {
   return normalizeDateString(record.date) !== null;
@@ -141,41 +124,6 @@ export function countUnknownDate(records: ReadonlyArray<Pick<FuelRecord, "date">
   let n = 0;
   for (const r of records) if (!hasValidDate(r)) n++;
   return n;
-}
-
-/** "YYYY-MM-DD" をローカル 0 時の Date に変換する（不正なら null） */
-export function parseLocalDate(date: unknown): Date | null {
-  const s = normalizeDateString(date);
-  if (!s) return null;
-  const [y, m, d] = s.split("-").map(Number);
-  return new Date(y, m - 1, d);
-}
-
-/**
- * Date をローカル暦の "YYYY-MM-DD" 文字列にする。
- * `toISOString()` は UTC に変換されるため、日本時間の深夜などで日付がずれる。
- * 期間フィルタの境界はこの文字列同士の辞書順比較で行う。
- */
-export function localDateString(d: Date): string {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
-}
-
-/**
- * n ヶ月前のローカル日付を返す（日は月末に丸める）。
- * `Date#setMonth` は 3/31 → 2/31 → 3/3 のように繰り上がるため使わない。
- * 例: 2025-03-31 から 1 ヶ月前 → 2025-02-28。
- * 返り値の時刻は 0 時 0 分 0 秒。
- */
-export function subtractMonthsClamped(d: Date, n: number): Date {
-  const totalMonths = d.getFullYear() * 12 + d.getMonth() - n;
-  const y = Math.floor(totalMonths / 12);
-  const m = totalMonths - y * 12; // 0..11
-  const lastDay = new Date(y, m + 1, 0).getDate();
-  const day = Math.min(d.getDate(), lastDay);
-  return new Date(y, m, day);
 }
 
 // ---------------------------------------------------------------------------
@@ -396,7 +344,7 @@ export function roundTo2(v: number): number {
 /**
  * X 軸（時刻）の表示範囲。データ範囲の 5%（最低 1 日）を前後に余白として付ける。
  */
-export function buildTimeDomain(series: ReadonlyArray<Pick<EfficiencyPoint, "timestamp">>): [number, number] | null {
+export function buildTimeDomain(series: ReadonlyArray<Pick<EfficiencyPoint, "timestamp">>): TimeDomain | null {
   if (series.length === 0) return null;
   const times = series.map(p => p.timestamp);
   const min = Math.min(...times);

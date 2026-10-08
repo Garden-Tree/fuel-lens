@@ -12,7 +12,8 @@ import {
   type UseRecordFormReturn,
 } from "@/lib/useRecordForm";
 import { formatPricePerUnit } from "@/lib/calculations";
-import { FUEL_TYPES, FUEL_TYPE_LABELS, MEMO_MAX_LENGTH, isFuelType } from "@/lib/fillChain";
+import { MEMO_MAX_LENGTH, isFuelType } from "@/lib/fillChain";
+import { FUEL_TYPES, FUEL_TYPE_LABELS } from "@/lib/types";
 
 interface Props {
   /** useRecordForm() の戻り値 */

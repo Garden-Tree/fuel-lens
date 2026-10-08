@@ -22,32 +22,15 @@
  */
 
 import { roundFuelEfficiency } from "./calculations";
-import type { FuelRecord } from "./useFuelRecords";
-import type { Vehicle } from "./useVehicles";
+import type { DistanceMode, FuelRecord, FuelType, NewRecordField, Vehicle } from "./types";
 
 // ------------------------------------------------------------------
-// 燃料種別・距離の入力方式
+// 燃料種別・距離の入力方式（型と FUEL_TYPES / FUEL_TYPE_LABELS は lib/types.ts）
 // ------------------------------------------------------------------
-
-export type FuelType = "regular" | "premium" | "diesel" | "other";
-
-/** 燃料種別の一覧（UI のセレクトの並び順） */
-export const FUEL_TYPES: readonly FuelType[] = ["regular", "premium", "diesel", "other"];
-
-/** 燃料種別の表示名（履歴カードのバッジにもそのまま使える短い名前） */
-export const FUEL_TYPE_LABELS: Readonly<Record<FuelType, string>> = {
-  regular: "レギュラー",
-  premium: "ハイオク",
-  diesel: "軽油",
-  other: "その他",
-};
 
 export function isFuelType(v: unknown): v is FuelType {
   return v === "regular" || v === "premium" || v === "diesel" || v === "other";
 }
-
-/** 車両の距離の入力方式。trip = トリップメーターの区間距離、odometer = 積算距離の差分 */
-export type DistanceMode = "trip" | "odometer";
 
 export const DEFAULT_DISTANCE_MODE: DistanceMode = "trip";
 
@@ -95,9 +78,6 @@ export function normalizeRecord<T extends FuelRecord>(r: T): T & Required<Pick<F
     memo: sanitizeMemo(r.memo),
   };
 }
-
-/** fuel_records に 0004 で追加した列 */
-export type NewRecordField = "odometer" | "is_full" | "missed_previous" | "fuel_type" | "memo";
 
 /**
  * 車両の新しい列に既定値を入れた新しいオブジェクトを返す（他のキーはそのまま残す）。
@@ -385,6 +365,24 @@ export type OpenRun = {
 export type ChainPosition =
   | { date: string; odometer?: number | null }
   | { recordId: string; date?: string; odometer?: number | null };
+
+/**
+ * フォームで入力中の日付・オドメーターから ChainPosition を作る（フォームの getPreviousOdometer / getOpenRun 用）。
+ * - 編集中の記録（recordId）が records にあれば `{ recordId, date, odometer }`。その記録自身を除き、
+ *   created_at と id は保存値のまま並べるので、同じ日付の記録の中の位置が連鎖計算と一致する
+ * - 新規の記録、または編集中の記録が records に無い（再読み込みで消えた）ときは新規として `{ date, odometer }`
+ * odometer は入力中の値（未入力・省略は null。保存値ではなく入力値で位置を決める）。
+ */
+export function formChainPosition(
+  records: readonly Pick<FuelRecord, "id">[],
+  date: string,
+  recordId?: string | null,
+  odometer?: number | null
+): ChainPosition {
+  const odo = odometer ?? null;
+  if (recordId && records.some(r => r.id === recordId)) return { recordId, date, odometer: odo };
+  return { date, odometer: odo };
+}
 
 /**
  * 新規の記録の created_at の代わり。保存時刻（いま）は既存の記録の created_at より後なので、その代わりに最大の時刻を使う

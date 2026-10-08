@@ -4,15 +4,14 @@ import { useMemo, useRef, useState, type ChangeEvent } from "react";
 import { Bike, Car, FileInput, FileSpreadsheet, Loader2 } from "lucide-react";
 
 import { useToast } from "@/components/Toast";
-import type { FuelRecord } from "@/lib/useFuelRecords";
-import type { Vehicle, VehicleSettings } from "@/lib/useVehicles";
+import type { FuelRecord, Vehicle, VehicleSettings, VehicleType } from "@/lib/types";
 import {
   BACKUP_MAX_TEXT_LENGTH,
   finalizeRestoreRecords,
   planRestore,
   type FuelLensBackup,
 } from "@/lib/backup";
-import { fuelioToBackup, isFuelioCsv, parseFuelioCsv, type ParsedFuelio, type VehicleType } from "@/lib/importers/fuelio";
+import { fuelioToBackup, isFuelioCsv, parseFuelioCsv, type ParsedFuelio } from "@/lib/importers/fuelio";
 import {
   FUELLENS_CSV_DEFAULT_VEHICLE_NAME,
   detectFuelLensCsv,
@@ -32,7 +31,7 @@ export interface ImportPanelProps {
   /** 車両一覧の読み込みエラー（あれば取り込みを無効化する） */
   vehiclesError: string | null;
   fetchAllRecords: () => Promise<FuelRecord[]>;
-  addVehicles: (items: ({ name: string; type: "car" | "bike" } & VehicleSettings)[]) => Promise<Vehicle[]>;
+  addVehicles: (items: ({ name: string; type: VehicleType } & VehicleSettings)[]) => Promise<Vehicle[]>;
   addRecords: (
     items: Omit<FuelRecord, "id">[],
     options?: { onProgress?: (done: number, total: number) => void }

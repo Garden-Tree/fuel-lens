@@ -17,16 +17,16 @@ import { normalizeFuelType } from "../analyze";
 import { BACKUP_APP_ID, BACKUP_MAX_RECORDS, BACKUP_VERSION, type FuelLensBackup } from "../backup";
 import { calculateFuelMetrics } from "../calculations";
 import { CSV_NO, CSV_YES, RECORD_CSV_EXTRA_HEADERS, RECORDS_CSV_BASE_HEADERS } from "../csv";
+import { sanitizeMemo, sanitizeOdometer } from "../fillChain";
 import {
   FUEL_TYPES,
   FUEL_TYPE_LABELS,
-  sanitizeMemo,
-  sanitizeOdometer,
   type DistanceMode,
+  type FuelRecord,
   type FuelType,
-} from "../fillChain";
-import type { FuelRecord } from "../useFuelRecords";
-import { hashString, isBlankRow, parseCsvNumber, parseCsvRows, parseFlexibleDate, type VehicleType } from "./fuelio";
+  type VehicleType,
+} from "../types";
+import { hashString, isBlankRow, parseCsvNumber, parseCsvRows, parseFlexibleDate } from "./fuelio";
 
 /** 履歴画面の車両別 CSV のヘッダー（app/history/page.tsx の exportToCsv と同じ） */
 export const HISTORY_CSV_HEADERS = [

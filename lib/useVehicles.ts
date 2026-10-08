@@ -11,13 +11,15 @@ import {
   migrationErrorMessage,
   ensureDefaultVehicle,
   withStatus,
+  writeLocalJson,
   CrossTabLockError,
   LOCAL_RECORDS_KEY,
   LOCAL_VEHICLES_KEY,
   LOCAL_DEFAULT_VEHICLE_ID,
   DEFAULT_VEHICLE_NAME,
 } from "./migrateLocalData";
-import { FUEL_RECORDS_CHANGED_EVENT, isUnclassifiedRecord, isUuid } from "./recordFilters";
+import { isUnclassifiedRecord, isUuid } from "./recordFilters";
+import { notifyRecordsChanged, useWindowEvent } from "./events";
 import {
   CLOUD_LOAD_ERROR_MESSAGE,
   PERMISSION_DENIED_MESSAGE,
@@ -31,39 +33,15 @@ import {
   syncCacheOwner,
   toUserFacingWriteError,
   useSupabaseOutage,
+  vehiclesCacheKey,
   writeCache,
 } from "./supabaseHealth";
-import {
-  isDistanceMode,
-  isFuelType,
-  normalizeVehicle,
-  type DistanceMode,
-  type FuelType,
-} from "./fillChain";
+import { isDistanceMode, isFuelType, normalizeVehicle } from "./fillChain";
+import { pickSelected, selectedVehicleStorageKey, shouldPersistSelection } from "./vehicleSelection";
+import type { Vehicle, VehicleSettings, VehicleType } from "./types";
 
-export type { DistanceMode } from "./fillChain";
-export { normalizeVehicle } from "./fillChain";
-
-export type Vehicle = {
-  id: string;
-  user_id: string;
-  name: string;
-  type: "car" | "bike";
-  created_at?: string;
-  /**
-   * 距離の入力方式（0004 で追加）。省略・不明は "trip"（トリップメーターの区間距離）。
-   * "odometer" なら記録の odometer の差分から区間距離を出す（lib/fillChain.ts）。
-   */
-  distance_mode?: DistanceMode;
-  /** 新規記録の燃料種別の初期値（0004 で追加）。null / 省略は未指定 */
-  default_fuel_type?: FuelType | null;
-};
-
-/** 車両の設定（距離の入力方式・既定の燃料種別）。省略したキーは変更しない／既定値 */
-export type VehicleSettings = {
-  distance_mode?: DistanceMode;
-  default_fuel_type?: FuelType | null;
-};
+/** @deprecated lib/types.ts から import する（互換のための再エクスポート） */
+export type { Vehicle, VehicleSettings } from "./types";
 
 /**
  * 呼び出し側から受け取った設定を検証し、既知の値だけを残す（不明な値のキーは捨てる）。
@@ -86,19 +64,6 @@ const DEFAULT_VEHICLE: Vehicle = normalizeVehicle({
   type: "car",
 });
 
-const SELECTED_VEHICLE_KEY = "fuel_lens_selected_vehicle_id";
-
-/**
- * 選択中の車両 ID を保存する localStorage キー。
- * ログイン中はユーザーごとに分け、別アカウントの車両 ID を読まないようにする。
- * 未ログイン時は従来のキー（互換のため）。
- */
-export function selectedVehicleStorageKey(userId: string | null | undefined): string {
-  return userId ? `${SELECTED_VEHICLE_KEY}_${userId}` : SELECTED_VEHICLE_KEY;
-}
-
-const vehiclesCacheKey = (userId: string) => `fuel_lens_cache_vehicles_${userId}`;
-
 function parseLocalVehicles(raw: string | null): Vehicle[] {
   if (!raw) return [];
   try {
@@ -113,16 +78,6 @@ function parseLocalVehicles(raw: string | null): Vehicle[] {
   } catch {
     return [];
   }
-}
-
-export function pickSelected(list: Vehicle[], cachedId: string | null): string {
-  if (cachedId && list.some(v => v.id === cachedId)) return cachedId;
-  return list[0]?.id ?? DEFAULT_VEHICLE.id;
-}
-
-/** フォールバックなどで保存値と実際の選択がずれたときだけ、実際の選択を保存し直すべきか */
-export function shouldPersistSelection(effectiveId: string, storedId: string | null): boolean {
-  return effectiveId !== storedId;
 }
 
 /** 読み込み失敗時に画面へ出す日本語メッセージ（英語の生エラーは console.error のみに出す） */
@@ -191,7 +146,7 @@ export function useVehicles() {
     const cachedSelectedId = typeof window !== "undefined" ? localStorage.getItem(selectedKey) : null;
     // 保存値が一覧に無くフォールバックした場合は、実際の選択を保存し直す（古い ID を残さない）
     const applySelection = (list: Vehicle[]) => {
-      const effective = pickSelected(list, cachedSelectedId);
+      const effective = pickSelected(list, cachedSelectedId, DEFAULT_VEHICLE.id);
       setSelectedVehicleIdState(effective);
       if (typeof window !== "undefined" && shouldPersistSelection(effective, cachedSelectedId)) {
         try {
@@ -278,14 +233,9 @@ export function useVehicles() {
   }, [loadVehicles]);
 
   // 障害バナーの「再試行」・自動再試行で再読み込みする
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const handler = () => {
-      void refreshVehicles();
-    };
-    window.addEventListener(SUPABASE_RETRY_EVENT, handler);
-    return () => window.removeEventListener(SUPABASE_RETRY_EVENT, handler);
-  }, [refreshVehicles]);
+  useWindowEvent(SUPABASE_RETRY_EVENT, () => {
+    void refreshVehicles();
+  });
 
   const requireWritable = () => {
     if (readOnly) throw readOnlyError(outage);
@@ -294,7 +244,7 @@ export function useVehicles() {
   /**
    * 車両を追加して選択する。settings（距離の入力方式・既定の燃料種別）は省略可（トリップ / 未指定）。
    */
-  const addVehicle = async (name: string, type: "car" | "bike", settings?: VehicleSettings) => {
+  const addVehicle = async (name: string, type: VehicleType, settings?: VehicleSettings) => {
     const extra = sanitizeVehicleSettings(settings);
     if (!isSignedIn) {
       const newVehicle: Vehicle = normalizeVehicle({
@@ -305,11 +255,10 @@ export function useVehicles() {
         ...extra,
       });
       const updated = [...vehicles, newVehicle];
+      // 先に保存する（容量超過なら日本語の Error を投げ、画面の一覧は変えない）
+      writeLocalJson(LOCAL_VEHICLES_KEY, updated);
       setVehicles(updated);
       setSelectedVehicleId(newVehicle.id);
-      if (typeof window !== "undefined") {
-        localStorage.setItem(LOCAL_VEHICLES_KEY, JSON.stringify(updated));
-      }
       return newVehicle;
     }
 
@@ -338,7 +287,7 @@ export function useVehicles() {
    * 戻り値は items と同じ順序の作成済み車両。
    */
   const addVehicles = async (
-    items: ({ name: string; type: "car" | "bike" } & VehicleSettings)[]
+    items: ({ name: string; type: VehicleType } & VehicleSettings)[]
   ): Promise<Vehicle[]> => {
     if (items.length === 0) return [];
 
@@ -405,13 +354,13 @@ export function useVehicles() {
 
     if (!isSignedIn) {
       const updated = vehicles.filter(v => v.id !== id);
+      // 先に保存する（容量超過なら日本語の Error を投げ、画面の一覧は変えない）
+      writeLocalJson(LOCAL_VEHICLES_KEY, updated);
       setVehicles(updated);
       if (selectedVehicleId === id && updated.length > 0) {
         setSelectedVehicleId(updated[0].id);
       }
       if (typeof window !== "undefined") {
-        localStorage.setItem(LOCAL_VEHICLES_KEY, JSON.stringify(updated));
-
         // 関連するローカルの給油レコードも削除（既定車両なら未分類の記録も。判定は useFuelRecords の表示と同じ）
         const localRecords = localStorage.getItem(LOCAL_RECORDS_KEY);
         if (localRecords) {
@@ -431,7 +380,7 @@ export function useVehicles() {
             console.error("ローカル給油レコードの削除失敗:", e);
           }
         }
-        window.dispatchEvent(new CustomEvent(FUEL_RECORDS_CHANGED_EVENT, { detail: { vehicleId: id } }));
+        notifyRecordsChanged({ vehicleId: id });
       }
       return;
     }
@@ -457,9 +406,7 @@ export function useVehicles() {
       if (selectedVehicleId === id && updated.length > 0) {
         setSelectedVehicleId(updated[0].id);
       }
-      if (typeof window !== "undefined") {
-        window.dispatchEvent(new CustomEvent(FUEL_RECORDS_CHANGED_EVENT, { detail: { vehicleId: id } }));
-      }
+      notifyRecordsChanged({ vehicleId: id });
     } catch (e) {
       const kind = classify((e as { status?: number })?.status, e);
       if (kind) setOutage(kind);
@@ -471,14 +418,13 @@ export function useVehicles() {
    * 車両の名前・種別を更新する。settings を渡すと距離の入力方式・既定の燃料種別も同じ 1 回の更新で保存する
    * （省略したキーは変更しない）。方式を切り替えても既存の記録は変更しない（表示は読み取り時に再計算される）。
    */
-  const updateVehicle = async (id: string, name: string, type: "car" | "bike", settings?: VehicleSettings) => {
+  const updateVehicle = async (id: string, name: string, type: VehicleType, settings?: VehicleSettings) => {
     const extra = sanitizeVehicleSettings(settings);
     if (!isSignedIn) {
       const updated = vehicles.map(v => (v.id === id ? normalizeVehicle({ ...v, name, type, ...extra }) : v));
+      // 先に保存する（容量超過なら日本語の Error を投げ、画面の一覧は変えない）
+      writeLocalJson(LOCAL_VEHICLES_KEY, updated);
       setVehicles(updated);
-      if (typeof window !== "undefined") {
-        localStorage.setItem(LOCAL_VEHICLES_KEY, JSON.stringify(updated));
-      }
       return;
     }
 

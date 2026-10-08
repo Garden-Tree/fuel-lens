@@ -21,8 +21,15 @@ import { useFuelRecords } from "@/lib/useFuelRecords";
 import { useVehicles } from "@/lib/useVehicles";
 import { formatPricePerUnit } from "@/lib/calculations";
 import {
+  type EfficiencyAxis,
+  type EfficiencyPoint,
+  type MonthlyCostPoint,
   type Period,
+  type PriceDelta,
   type PricePoint,
+  type StationComparison,
+  type StatsSummary,
+  type TimeDomain,
   buildEfficiencyAxis,
   buildEfficiencySeries,
   buildMonthlyCostSeries,
@@ -268,6 +275,9 @@ export default function StatsPage() {
             {loadError}
           </p>
         )}
+        {readOnly && (
+          <p role="status" className="text-[11px] text-amber-400/90 mb-3">閲覧専用（クラウド接続待ち）</p>
+        )}
 
         {/* 車両セレクタータブ (車両の初期ロード中のみスケルトン) */}
         {vehiclesLoading ? (
@@ -342,18 +352,18 @@ interface StatsContentProps {
   period: Period;
   onPeriodChange: (period: Period) => void;
   unknownDateCount: number;
-  summary: ReturnType<typeof summarize>;
+  summary: StatsSummary;
   validRecordCount: number;
-  chartData: ReturnType<typeof buildEfficiencySeries>;
-  timeDomain: ReturnType<typeof buildTimeDomain>;
-  averageEfficiency: ReturnType<typeof summarize>["avgEfficiency"];
-  efficiencyAxis: ReturnType<typeof buildEfficiencyAxis>;
-  monthlyCostData: ReturnType<typeof buildMonthlyCostSeries>;
+  chartData: EfficiencyPoint[];
+  timeDomain: TimeDomain | null;
+  averageEfficiency: StatsSummary["avgEfficiency"];
+  efficiencyAxis: EfficiencyAxis;
+  monthlyCostData: MonthlyCostPoint[];
   priceData: PricePoint[];
-  priceTimeDomain: ReturnType<typeof buildTimeDomain>;
-  priceAxis: ReturnType<typeof buildPriceAxis>;
-  latestPriceDelta: ReturnType<typeof priceDelta>;
-  stationComparison: ReturnType<typeof summarizeStations>;
+  priceTimeDomain: TimeDomain | null;
+  priceAxis: EfficiencyAxis;
+  latestPriceDelta: PriceDelta;
+  stationComparison: StationComparison;
 }
 
 /** 読み込み完了後の本体（期間フィルタ・サマリー・グラフ） */

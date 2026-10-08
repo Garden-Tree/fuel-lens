@@ -3,10 +3,14 @@
  *
  * useFuelRecords の読み込み・更新後の絞り込み、useVehicles の車両削除（既定車両なら未分類の記録も削除）、
  * migrateLocalData の UUID 判定で共有し、「どの記録がどの車両に属するか」の判定を 1 箇所に集約する。
+ * 一覧の並び順（sortRecordsByDateDesc）もここに置く。
  */
 
-/** 車両削除など、給油記録が別経路で変更されたことを useVehicles → useFuelRecords へ知らせる window イベント */
-export const FUEL_RECORDS_CHANGED_EVENT = "fuel_records_changed";
+import { normalizeDateString } from "./dates";
+import type { FuelRecord } from "./types";
+
+/** @deprecated lib/events.ts から import する（互換のための再エクスポート） */
+export { FUEL_RECORDS_CHANGED_EVENT } from "./events";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -62,4 +66,22 @@ export function matchesSelectedVehicle(
   }
   if (record.vehicle_id === selectedVehicleId) return true;
   return unclassified && isDefaultVehicleSelected(selectedVehicleId, defaultVehicleId);
+}
+
+/**
+ * 日付の降順（同じ日付は id の降順）に並べた新しい配列を返す（純粋関数）。
+ * 日付は normalizeDateString で比べる。日付が無い・不正な記録は最後（その中は id の降順）。
+ */
+export function sortRecordsByDateDesc<T extends Pick<FuelRecord, "id" | "date">>(list: readonly T[]): T[] {
+  return [...list].sort((a, b) => {
+    const dateA = normalizeDateString(a.date);
+    const dateB = normalizeDateString(b.date);
+    if (dateA !== dateB) {
+      if (dateA === null) return 1;
+      if (dateB === null) return -1;
+      return dateA < dateB ? 1 : -1;
+    }
+    if (a.id === b.id) return 0;
+    return b.id > a.id ? 1 : -1;
+  });
 }

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { pickSelected, selectedVehicleStorageKey, shouldPersistSelection } from "@/lib/useVehicles";
-import type { Vehicle } from "@/lib/useVehicles";
+import { pickSelected, selectedVehicleStorageKey, shouldPersistSelection } from "@/lib/vehicleSelection";
+import { LOCAL_DEFAULT_VEHICLE_ID } from "@/lib/migrateLocalData";
+import type { Vehicle } from "@/lib/types";
 
 const v = (id: string): Vehicle => ({ id, user_id: "u", name: id, type: "car" });
 
@@ -32,5 +33,10 @@ describe("pickSelected / shouldPersistSelection", () => {
 
   it("persists when nothing is stored", () => {
     expect(shouldPersistSelection(pickSelected([v("b1")], null), null)).toBe(true);
+  });
+
+  it("falls back to the given id (default: the local default vehicle) when the list is empty", () => {
+    expect(pickSelected([], "b1")).toBe(LOCAL_DEFAULT_VEHICLE_ID);
+    expect(pickSelected([], null, "fallback")).toBe("fallback");
   });
 });

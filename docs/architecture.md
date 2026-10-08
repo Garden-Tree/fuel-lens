@@ -25,12 +25,16 @@ FuelLens の構成、データの流れ、主要なモジュールの役割を�
 | `components/Toast.tsx` | `ToastProvider` と `useToast()`（通知と確認ダイアログ） |
 | `components/UserSync.tsx` | ログイン中のユーザーを `users` テーブルへ upsert |
 | `components/SupabaseStatusBanner.tsx` | クラウド障害時の警告バナーと「再試行」 |
-| `lib/analyze.ts` | `/api/analyze` の純粋ヘルパーと型（他の lib に依存しない） |
+| `lib/types.ts` | ドメインの型と定数（`FuelRecord` / `Vehicle` / `VehicleSettings` / `VehicleType` / `FuelType` / `FUEL_TYPES` / `FUEL_TYPE_LABELS` / `DistanceMode` / `RecordInput` / `NewRecordField`）。import なし。フックのファイル（`useFuelRecords` / `useVehicles` / `useRecordForm`）は互換のため再エクスポートしている（`@deprecated`） |
+| `lib/dates.ts` | 日付・日時の検証と変換（`isValidCalendarDate` / `normalizeDateString` / `parseLocalDate` / `localDateString` / `todayLocalISO` / `subtractMonthsClamped` / `normalizeTimestamp`）。import なしの純粋関数 |
+| `lib/events.ts` | アプリ内の window イベント。`FUEL_RECORDS_CHANGED_EVENT` と `notifyRecordsChanged()`、購読フック `useWindowEvent(name, handler)` |
+| `lib/vehicleSelection.ts` | 選択中の車両の決定（`pickSelected` / `shouldPersistSelection`）と保存キー（`selectedVehicleStorageKey`）。純粋関数 |
+| `lib/analyze.ts` | `/api/analyze` の純粋ヘルパーと型。import するのは依存のないドメインモジュール（`lib/types.ts` / `lib/dates.ts` / `lib/calculations.ts`）だけ |
 | `lib/calculations.ts` | `calculateFuelMetrics`（燃費・単価の計算） |
-| `lib/fillChain.ts` | 給油の連鎖計算 `applyFillChain`（オドメーターの差分・部分給油の合算・記録漏れでの連鎖切断）と、燃料種別・距離の入力方式の型・既定値補完（`normalizeRecord` / `normalizeVehicle`）。純粋関数（[10 章](#10-給油の連鎖計算fill-chain)） |
+| `lib/fillChain.ts` | 給油の連鎖計算 `applyFillChain`（オドメーターの差分・部分給油の合算・記録漏れでの連鎖切断）と、燃料種別・距離の入力方式の判定・既定値補完（`normalizeRecord` / `normalizeVehicle`）、フォームの位置（`formChainPosition`）。純粋関数（[10 章](#10-給油の連鎖計算fill-chain)） |
 | `lib/stats.ts` | 統計ページの純粋な集計ロジック（[11 章](#11-統計)） |
 | `lib/stations.ts` | スタンド名の正規化（`normalizeStationName`）、ブランド判定（`detectBrand` と辞書 `STATION_BRANDS`）、グルーピングキー（`stationKey`）。純粋関数 |
-| `lib/recordFilters.ts` | 車両・未分類の判定（純粋関数） |
+| `lib/recordFilters.ts` | 車両・未分類の判定と、記録一覧の並び順（`sortRecordsByDateDesc`。日付の無い・不正な記録は最後）。純粋関数 |
 | `lib/backup.ts` | バックアップ JSON の組み立て・検証（`parseBackup`）・復元計画（`planRestore` / `finalizeRestoreRecords`）。純粋関数 |
 | `lib/csv.ts` | CSV の組み立て・エスケープ・ダウンロード。履歴画面の CSV 出力と設定画面の全車両 CSV で共有 |
 | `lib/importers/fuelio.ts` / `lib/importers/fuellensCsv.ts` | CSV の取り込み（Fuelio / FuelLens の CSV → バックアップ形式）。純粋関数 |
@@ -42,7 +46,6 @@ FuelLens の構成、データの流れ、主要なモジュールの役割を�
 | `lib/shareInbox.ts` | Web Share Target の受け取り箱。Service Worker が IndexedDB に置いた共有画像を、トークン一致かつ 10 分以内のときだけ取り出して削除する（`takeSharedImage` / `clearSharedImage`。[9 章](#9-pwa)） |
 | `public/sw.js` | Service Worker。Web Share Target（POST `/share`）の受け取り専用で、キャッシュはしない（[9 章](#9-pwa)） |
 | `components/ServiceWorkerRegister.tsx` | `public/sw.js` を登録する（本番ビルドのみ。開発中は `NEXT_PUBLIC_ENABLE_SW=1` で有効化）。`app/layout.tsx` にマウント |
-| `app/share/route.ts` | Web Share Target の予備のフォールバック。通常は `next.config.ts` の `redirects()` が先に 303 を返すので届かない。POST は本文を読まずに `/app?action=share-unavailable` へ、GET は `/app` へ 303 リダイレクト |
 | `public/icons/` / `public/apple-touch-icon.png` | PWA アイコン（`icon-192.png` / `icon-512.png` / `icon-maskable-512.png` と 180x180 の apple-touch-icon）。`scripts/generate-icons.mjs` が生成 |
 | `scripts/generate-icons.mjs` | `app/icon.svg` から PWA アイコンを生成するスクリプト（`node scripts/generate-icons.mjs`） |
 | `tests/*.test.ts` | Vitest の単体テスト（`environment: "node"`。対象は `lib/` の関数） |
@@ -129,6 +132,9 @@ FuelLens の構成、データの流れ、主要なモジュールの役割を�
 - 読み込んだ車両（ローカル・クラウド・キャッシュ）は `normalizeVehicle` で新しい列を補います（`0004` 適用前の DB でも動く）。
 - `addVehicles(items: ({ name, type } & VehicleSettings)[])`（復元用）は車両をまとめて追加し、作成した `Vehicle[]` を返します。
   未ログインでは `local-vehicle-<時刻>-<連番>` の ID でローカルに追加し、ログイン中は 1 回の insert で追加します（閲覧専用中は日本語エラー）。
+- 未ログイン時の localStorage への保存（`addVehicle` / `updateVehicle` / `deleteVehicle`）は、画面の一覧を変える前に `writeLocalJson`（`lib/migrateLocalData.ts`）で行います。
+  容量超過などで保存できなければ「ブラウザの保存領域がいっぱいです。…」の日本語エラーを投げ、一覧は変えません（英語の `DOMException` は console にだけ出す）。
+- 選択中の車両は `lib/vehicleSelection.ts` の `pickSelected`（保存値が一覧に無ければ先頭の車両）で決め、ずれたときだけ保存し直します。
 
 ### `useFuelRecords(selectedVehicleId?, defaultVehicleId?, { enabled?, vehicles? })`（`lib/useFuelRecords.ts`）
 
@@ -141,7 +147,10 @@ FuelLens の構成、データの流れ、主要なモジュールの役割を�
 - `addRecord` / `updateRecord` / `addRecords` は `pickRecordColumns` で既知の列だけを保存し、新しい列を検証します
   （`odometer` は 0 以上の有限数、`fuel_type` は 4 値、`memo` は 200 文字まで、`is_full` / `missed_previous` は真偽値のみ）。新しい列を省略した保存は DB の既定値になり、`0004` 適用前の DB でも成功します。
 - ログイン中は `selectedVehicleId` が UUID になるまでクエリを発行しません。
-- 車両削除などで記録が別経路から変わると、`fuel_records_changed` イベントで再読み込みします。
+- 車両削除などで記録が別経路から変わると、`fuel_records_changed` イベント（`lib/events.ts` の `notifyRecordsChanged()` が発火し、`useWindowEvent` で購読）で再読み込みします。
+- `records` の並びは `sortRecordsByDateDesc`（日付の降順、同じ日付は id の降順。日付の無い・不正な記録は最後）です。
+- 未ログイン時の `addRecord` / `updateRecord` / `deleteRecord` は、localStorage へ保存できなければ（容量超過など）
+  「ブラウザの保存領域がいっぱいです。不要な記録を削除するかバックアップしてください。」の日本語エラーを投げます（`writeLocalJson`）。
 - `addRecords(items, { onProgress })`（復元用）は、選択中の車両で絞らず、各記録の `vehicle_id` のまま一括追加して追加件数を返します。
   未ログインでは `restored-<時刻>-<連番>` の ID でローカルに追記します。ログイン中は 100 件ずつ挿入し、
   `vehicle_id` が UUID でない記録があれば挿入前に日本語エラーを投げます。途中で失敗したときは
@@ -208,7 +217,8 @@ Supabase Free のプロジェクトが一時停止すると、API は HTTP 540 �
 
 - 障害種別は sessionStorage（`fuel_lens_supabase_outage`）と window イベント `supabase_outage` で全コンポーネントに共有します。
 - 正常に読み込めた一覧は `fuel_lens_cache_vehicles_<userId>` / `fuel_lens_cache_records_<userId>_<vehicleId>` に保存し、
-  障害中はそれを閲覧専用で表示します。
+  障害中はそれを閲覧専用で表示します（キーは `lib/supabaseHealth.ts` の `vehiclesCacheKey` / `recordsCacheKey`。`clearUserCaches` と同じ場所で定義）。
+- 閲覧専用中は `/history` / `/stats` / `/settings` に「閲覧専用（クラウド接続待ち）」と表示します（`useVehicles` と `useFuelRecords` の `readOnly` は同じ障害状態から決まる）。
 - `SupabaseStatusBanner` はログイン中かつ障害中にだけ表示されます。
   「再試行」ボタンと、障害中のネットワーク復帰（`online`）・タブの再表示（自動分は 30 秒に 1 回まで）が
   `fuel_lens_retry` イベントを発火し、`useVehicles` / `useFuelRecords` が再読み込みします。
@@ -353,7 +363,7 @@ CSV を `lib/importers/` の純粋関数でバックアップ形式（`FuelLensB
      `next.config.ts` の `redirects()` が `content-type: multipart/form-data` の `/share` を **本文を読まずに** `/app?action=share-unavailable` へ 303 で戻し
      （それ以外の `/share` は `/app` へ 303）、画面は「共有された画像を受け取れませんでした。もう一度お試しください」と表示します。
      サーバーは画像を読まず保存もしませんが、通信としては届きます。また Vercel では本文が 4.5 MB を超えると、リダイレクトの前に 413 で拒否されることがあります。
-     `app/share/route.ts` は同じ動作をする予備のフォールバックです。
+     `redirects()` はメソッドを問わずルーティングの最初に評価されるため、`/share` のルート（`app/share/`）は置いていません。
 - **Service Worker の登録**: `components/ServiceWorkerRegister.tsx`（`app/layout.tsx` にマウント）が本番ビルドでのみ `/sw.js` をスコープ `/` で登録します。
   開発中に試すときは `NEXT_PUBLIC_ENABLE_SW=1` を設定します。SW は `install` で `skipWaiting`、`activate` で `clients.claim` し、
   `{ type: "SKIP_WAITING" }` メッセージにも応じます。**キャッシュ（precache / Cache Storage）は一切使いません。**
@@ -406,8 +416,11 @@ CSV を `lib/importers/` の純粋関数でバックアップ形式（`FuelLensB
 - **フォームのオドメーター**: オドメーターモードでオドメーターが必須なのは手動の新規記録だけです（`useRecordForm` の `odometerRequiredFor`）。
   既存の記録の編集とスキャン結果は未入力でも保存でき、「オドメーターを入力すると区間距離を自動計算します」と注意を出します（保存される区間距離は null で、連鎖計算では持ち越し行）。
   「前回のオドメーター」は開いたときの位置で渡し、フォーム内で日付かオドメーターを変えたら `getPreviousOdometer(date, excludeRecordId, odometer)`
-  （編集中の記録自身を除いた `previousOdometer(records, { date, odometer })`）で取り直します。新規の位置は `compareForChain` で決めるので、
-  同じ日付の記録の中でもオドメーター順（created_at の無い古い記録より前）に、保存後の連鎖計算と同じ位置になります。
+  （`previousOdometer(records, formChainPosition(records, date, excludeRecordId, odometer))`）で取り直します。`getOpenRun` も同じ位置を使います。
+  新規の位置は `{ date, odometer }` で、`compareForChain` で決めるので、同じ日付の記録の中でもオドメーター順（created_at の無い古い記録より前）に、保存後の連鎖計算と同じ位置になります。
+  編集中の記録は `{ recordId, date, odometer }`（自分自身を除き、created_at と id は保存値のまま）なので、同じ日付の記録の中での位置も保存後と一致します
+  （その記録が再読み込みで一覧から消えていたら新規として扱う）。
+  呼び出し側（`app/app/page.tsx` / `app/history/page.tsx`）は records を ref 経由で読むので、フォームを開いている間に記録が再読み込みされても最新の一覧で計算します。
   直前の記録漏れで基準が無いときは（`openRunBefore` の `baseStale`）「記録漏れの直後のため区間は計算できません」と表示します。
 - **互換性**: 既存の記録は `is_full = true`・`missed_previous = false`・`odometer = null` として扱われ、トリップモードの車両の表示と計算は変わりません。
 - **補助関数**: `previousOdometer` / `chainBaseBefore`（フォームの「前回から ○○ km」表示用に、連鎖計算が基準にするオドメーター（それまでの最大値）と、記録漏れの直後で基準が無いかを返す）、

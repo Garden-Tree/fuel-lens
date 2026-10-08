@@ -5,14 +5,13 @@ import { AlertTriangle, ScanLine } from "lucide-react";
 import type { AnalyzeSuccessResponse, ConfidenceField } from "@/lib/analyze";
 import {
   useRecordForm,
-  todayLocalISO,
   visibleScanWarnings,
   type DraftField,
   type RecordFormContext,
-  type RecordInput,
 } from "@/lib/useRecordForm";
 import { distanceModeOf } from "@/lib/fillChain";
-import type { Vehicle } from "@/lib/useVehicles";
+import { todayLocalISO } from "@/lib/dates";
+import type { RecordInput, Vehicle } from "@/lib/types";
 import { useBackdropClose } from "@/lib/useBackdropClose";
 import { useFocusTrap } from "@/lib/useFocusTrap";
 import { formatPricePerUnit } from "@/lib/calculations";
@@ -211,7 +210,7 @@ export default function ScanReviewSheet({
               </p>
               <ul className="list-disc pl-5 space-y-1">
                 {warnings.map((w, i) => (
-                  <li key={i}>{w}</li>
+                  <li key={`${w.code}-${i}`}>{w.message}</li>
                 ))}
               </ul>
             </div>

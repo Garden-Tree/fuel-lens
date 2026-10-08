@@ -1,5 +1,5 @@
-import type { FuelRecord } from "@/lib/useFuelRecords";
-import { FUEL_TYPE_LABELS, isFuelType } from "@/lib/fillChain";
+import { isFuelType } from "@/lib/fillChain";
+import { FUEL_TYPE_LABELS, type FuelRecord } from "@/lib/types";
 
 /**
  * 記録カード（/app の最新記録・/history）の表示用ヘルパー。

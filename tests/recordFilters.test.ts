@@ -5,6 +5,7 @@ import {
   isUnclassifiedRecord,
   isUuid,
   matchesSelectedVehicle,
+  sortRecordsByDateDesc,
 } from "@/lib/recordFilters";
 
 const UUID_A = "0f8fad5b-d9cb-469f-a165-70867728950e";
@@ -133,5 +134,25 @@ describe("matchesSelectedVehicle", () => {
       expect(matchesSelectedVehicle({ vehicle_id: null }, "local-vehicle-1", "local-vehicle-1")).toBe(true);
       expect(matchesSelectedVehicle({ vehicle_id: "default-car" }, "local-vehicle-1", "local-vehicle-1")).toBe(true);
     });
+  });
+});
+
+describe("sortRecordsByDateDesc", () => {
+  const r = (id: string, date: string) => ({ id, date });
+
+  it("sorts by date descending, then id descending", () => {
+    const list = [r("a", "2026-01-01"), r("c", "2026-03-01"), r("b", "2026-01-01"), r("d", "2025-12-31")];
+    expect(sortRecordsByDateDesc(list).map(x => x.id)).toEqual(["c", "b", "a", "d"]);
+  });
+
+  it("puts empty / unparseable dates last (id descending among them) instead of returning NaN", () => {
+    const list = [r("x1", "not-a-date"), r("a", "2026-01-01"), r("x2", ""), r("x3", "2026-02-30"), r("b", "2026-02-01")];
+    expect(sortRecordsByDateDesc(list).map(x => x.id)).toEqual(["b", "a", "x3", "x2", "x1"]);
+  });
+
+  it("does not mutate the input", () => {
+    const list = [r("a", "2026-01-01"), r("b", "2026-02-01")];
+    sortRecordsByDateDesc(list);
+    expect(list.map(x => x.id)).toEqual(["a", "b"]);
   });
 });

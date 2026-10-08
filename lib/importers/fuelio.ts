@@ -22,22 +22,19 @@
  * ID は入力から決まる（同じファイル → 同じ ID）。
  */
 
-import { isValidCalendarDate, normalizeFuelType } from "../analyze";
+import { normalizeFuelType } from "../analyze";
 import { BACKUP_APP_ID, BACKUP_MAX_RECORDS, BACKUP_VERSION, type FuelLensBackup } from "../backup";
 import { calculateFuelMetrics } from "../calculations";
-import { sanitizeMemo, type FuelType } from "../fillChain";
-import type { FuelRecord } from "../useFuelRecords";
-
-export type VehicleType = "car" | "bike";
-
-type NewRecordColumns = "odometer" | "is_full" | "missed_previous" | "fuel_type" | "memo";
+import { isValidCalendarDate } from "../dates";
+import { sanitizeMemo } from "../fillChain";
+import type { FuelRecord, FuelType, NewRecordField, VehicleType } from "../types";
 
 /**
  * 取り込む記録。0004 で追加した列は必ず入れる。
  * total_distance / fuel_efficiency は常に null（applyFillChain が積算距離から計算する）。
  */
-export type ImportedRecord = Omit<FuelRecord, "vehicle_id" | "created_at" | NewRecordColumns> &
-  Required<Pick<FuelRecord, NewRecordColumns>>;
+export type ImportedRecord = Omit<FuelRecord, "vehicle_id" | "created_at" | NewRecordField> &
+  Required<Pick<FuelRecord, NewRecordField>>;
 
 export type FuelioImportStats = {
   /** 取り込み対象の記録数 */

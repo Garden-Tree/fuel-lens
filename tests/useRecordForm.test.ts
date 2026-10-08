@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { FuelRecord } from "@/lib/useFuelRecords";
+import type { FuelRecord } from "@/lib/types";
 import { applyFillChain, openRunBefore, previousOdometer, type OpenRun } from "@/lib/fillChain";
 import { plausibilityWarnings } from "@/lib/analyze";
 import {
@@ -430,14 +430,22 @@ describe("visibleScanWarnings", () => {
     expect(warnings).toHaveLength(3);
     expect(visibleScanWarnings(warnings, "trip")).toEqual(warnings);
     const odo = visibleScanWarnings(warnings, "odometer");
-    expect(odo).toHaveLength(1);
-    expect(odo[0]).toContain("給油量");
-    expect(odo.some(w => /走行距離|トリップ/.test(w))).toBe(false);
+    expect(odo.map(w => w.code)).toEqual(["FUEL_TOO_LARGE"]);
+    expect(odo[0].message).toContain("給油量");
   });
 
-  it("ignores non-array input and non-string items", () => {
+  it("filters by code, not by the message text", () => {
+    const warnings = [
+      { code: "FUEL_TOO_LARGE", message: "走行距離という言葉を含む給油量の注意" },
+      { code: "DISTANCE_TOO_LARGE", message: "x" },
+    ];
+    expect(visibleScanWarnings(warnings, "odometer")).toEqual([warnings[0]]);
+  });
+
+  it("ignores non-array input and malformed items", () => {
     expect(visibleScanWarnings(undefined, "trip")).toEqual([]);
-    expect(visibleScanWarnings(["a", 1, null], "trip")).toEqual(["a"]);
+    const ok = { code: "FUEL_TOO_LARGE", message: "a" };
+    expect(visibleScanWarnings(["a", 1, null, { code: 1, message: "b" }, { code: "X" }, ok], "trip")).toEqual([ok]);
   });
 });
 

@@ -1,8 +1,8 @@
 import { GoogleGenAI, Type, type Schema } from "@google/genai";
 import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
+import { FUEL_TYPES } from "@/lib/types";
 import {
-  FUEL_TYPES,
   MAX_BODY_BYTES,
   derivePricePerUnit,
   hasAnyCoreValue,

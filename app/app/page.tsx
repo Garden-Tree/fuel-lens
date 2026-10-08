@@ -20,14 +20,16 @@ import {
   Settings
 } from "lucide-react";
 import imageCompression from "browser-image-compression";
-import { useFuelRecords, FuelRecord } from "@/lib/useFuelRecords";
+import { useFuelRecords } from "@/lib/useFuelRecords";
+import type { FuelRecord, RecordInput } from "@/lib/types";
 import EditFuelRecordForm from "@/components/EditFuelRecordForm";
 import ScanReviewSheet from "@/components/ScanReviewSheet";
 import { useVehicles } from "@/lib/useVehicles";
 import VehicleSelector from "@/components/VehicleSelector";
 import { useToast } from "@/components/Toast";
-import { useRecordForm, findDuplicateRecord, todayLocalISO, type RecordInput } from "@/lib/useRecordForm";
-import { distanceModeOf, openRunBefore, previousOdometer } from "@/lib/fillChain";
+import { useRecordForm, findDuplicateRecord } from "@/lib/useRecordForm";
+import { todayLocalISO } from "@/lib/dates";
+import { distanceModeOf, formChainPosition, openRunBefore, previousOdometer } from "@/lib/fillChain";
 import RecordBadges, { efficiencyNullReason, formatOdometer } from "@/components/RecordBadges";
 import type { AnalyzeErrorResponse, AnalyzeSuccessResponse } from "@/lib/analyze";
 import { takeSharedImage } from "@/lib/shareInbox";
@@ -142,6 +144,12 @@ export default function Home() {
   } = useFuelRecords(selectedVehicleId, vehicles[0]?.id, { enabled: !vehiclesLoading, vehicles });
   const selectedVehicle = vehicles.find(v => v.id === selectedVehicleId) ?? null;
   const distanceMode = distanceModeOf(selectedVehicle);
+  // フォームの getPreviousOdometer / getOpenRun は開いたときに渡すため、最新の records を ref 経由で読む
+  // （フォームを開いている間に記録が再読み込みされても反映する）
+  const recordsRef = useRef(records);
+  useEffect(() => {
+    recordsRef.current = records;
+  }, [records]);
 
   const [loading, setLoading] = useState(false);
   const [loadingStep, setLoadingStep] = useState<"compress" | "analyze" | null>(null);
@@ -478,18 +486,23 @@ export default function Home() {
     setSharedPending(null);
   };
 
-  // フォーム内で日付を変えたときの「前回のオドメーター」（編集中の記録自身は除く）
+  // フォーム内で日付・オドメーターを変えたときの「前回のオドメーター」。
+  // 編集中の記録は自身を除き、created_at・id は保存値のまま並べる（formChainPosition。同じ日付の記録の中の位置を連鎖計算と揃える）
   const getPreviousOdometer = useCallback(
-    (date: string, excludeRecordId?: string, odometer?: number | null) =>
-      previousOdometer(excludeRecordId ? records.filter(r => r.id !== excludeRecordId) : records, { date, odometer }),
-    [records]
+    (date: string, excludeRecordId?: string, odometer?: number | null) => {
+      const list = recordsRef.current;
+      return previousOdometer(list, formChainPosition(list, date, excludeRecordId, odometer));
+    },
+    []
   );
 
-  // フォーム内で日付を変えたときの「直前に開いている run」（部分給油の合算用。編集中の記録自身は除く）
+  // フォーム内で日付・オドメーターを変えたときの「直前に開いている run」（部分給油の合算用。位置は getPreviousOdometer と同じ）
   const getOpenRun = useCallback(
-    (date: string, excludeRecordId?: string, odometer?: number | null) =>
-      openRunBefore(excludeRecordId ? records.filter(r => r.id !== excludeRecordId) : records, selectedVehicle, { date, odometer }),
-    [records, selectedVehicle]
+    (date: string, excludeRecordId?: string, odometer?: number | null) => {
+      const list = recordsRef.current;
+      return openRunBefore(list, selectedVehicle, formChainPosition(list, date, excludeRecordId, odometer));
+    },
+    [selectedVehicle]
   );
 
   const startEditing = (record: FuelRecord) => {

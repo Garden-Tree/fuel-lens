@@ -10,7 +10,7 @@
 /**
  * 走行距離、給油量、支払総額から単価と燃費を安全に計算して返します。
  * - 単価 (円/L) は小数第 1 位に丸める（`Math.round(x * 10) / 10`）。国内の給油機は 0.1 円/L 単位で精算するため。
- *   lib/analyze.ts の derivePricePerUnit が同じ丸めを複製しているので、変更時は両方を揃えること。
+ *   lib/analyze.ts の derivePricePerUnit（/api/analyze の単価の再計算）もこの関数を呼ぶ。
  * - 燃費 (km/L) は小数第 2 位に丸める（`toFixed(2)`）。
  * @param distance 走行距離 (km)。満タン法のため「前回給油からの区間距離（トリップ）」を渡すこと。
  * @param amount 給油量 (L)
