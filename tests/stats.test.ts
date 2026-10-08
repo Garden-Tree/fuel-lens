@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { applyFillChain } from "@/lib/fillChain";
-import type { FuelRecord } from "@/lib/useFuelRecords";
+import type { FuelRecord } from "@/lib/types";
+import { localDateString, normalizeDateString, parseLocalDate, subtractMonthsClamped } from "@/lib/dates";
 import {
   PERIOD_MONTHS,
   buildEfficiencyAxis,
@@ -15,15 +16,11 @@ import {
   hasPositiveNumber,
   hasStatsData,
   hasValidDate,
-  localDateString,
-  normalizeDateString,
-  parseLocalDate,
   priceDelta,
   recordPrice,
   roundTo1,
   roundTo2,
   sortByDateAsc,
-  subtractMonthsClamped,
   summarize,
   summarizeStations,
 } from "@/lib/stats";

@@ -4,8 +4,8 @@ import { useEffect, useRef, useState, type ChangeEvent } from "react";
 import { Database, Download, FileJson, FileSpreadsheet, Loader2, Upload } from "lucide-react";
 
 import { useToast } from "@/components/Toast";
-import type { FuelRecord } from "@/lib/useFuelRecords";
-import type { Vehicle, VehicleSettings } from "@/lib/useVehicles";
+import type { FuelRecord, Vehicle, VehicleSettings, VehicleType } from "@/lib/types";
+import { todayLocalISO } from "@/lib/dates";
 import {
   BACKUP_MAX_TEXT_LENGTH,
   backupFilename,
@@ -30,7 +30,7 @@ export interface BackupPanelProps {
   /** 車両一覧の読み込みエラー（あれば復元を無効化する） */
   vehiclesError: string | null;
   fetchAllRecords: () => Promise<FuelRecord[]>;
-  addVehicles: (items: ({ name: string; type: "car" | "bike" } & VehicleSettings)[]) => Promise<Vehicle[]>;
+  addVehicles: (items: ({ name: string; type: VehicleType } & VehicleSettings)[]) => Promise<Vehicle[]>;
   addRecords: (
     items: Omit<FuelRecord, "id">[],
     options?: { onProgress?: (done: number, total: number) => void }
@@ -55,11 +55,6 @@ type PendingRestore = {
 
 function errorText(e: unknown, fallback: string): string {
   return e instanceof Error && e.message ? e.message : fallback;
-}
-
-function todayString(): string {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
 const sectionClass = "bg-gray-900 border border-gray-800 rounded-2xl p-5 md:p-6";
@@ -143,7 +138,7 @@ export default function BackupPanel({
       const vehiclesById = new Map(vehicles.map(v => [v.id, v]));
       // 未分類の記録は既定（先頭）車両に表示されているので、その車両名で出力する
       const csv = buildRecordsCsv(records, vehiclesById, vehicles[0]?.name ?? "未分類");
-      downloadTextFile(`fuellens_all_${todayString()}.csv`, csv, "text/csv;charset=utf-8;");
+      downloadTextFile(`fuellens_all_${todayLocalISO()}.csv`, csv, "text/csv;charset=utf-8;");
       toast(`${records.length} 件の記録を CSV で書き出しました`, { type: "success" });
     } catch (e) {
       console.error(e);

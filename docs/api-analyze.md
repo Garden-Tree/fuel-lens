@@ -2,6 +2,7 @@
 
 レシートとメーターが写った画像を Gemini で解析し、給油情報を JSON で返す API です。
 実装は `app/api/analyze/route.ts`、純粋ヘルパーと型は `lib/analyze.ts`（単体テストは `tests/analyze.test.ts`）にあります。
+`lib/analyze.ts` が import するのは依存のないドメインモジュール（`lib/types.ts` / `lib/dates.ts` / `lib/calculations.ts`）だけです。
 
 ## リクエスト
 
@@ -71,20 +72,24 @@ Content-Type: application/json
 
 その後の処理:
 
-- **単価の再計算**: `total_cost` と `fuel_amount` があれば `total_cost / fuel_amount` を 0.1 円単位に丸めた値（`lib/calculations.ts` と同じ規則）で上書きします
-  （`derivePricePerUnit`。`lib/calculations.ts` と同じ丸め）。計算できなければ AI の読み取り値を残します。
+- **単価の再計算**: `total_cost` と `fuel_amount` があれば `total_cost / fuel_amount` を 0.1 円単位に丸めた値で上書きします
+  （`derivePricePerUnit`。内部で `lib/calculations.ts` の `calculateFuelMetrics` を呼ぶ）。計算できなければ AI の読み取り値を残します。
 - **何も読めない場合**: `fuel_amount` / `total_cost` / `total_distance` がすべて `null` なら 422 を返します。
-- **妥当性警告**: 次のいずれかに当てはまると、日本語の注意文を `warnings[]` に入れて返します。値は書き換えも破棄もしません。
+- **妥当性警告**: 次のいずれかに当てはまると、`{ code, message }` を `warnings[]` に入れて返します（`plausibilityWarnings`。`message` は日本語の注意文）。
+  値は書き換えも破棄もしません。
 
-  | 条件 | しきい値（`PLAUSIBILITY_LIMITS`） |
-  |---|---|
-  | 給油量が大きすぎる | 200 L 超 |
-  | 走行距離が大きすぎる（オドメーターの誤読の可能性） | 2000 km 超 |
-  | 燃費が非現実的（`total_distance / fuel_amount`） | 60 km/L 超 |
+  | `code` | 条件 | しきい値（`PLAUSIBILITY_LIMITS`） |
+  |---|---|---|
+  | `FUEL_TOO_LARGE` | 給油量が大きすぎる | 200 L 超 |
+  | `DISTANCE_TOO_LARGE` | 走行距離が大きすぎる（オドメーターの誤読の可能性） | 2000 km 超 |
+  | `EFFICIENCY_TOO_HIGH` | 燃費が非現実的（`total_distance / fuel_amount`） | 60 km/L 超 |
 
 クライアントは結果を確認シート（`components/ScanReviewSheet.tsx`）に表示します。
-確信度が 0.6 未満の項目と読み取れなかった項目は「要確認」として強調し、`warnings` もシート内に表示します。
-`odometer` は参考値として表示するだけで、保存はしません。
+確信度が 0.6 未満の項目と読み取れなかった項目は「要確認」として強調し、`warnings` の `message` もシート内に表示します。
+警告の絞り込みは `code` で行います（`lib/useRecordForm.ts` の `visibleScanWarnings`。文言では判定しない）。
+オドメーターモードの車両では区間距離の読み取り値を保存に使わないため、区間距離に基づく警告（`DISTANCE_*` と `EFFICIENCY_TOO_HIGH`。`isTripDistanceWarning`）は表示しません。
+`code` / `message` が文字列でない要素は捨てます。
+`odometer` は、オドメーターモードの車両ではオドメーター欄の初期値に使います（トリップモードでは参考表示のみで保存しません）。
 
 ## レスポンス
 
@@ -103,7 +108,7 @@ Content-Type: application/json
   "gas_station": "...",
   "fuel_type": "regular",
   "confidence": { "fuel_amount": 0.95, "fuel_type": 0.9 },
-  "warnings": ["..."],
+  "warnings": [{ "code": "DISTANCE_TOO_LARGE", "message": "..." }],
   "requestId": "a1b2c3d4"
 }
 ```

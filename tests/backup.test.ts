@@ -6,21 +6,20 @@ import {
   backupFilename,
   buildBackup,
   finalizeRestoreRecords,
-  normalizeTimestamp,
   parseBackup,
   planRestore,
   serializeBackup,
   type FuelLensBackup,
 } from "@/lib/backup";
-import type { FuelRecord } from "@/lib/useFuelRecords";
-import type { Vehicle } from "@/lib/useVehicles";
+import { normalizeTimestamp } from "@/lib/dates";
+import type { FuelRecord, Vehicle, VehicleType } from "@/lib/types";
 
 const UUID_A = "0f8fad5b-d9cb-469f-a165-70867728950e";
 const UUID_B = "7c9e6679-7425-40de-944b-e07fc1f90ae7";
 const UUID_C = "16fd2706-8baf-433b-82eb-8c7fada847da";
 const UUID_X = "886313e1-3b8a-4372-9b90-0c9aee199e5d";
 
-const vehicle = (id: string, name: string, type: "car" | "bike" = "car"): Vehicle => ({
+const vehicle = (id: string, name: string, type: VehicleType = "car"): Vehicle => ({
   id,
   user_id: "user_123",
   name,

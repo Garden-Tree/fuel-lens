@@ -15,11 +15,10 @@
  * 常に version 2 の形で返す。
  */
 
-import { isValidCalendarDate } from "./analyze";
+import { isValidCalendarDate, localDateString, normalizeTimestamp } from "./dates";
 import { MEMO_MAX_LENGTH, isFuelType, sanitizeMemo } from "./fillChain";
 import { isUnclassifiedRecord } from "./recordFilters";
-import type { FuelRecord } from "./useFuelRecords";
-import type { Vehicle } from "./useVehicles";
+import type { FuelRecord, Vehicle, VehicleType } from "./types";
 
 export const BACKUP_APP_ID = "fuel-lens";
 export const BACKUP_VERSION = 2;
@@ -35,7 +34,6 @@ export const BACKUP_MAX_TEXT_LENGTH = 30 * 1024 * 1024;
 const MAX_ID_LENGTH = 128;
 const MAX_VEHICLE_NAME_LENGTH = 50;
 const MAX_GAS_STATION_LENGTH = 200;
-const MAX_TIMESTAMP_LENGTH = 64;
 /** 数値の上限（明らかに壊れた値を弾く。燃料・金額・距離のいずれにも十分大きい） */
 const MAX_NUMBER = 1e9;
 
@@ -75,32 +73,8 @@ function isValidNumberOrNull(v: unknown): v is number | null {
   return v === null || (typeof v === "number" && Number.isFinite(v) && v >= 0 && v <= MAX_NUMBER);
 }
 
-/**
- * 日時文字列を Postgres が必ず受け付ける ISO 8601（UTC, `Z` 付き）へ正規化する。解析できなければ null。
- * JS の Date.parse は "2024" や "1"、タイムゾーンなしの日時など Postgres と解釈が異なる・拒否される
- * 文字列も受け付けるため、ブラウザで一度解釈した結果を toISOString() で確定させてから保存・送信する。
- * 年は 1000〜9999 に限る。
- */
-export function normalizeTimestamp(v: unknown): string | null {
-  if (typeof v !== "string" || v.length === 0 || v.length > MAX_TIMESTAMP_LENGTH) return null;
-  const ms = Date.parse(v);
-  if (Number.isNaN(ms)) return null;
-  const d = new Date(ms);
-  const year = d.getUTCFullYear();
-  return year >= 1000 && year <= 9999 ? d.toISOString() : null;
-}
-
-
 function sanitizeNumber(v: unknown): number | null {
   return typeof v === "number" && Number.isFinite(v) && v >= 0 && v <= MAX_NUMBER ? v : null;
-}
-
-/** Date をローカルタイムゾーンの YYYY-MM-DD に変換する */
-function toLocalDateString(d: Date): string {
-  const y = String(d.getFullYear()).padStart(4, "0");
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
 }
 
 function pad2(n: number): string {
@@ -156,7 +130,7 @@ export function buildBackup(
     const createdAt = normalizeTimestamp(r.created_at);
     const date = isValidCalendarDate(r.date)
       ? r.date
-      : toLocalDateString(createdAt ? new Date(Date.parse(createdAt)) : now);
+      : localDateString(createdAt ? new Date(Date.parse(createdAt)) : now);
     outRecords.push({
       id: r.id,
       date,
@@ -378,7 +352,7 @@ export type RestoreVehicleToCreate = {
   /** バックアップ内の車両ID（作成後に新しい ID と対応付ける） */
   backupId: string;
   name: string;
-  type: "car" | "bike";
+  type: VehicleType;
   /** 距離の入力方式（version 1 のバックアップ・インポートでは省略 = トリップ） */
   distance_mode?: Vehicle["distance_mode"];
   /** 既定の燃料種別（省略 = 未指定） */

@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { calculateFuelMetrics } from "@/lib/calculations";
 import {
-  FUEL_TYPE_LABELS,
   applyFillChain,
   chainBaseBefore,
   compareForChain,
+  formChainPosition,
   isFuelType,
   normalizeRecord,
   normalizeVehicle,
@@ -13,8 +13,8 @@ import {
   sanitizeMemo,
   sortForChain,
 } from "@/lib/fillChain";
-import { applyFillChainByVehicle, pickRecordColumns, type FuelRecord } from "@/lib/useFuelRecords";
-import type { Vehicle } from "@/lib/useVehicles";
+import { applyFillChainByVehicle, pickRecordColumns } from "@/lib/useFuelRecords";
+import { FUEL_TYPE_LABELS, type FuelRecord, type Vehicle } from "@/lib/types";
 
 let seq = 0;
 const rec = (overrides: Partial<FuelRecord> = {}): FuelRecord => {
@@ -730,5 +730,35 @@ describe("pickRecordColumns", () => {
   it("returns an empty object when nothing known is given (old callers send no new columns)", () => {
     expect(pickRecordColumns({})).toEqual({});
     expect(Object.keys(pickRecordColumns({ gas_station: null }))).toEqual(["gas_station"]);
+  });
+});
+
+describe("formChainPosition", () => {
+  it("uses { recordId, date, odometer } while editing a record that is in the list", () => {
+    const list = [{ id: "a" }, { id: "b" }];
+    expect(formChainPosition(list, "2026-01-02", "b", 1200)).toEqual({ recordId: "b", date: "2026-01-02", odometer: 1200 });
+    expect(formChainPosition(list, "2026-01-02", "b")).toEqual({ recordId: "b", date: "2026-01-02", odometer: null });
+  });
+
+  it("treats a new record (or an edited record that is no longer in the list) as new", () => {
+    const list = [{ id: "a" }];
+    expect(formChainPosition(list, "2026-01-02", undefined, 1200)).toEqual({ date: "2026-01-02", odometer: 1200 });
+    expect(formChainPosition(list, "2026-01-02", "gone", null)).toEqual({ date: "2026-01-02", odometer: null });
+  });
+
+  it("keeps the edited record's created_at order among same-date records", () => {
+    // 同じ日付の 3 件（オドメーターなし）は created_at 順: a（部分給油）→ b（満タン）→ c（部分給油）
+    const list = [
+      rec({ id: "z", date: "2026-01-01", total_distance: 100, fuel_amount: 10, created_at: "2026-01-01T00:00:00Z" }),
+      rec({ id: "a", date: "2026-01-05", total_distance: 50, fuel_amount: 5, is_full: false, created_at: "2026-01-05T01:00:00Z" }),
+      rec({ id: "b", date: "2026-01-05", total_distance: 60, fuel_amount: 6, created_at: "2026-01-05T02:00:00Z" }),
+      rec({ id: "c", date: "2026-01-05", total_distance: 40, fuel_amount: 4, is_full: false, created_at: "2026-01-05T03:00:00Z" }),
+    ];
+    // b を編集（日付は同じ）: 直前に開いている run は a だけ（新規扱いにすると c の後ろに並び、c まで合算してしまう）
+    const editing = formChainPosition(list, "2026-01-05", "b", null);
+    expect(openRunBefore(list, TRIP, editing)).toEqual(openRunBefore(list, TRIP, { recordId: "b" }));
+    expect(openRunBefore(list, TRIP, editing)).toMatchObject({ count: 1, distance: 50, fuel: 5 });
+    const asNew = openRunBefore(list.filter(r => r.id !== "b"), TRIP, { date: "2026-01-05", odometer: null });
+    expect(asNew).toMatchObject({ count: 2 });
   });
 });

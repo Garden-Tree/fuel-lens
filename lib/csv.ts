@@ -7,9 +7,8 @@
  * - Excel での文字化けを防ぐため、先頭に UTF-8 の BOM を付ける。
  */
 
-import { FUEL_TYPE_LABELS, isFuelType } from "./fillChain";
-import type { FuelRecord } from "./useFuelRecords";
-import type { Vehicle } from "./useVehicles";
+import { isFuelType } from "./fillChain";
+import { FUEL_TYPE_LABELS, type FuelRecord, type Vehicle } from "./types";
 
 /** UTF-8 BOM（Blob で UTF-8 にエンコードされると EF BB BF になる） */
 export const CSV_BOM = "﻿";

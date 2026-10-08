@@ -1,18 +1,22 @@
 "use client";
 
 import { useCallback, useMemo, useState } from "react";
-import type { FuelRecord } from "./useFuelRecords";
-import type { Vehicle } from "./useVehicles";
+import type { DistanceMode, FuelRecord, FuelType, RecordInput, Vehicle } from "./types";
 import { calculateFuelMetrics, roundFuelEfficiency } from "./calculations";
+import { todayLocalISO } from "./dates";
+import { isTripDistanceWarning, type ScanWarning } from "./analyze";
 import {
   MEMO_MAX_LENGTH,
   distanceModeOf,
   isFuelType,
   sanitizeOdometer,
-  type DistanceMode,
-  type FuelType,
   type OpenRun,
 } from "./fillChain";
+
+/** @deprecated lib/types.ts から import する（互換のための再エクスポート） */
+export type { RecordInput } from "./types";
+/** @deprecated lib/dates.ts から import する（互換のための再エクスポート） */
+export { todayLocalISO } from "./dates";
 
 /**
  * 給油記録の入力フォーム状態を一元管理するフック。
@@ -48,9 +52,6 @@ export type RecordDraft = Record<TextDraftField, string> & {
 export type DraftField = keyof RecordDraft;
 
 export type RecordFormErrors = Partial<Record<DraftField, string>>;
-
-/** 保存時に addRecord / updateRecord へ渡す形 */
-export type RecordInput = Omit<FuelRecord, "id" | "vehicle_id" | "created_at">;
 
 /**
  * フォームの前提となる車両の情報。
@@ -108,12 +109,6 @@ export function mergedRunNote(count: number): string {
 export const MISSED_PREVIOUS_DISTANCE_NOTE = "記録漏れのため区間距離は計算しません";
 /** オドメーターモードで、直前の記録漏れのために基準（前回のオドメーター）が無いとき */
 export const AFTER_MISSED_DISTANCE_NOTE = "記録漏れの直後のため区間は計算できません";
-
-/** 今日の日付（ローカル）を YYYY-MM-DD で返す */
-export function todayLocalISO(): string {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-}
 
 function numberToDraft(value: number | null | undefined): string {
   return value == null || !Number.isFinite(value) ? "" : String(value);
@@ -356,19 +351,26 @@ export function parseDraft(
   };
 }
 
-/** 区間距離（トリップメーター）の読み取り値についての注意か（「走行距離」「トリップ」を含む） */
-const DISTANCE_WARNING_RE = /走行距離|トリップ/;
+/** /api/analyze の warnings の要素として正しい形（code と message が文字列）か */
+function isScanWarning(w: unknown): w is ScanWarning {
+  return (
+    !!w &&
+    typeof w === "object" &&
+    typeof (w as ScanWarning).code === "string" &&
+    typeof (w as ScanWarning).message === "string"
+  );
+}
 
 /**
- * スキャン結果の確認シートに出す注意（/api/analyze の warnings）。
+ * スキャン結果の確認シートに出す注意（/api/analyze の warnings）。code で絞り込む。
  * オドメーターモードの車両では、区間距離（トリップメーター）の読み取り値は保存に使わない（区間はオドメーターの差分）ので、
- * 走行距離・トリップメーターに関する注意（走行距離が大きすぎる・走行距離 ÷ 給油量の燃費が非現実的）は出さない。
- * 文字列以外の要素は捨てる。
+ * 区間距離に基づく注意（isTripDistanceWarning: DISTANCE_* と、走行距離 ÷ 給油量の EFFICIENCY_TOO_HIGH）は出さない。
+ * 形の正しくない要素（code / message が文字列でないもの）は捨てる。
  */
-export function visibleScanWarnings(warnings: unknown, mode: DistanceMode): string[] {
+export function visibleScanWarnings(warnings: unknown, mode: DistanceMode): ScanWarning[] {
   if (!Array.isArray(warnings)) return [];
-  const list = warnings.filter((w): w is string => typeof w === "string");
-  return mode === "odometer" ? list.filter((w) => !DISTANCE_WARNING_RE.test(w)) : list;
+  const list = warnings.filter(isScanWarning);
+  return mode === "odometer" ? list.filter((w) => !isTripDistanceWarning(w.code)) : list;
 }
 
 /**

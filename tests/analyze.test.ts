@@ -8,13 +8,14 @@ import {
   hasAnyCoreValue,
   hostFromUrl,
   isAllowedOrigin,
-  isValidCalendarDate,
+  isTripDistanceWarning,
   normalizeFuelType,
   parseImagePayload,
   plausibilityWarnings,
   sanitizeAIResponse,
   toNonNegativeNumber,
 } from "@/lib/analyze";
+import { isValidCalendarDate } from "@/lib/dates";
 
 // ---------------------------------------------------------------------------
 // fixtures: 先頭バイトにマジックナンバーを持つ 32 バイトのダミー画像
@@ -409,24 +410,27 @@ describe("plausibilityWarnings", () => {
     expect(plausibilityWarnings({ fuel_amount: PLAUSIBILITY_LIMITS.maxFuelAmount, total_distance: null })).toEqual([]);
     const w = plausibilityWarnings({ fuel_amount: 200.1, total_distance: null });
     expect(w).toHaveLength(1);
-    expect(w[0]).toContain("給油量");
-    expect(w[0]).toContain("200 L");
+    expect(w[0].code).toBe("FUEL_TOO_LARGE");
+    expect(w[0].message).toContain("給油量");
+    expect(w[0].message).toContain("200 L");
   });
 
   it("uses strict > on the trip distance threshold (2000 km)", () => {
     expect(plausibilityWarnings({ fuel_amount: null, total_distance: PLAUSIBILITY_LIMITS.maxTripDistance })).toEqual([]);
     const w = plausibilityWarnings({ fuel_amount: null, total_distance: 2001 });
     expect(w).toHaveLength(1);
-    expect(w[0]).toContain("走行距離");
-    expect(w[0]).toContain("オドメーター");
+    expect(w[0].code).toBe("DISTANCE_TOO_LARGE");
+    expect(w[0].message).toContain("走行距離");
+    expect(w[0].message).toContain("オドメーター");
   });
 
   it("uses strict > on the efficiency threshold (60 km/L)", () => {
     expect(plausibilityWarnings({ fuel_amount: 10, total_distance: 600 })).toEqual([]); // exactly 60
     const w = plausibilityWarnings({ fuel_amount: 10, total_distance: 601 });
     expect(w).toHaveLength(1);
-    expect(w[0]).toContain("燃費");
-    expect(w[0]).toContain("60.1 km/L");
+    expect(w[0].code).toBe("EFFICIENCY_TOO_HIGH");
+    expect(w[0].message).toContain("燃費");
+    expect(w[0].message).toContain("60.1 km/L");
   });
 
   it("does not emit the efficiency warning when fuel_amount is 0", () => {
@@ -435,7 +439,21 @@ describe("plausibilityWarnings", () => {
 
   it("can emit several warnings at once", () => {
     const w = plausibilityWarnings({ fuel_amount: 250, total_distance: 30000 });
-    expect(w).toHaveLength(3);
+    expect(w.map(x => x.code)).toEqual(["FUEL_TOO_LARGE", "DISTANCE_TOO_LARGE", "EFFICIENCY_TOO_HIGH"]);
+    expect(w.every(x => typeof x.message === "string" && x.message.length > 0)).toBe(true);
+  });
+});
+
+describe("isTripDistanceWarning", () => {
+  it("is true for warnings based on the trip distance reading (DISTANCE_* and the efficiency check)", () => {
+    expect(isTripDistanceWarning("DISTANCE_TOO_LARGE")).toBe(true);
+    expect(isTripDistanceWarning("DISTANCE_SOMETHING_NEW")).toBe(true);
+    expect(isTripDistanceWarning("EFFICIENCY_TOO_HIGH")).toBe(true);
+  });
+
+  it("is false for other warnings", () => {
+    expect(isTripDistanceWarning("FUEL_TOO_LARGE")).toBe(false);
+    expect(isTripDistanceWarning("")).toBe(false);
   });
 });
 

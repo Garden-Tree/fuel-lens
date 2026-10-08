@@ -1,16 +1,9 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { Vehicle } from "./useVehicles";
-import { isValidCalendarDate } from "./analyze";
+import type { DistanceMode, FuelType, Vehicle, VehicleType } from "./types";
+import { isValidCalendarDate, localDateString } from "./dates";
 import { isUuid } from "./recordFilters";
 import { PERMISSION_DENIED_MESSAGE, isPermissionDeniedError } from "./supabaseHealth";
-import {
-  isDistanceMode,
-  isFuelType,
-  sanitizeMemo,
-  sanitizeOdometer,
-  type DistanceMode,
-  type FuelType,
-} from "./fillChain";
+import { isDistanceMode, isFuelType, sanitizeMemo, sanitizeOdometer } from "./fillChain";
 
 /**
  * ログアウト中に localStorage へ保存した車両・給油記録を、ログイン後に
@@ -43,6 +36,25 @@ export const LOCAL_VEHICLES_KEY = "fuel_lens_vehicles";
 export const LOCAL_DEFAULT_VEHICLE_ID = "default-car";
 export const DEFAULT_VEHICLE_NAME = "メインカー";
 
+/** 未ログイン時の保存（localStorage）が容量超過などで失敗したときのメッセージ */
+export const LOCAL_STORAGE_FULL_MESSAGE =
+  "ブラウザの保存領域がいっぱいです。不要な記録を削除するかバックアップしてください。";
+
+/**
+ * 未ログイン時のデータ（LOCAL_RECORDS_KEY / LOCAL_VEHICLES_KEY）を localStorage へ保存する。
+ * 容量超過（QuotaExceededError）などで保存できなければ、生エラーを console.error に出し、
+ * LOCAL_STORAGE_FULL_MESSAGE の Error を投げる（英語の DOMException を画面に出さない）。SSR 中は何もしない。
+ */
+export function writeLocalJson(key: string, value: unknown): void {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+  } catch (e) {
+    console.error("ローカルデータの保存失敗:", e);
+    throw new Error(LOCAL_STORAGE_FULL_MESSAGE, { cause: e });
+  }
+}
+
 const migratingRecordsKey = (userId: string) => `${LOCAL_RECORDS_KEY}_migrating_${userId}`;
 const migratingVehiclesKey = (userId: string) => `${LOCAL_VEHICLES_KEY}_migrating_${userId}`;
 const vehicleMapKey = (userId: string) => `fuel_lens_migration_vehicle_map_${userId}`;
@@ -58,7 +70,6 @@ export type MigrationResult = {
 
 const NOOP_RESULT: MigrationResult = { migratedVehicles: 0, migratedRecords: 0, didWrite: false };
 
-type VehicleType = "car" | "bike";
 /** 車両の設定（0004 で追加した列）。ローカルに値があるものだけを持ち、送信する */
 type VehicleSettingsColumns = { distance_mode?: DistanceMode; default_fuel_type?: FuelType };
 type VehicleSeed = { name: string; type: VehicleType } & VehicleSettingsColumns;
@@ -152,14 +163,6 @@ function stringOrNull(v: unknown): string | null {
   return typeof v === "string" ? v : null;
 }
 
-/** Date をローカルタイムゾーンの YYYY-MM-DD に変換する */
-function toLocalDateString(d: Date): string {
-  const y = String(d.getFullYear()).padStart(4, "0");
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
-}
-
 /**
  * 解析可能な日時文字列なら Date を返す。Postgres が受け付けられる範囲（4 桁の年）に限る。
  * JS の Date.parse は Postgres が拒否する書式も受け付けるため、送信時は toISOString() に正規化する。
@@ -187,7 +190,7 @@ function normalizeRecordDates(rawDate: unknown, rawCreatedAt: unknown): { date: 
   const validDate = isValidCalendarDate(rawDate) ? rawDate : null;
   const now = new Date();
 
-  const date = validDate ?? toLocalDateString(createdAt ?? now);
+  const date = validDate ?? localDateString(createdAt ?? now);
 
   let created: Date;
   if (createdAt) {

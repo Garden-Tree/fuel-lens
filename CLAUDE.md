@@ -30,7 +30,7 @@ CI は Node 22 で lint → typecheck → test → build を実行する（[docs
 |---|---|
 | `app/` | 画面（`page.tsx` ランディング、`app/` メイン、`history/`、`stats/`、`settings/` バックアップと復元）と API（`api/analyze`、`api/keepalive`） |
 | `components/` | 確認シート、入力フォーム、車両管理、`Toast`（`useToast()`）、`UserSync`、`SupabaseStatusBanner` |
-| `lib/` | 純粋ロジック（`analyze` / `calculations` / `stats` / `recordFilters`）、フック、移行、Supabase クライアントと障害検知 |
+| `lib/` | 型（`types`）・日付（`dates`）・純粋ロジック（`analyze` / `calculations` / `fillChain` / `stats` / `recordFilters` / `vehicleSelection`）、イベント（`events`）、フック、移行、Supabase クライアントと障害検知 |
 | `lib/fillChain.ts` | 給油の連鎖計算 `applyFillChain`（オドメーター差分・部分給油の合算・記録漏れ）と新しい列の既定値補完。純粋関数 |
 | `lib/backup.ts` | バックアップ JSON の書き出し・検証（`parseBackup`）・復元計画（`planRestore`）。純粋関数 |
 | `lib/csv.ts` | CSV 組み立て・エスケープ（数式インジェクション対策）・ダウンロード。履歴と設定画面で共有 |
@@ -46,8 +46,8 @@ CI は Node 22 で lint → typecheck → test → build を実行する（[docs
 1. **燃費は満タン法。分子は必ずトリップメーターの区間距離。** `total_distance` はオドメーター（積算距離）ではない。
    計算は `lib/calculations.ts` の `calculateFuelMetrics` に集約し、UI 文言・プロンプト・ドキュメントを矛盾させない。
    区間距離と燃費の導出は `lib/fillChain.ts` の `applyFillChain` が正本（オドメーターモードの差分、部分給油の合算、記録漏れでの連鎖切断）。読み取り時に適用され、保存値は信頼しない。
-   例外として `lib/analyze.ts` の `derivePricePerUnit` が単価の丸めを複製している（analyze.ts は他 lib に依存しない方針）。
-   単価の計算を変えるときは両方を揃えること。
+   `lib/analyze.ts` の `derivePricePerUnit` も `calculateFuelMetrics` を呼ぶ（丸めを複製しない）。
+   analyze.ts が import してよいのは依存のないドメインモジュール（`lib/types.ts`・`lib/dates.ts`・`lib/calculations.ts`）だけ。
 2. **データ更新は「未ログイン = localStorage」と「ログイン = Supabase」の両経路を必ず実装する。**
    ログイン中かつ障害時は `readOnly`（書き込みは日本語エラーを投げる）。
 3. **`vehicle_id` が `null` の記録は「未分類」。** 既定車両（`vehicles[0]` = 最も古い車両）を選択中のときだけ表示する。

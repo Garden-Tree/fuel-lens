@@ -1,9 +1,14 @@
 /**
  * /api/analyze 用の純粋ヘルパーと型定義。
  *
- * - 副作用なし・他の lib ファイルに依存しない（単体テストしやすくするため）。
- * - サーバー（route.ts）とクライアント（page.tsx）の両方から型を参照できる。
+ * - 副作用なし。import してよいのは依存のないドメインモジュール（lib/types.ts・lib/dates.ts・lib/calculations.ts）だけ
+ *   （React・Supabase・Clerk などに依存させず、サーバーでもクライアントでも単体テストでもそのまま使えるようにする）。
+ * - サーバー（route.ts）とクライアント（page.tsx・ScanReviewSheet・useRecordForm）の両方から型を参照できる。
  */
+
+import { calculateFuelMetrics } from "./calculations";
+import { isValidCalendarDate } from "./dates";
+import { FUEL_TYPES, type FuelType } from "./types";
 
 // ---------------------------------------------------------------------------
 // 型定義（レスポンス契約）
@@ -32,10 +37,6 @@ export const CONFIDENCE_FIELDS = [
 ] as const;
 export type ConfidenceField = (typeof CONFIDENCE_FIELDS)[number];
 
-/** 油種（レシートの「レギュラー／ハイオク／軽油」など） */
-export const FUEL_TYPES = ["regular", "premium", "diesel", "other"] as const;
-export type FuelType = (typeof FUEL_TYPES)[number];
-
 /** サニタイズ済みの解析結果（/api/analyze 成功時の本体） */
 export type AnalyzeResult = {
   /** YYYY-MM-DD。読めない／不正な日付は null */
@@ -48,7 +49,7 @@ export type AnalyzeResult = {
   price_per_unit: number | null;
   /** トリップメーターの区間距離 (km)。満タン法の分子。オドメーターではない */
   total_distance: number | null;
-  /** オドメーター（積算距離, km）。見えていれば。現状クライアントでは未使用 */
+  /** オドメーター（積算距離, km）。見えていれば。オドメーターモードの車両では確認シート（ScanReviewSheet）が主入力に使う */
   odometer: number | null;
   /** 店舗名（最大100文字） */
   gas_station: string | null;
@@ -58,10 +59,28 @@ export type AnalyzeResult = {
   confidence?: Partial<Record<ConfidenceField, number>>;
 };
 
+/** 妥当性チェックの警告の種類（plausibilityWarnings） */
+export type ScanWarningCode = "FUEL_TOO_LARGE" | "DISTANCE_TOO_LARGE" | "EFFICIENCY_TOO_HIGH";
+
+/** 妥当性チェックの警告。クライアントは code で絞り込み、message（日本語）を表示する */
+export type ScanWarning = {
+  code: ScanWarningCode;
+  message: string;
+};
+
+/**
+ * 区間距離（トリップメーター）の読み取り値 total_distance に基づく警告か。
+ * DISTANCE_* と、total_distance ÷ 給油量で求める EFFICIENCY_TOO_HIGH。
+ * オドメーターモードの車両では区間距離の読み取り値を保存に使わない（区間はオドメーターの差分）ので、確認シートに出さない。
+ */
+export function isTripDistanceWarning(code: string): boolean {
+  return code.startsWith("DISTANCE_") || code === "EFFICIENCY_TOO_HIGH";
+}
+
 /** /api/analyze 成功レスポンス */
 export type AnalyzeSuccessResponse = AnalyzeResult & {
-  /** 妥当性チェックに引っかかった場合の注意文（日本語）。保存は妨げない */
-  warnings?: string[];
+  /** 妥当性チェックに引っかかった場合の警告（code と日本語の message）。保存は妨げない */
+  warnings?: ScanWarning[];
   /** サーバーログと突き合わせるための短いID */
   requestId: string;
 };
@@ -241,17 +260,6 @@ export function parseImagePayload(image: unknown): ParsedImage {
 // AI 応答の検証
 // ---------------------------------------------------------------------------
 
-const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
-
-/** YYYY-MM-DD 形式かつ実在する暦日か */
-export function isValidCalendarDate(value: unknown): value is string {
-  if (typeof value !== "string" || !DATE_PATTERN.test(value)) return false;
-  const [y, mo, d] = value.split("-").map(Number);
-  if (mo < 1 || mo > 12 || d < 1 || d > 31) return false;
-  const dt = new Date(Date.UTC(y, mo - 1, d));
-  return dt.getUTCFullYear() === y && dt.getUTCMonth() === mo - 1 && dt.getUTCDate() === d;
-}
-
 /** 有限かつ 0 以上の数値に正規化する。数値文字列も許容。それ以外は null */
 export function toNonNegativeNumber(value: unknown): number | null {
   let n: number;
@@ -339,18 +347,14 @@ export function sanitizeAIResponse(raw: unknown): AnalyzeResult | null {
 }
 
 /**
- * 単価 (円/L) を総額と給油量から再計算する。
- * lib/calculations.ts の calculateFuelMetrics と同じ丸めルール（Math.round(x * 10) / 10 で 0.1 円/L 単位）を複製している。
- * ※ lib/analyze.ts は他の lib に依存しない方針のため import はしない。変更時は両方を揃えること。
+ * 単価 (円/L) を総額と給油量から再計算する（lib/calculations.ts の calculateFuelMetrics。0.1 円/L 単位に丸める）。
+ * 計算できなければ null。
  */
 export function derivePricePerUnit(
   totalCost: number | null | undefined,
   fuelAmount: number | null | undefined
 ): number | null {
-  if (totalCost != null && fuelAmount != null && fuelAmount > 0) {
-    return Math.round((totalCost / fuelAmount) * 10) / 10;
-  }
-  return null;
+  return calculateFuelMetrics(null, fuelAmount, totalCost).price_per_unit;
 }
 
 /** fuel_amount / total_cost / total_distance のいずれかが読み取れているか */
@@ -359,23 +363,26 @@ export function hasAnyCoreValue(result: Pick<AnalyzeResult, "fuel_amount" | "tot
 }
 
 /**
- * 読み取り結果の妥当性チェック。問題があれば日本語の注意文を返す（空配列なら問題なし）。
+ * 読み取り結果の妥当性チェック。問題があれば警告（code と日本語の message）を返す（空配列なら問題なし）。
  * 値を書き換えたり破棄したりはしない。保存するかどうかはユーザーに委ねる。
  */
 export function plausibilityWarnings(
   result: Pick<AnalyzeResult, "fuel_amount" | "total_distance">
-): string[] {
-  const warnings: string[] = [];
+): ScanWarning[] {
+  const warnings: ScanWarning[] = [];
+  const add = (code: ScanWarningCode, message: string) => warnings.push({ code, message });
   const { fuel_amount, total_distance } = result;
 
   if (fuel_amount !== null && fuel_amount > PLAUSIBILITY_LIMITS.maxFuelAmount) {
-    warnings.push(
+    add(
+      "FUEL_TOO_LARGE",
       `給油量が ${fuel_amount} L と大きすぎます（${PLAUSIBILITY_LIMITS.maxFuelAmount} L 超）。読み取りミスの可能性があるため確認してください。`
     );
   }
 
   if (total_distance !== null && total_distance > PLAUSIBILITY_LIMITS.maxTripDistance) {
-    warnings.push(
+    add(
+      "DISTANCE_TOO_LARGE",
       `走行距離が ${total_distance} km と大きすぎます（${PLAUSIBILITY_LIMITS.maxTripDistance} km 超）。オドメーター（積算距離）を読み取った可能性があります。トリップメーターの区間距離を確認してください。`
     );
   }
@@ -387,7 +394,8 @@ export function plausibilityWarnings(
     total_distance / fuel_amount > PLAUSIBILITY_LIMITS.maxFuelEfficiency
   ) {
     const eff = (total_distance / fuel_amount).toFixed(1);
-    warnings.push(
+    add(
+      "EFFICIENCY_TOO_HIGH",
       `燃費が ${eff} km/L と非現実的です（${PLAUSIBILITY_LIMITS.maxFuelEfficiency} km/L 超）。走行距離または給油量の読み取りミスの可能性があります。`
     );
   }

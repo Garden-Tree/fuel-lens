@@ -12,7 +12,7 @@ import {
 } from "@/lib/csv";
 import { parseCsvRows } from "@/lib/importers/fuelio";
 import { parseFuelLensCsv } from "@/lib/importers/fuellensCsv";
-import type { FuelRecord } from "@/lib/useFuelRecords";
+import type { FuelRecord } from "@/lib/types";
 
 const record = (overrides: Partial<FuelRecord> = {}): FuelRecord => ({
   id: "r1",

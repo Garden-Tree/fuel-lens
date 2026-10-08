@@ -20,13 +20,12 @@ export default function SettingsPage() {
     error: vehiclesError,
     readOnly: vehiclesReadOnly,
   } = useVehicles();
-  // 一覧表示はしないが、全件取得・一括追加と閲覧専用判定のためにフックを使う。
+  // 一覧表示はしないが、全件取得・一括追加のためにフックを使う。
   // vehicles を渡し、fetchAllRecords（全車両 CSV・データ概要）が車両ごとの距離の入力方式で連鎖計算するようにする
   const {
     fetchAllRecords,
     addRecords,
     error: recordsError,
-    readOnly: recordsReadOnly,
   } = useFuelRecords(selectedVehicleId, vehicles[0]?.id, { enabled: !vehiclesLoading, vehicles });
 
   // インポート後に BackupPanel のデータ概要（記録数）を読み込み直す。
@@ -35,7 +34,8 @@ export default function SettingsPage() {
   // バックアップ・復元・取り込みを同時に動かさないよう、処理中フラグを 2 つのパネルで共有する
   const [busy, setBusy] = useState<BackupBusy | ImportBusy | null>(null);
 
-  const readOnly = vehiclesReadOnly || recordsReadOnly;
+  // 閲覧専用（ログイン中かつクラウド障害中）。useVehicles と useFuelRecords の readOnly は同じ障害状態から決まるので片方だけ使う
+  const readOnly = vehiclesReadOnly;
   const loadError = vehiclesError ?? recordsError;
 
   return (

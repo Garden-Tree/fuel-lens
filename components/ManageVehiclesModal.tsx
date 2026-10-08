@@ -2,15 +2,16 @@
 
 import { useEffect, useRef, useState } from "react";
 import { X, Plus, Car, Bike, Edit2, Trash2, Check, Sliders, Loader2 } from "lucide-react";
-import type { Vehicle, VehicleSettings } from "@/lib/useVehicles";
+import { distanceModeOf, isFuelType } from "@/lib/fillChain";
 import {
   FUEL_TYPES,
   FUEL_TYPE_LABELS,
-  distanceModeOf,
-  isFuelType,
   type DistanceMode,
   type FuelType,
-} from "@/lib/fillChain";
+  type Vehicle,
+  type VehicleSettings,
+  type VehicleType,
+} from "@/lib/types";
 import { useBackdropClose } from "@/lib/useBackdropClose";
 import { useFocusTrap } from "@/lib/useFocusTrap";
 import { useToast } from "./Toast";
@@ -124,10 +125,10 @@ interface ManageVehiclesModalProps {
   isOpen: boolean;
   onClose: () => void;
   vehicles: Vehicle[];
-  onAdd: (name: string, type: "car" | "bike", settings?: VehicleSettings) => Promise<Vehicle>;
+  onAdd: (name: string, type: VehicleType, settings?: VehicleSettings) => Promise<Vehicle>;
   onDelete: (id: string) => Promise<void>;
   /** settings（距離の入力方式・既定の燃料種別）も同じ 1 回の更新で保存する */
-  onUpdate: (id: string, name: string, type: "car" | "bike", settings?: VehicleSettings) => Promise<void>;
+  onUpdate: (id: string, name: string, type: VehicleType, settings?: VehicleSettings) => Promise<void>;
   /** 閲覧専用（クラウド障害中）。追加・編集・削除を無効化する */
   readOnly?: boolean;
 }
@@ -145,7 +146,7 @@ export default function ManageVehiclesModal({
 
   // 新規追加ステート
   const [newName, setNewName] = useState("");
-  const [newType, setNewType] = useState<"car" | "bike">("car");
+  const [newType, setNewType] = useState<VehicleType>("car");
   const [newMode, setNewMode] = useState<DistanceMode>("trip");
   const [newFuelType, setNewFuelType] = useState<FuelType | null>(null);
   const [addLoading, setAddLoading] = useState(false);
@@ -153,7 +154,7 @@ export default function ManageVehiclesModal({
   // 編集ステート
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
-  const [editType, setEditType] = useState<"car" | "bike">("car");
+  const [editType, setEditType] = useState<VehicleType>("car");
   const [editMode, setEditMode] = useState<DistanceMode>("trip");
   const [editFuelType, setEditFuelType] = useState<FuelType | null>(null);
   const [updateLoading, setUpdateLoading] = useState(false);

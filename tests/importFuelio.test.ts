@@ -21,8 +21,7 @@ import {
   parseFuelLensCsv,
   type ParsedFuelLensCsv,
 } from "@/lib/importers/fuellensCsv";
-import type { FuelRecord } from "@/lib/useFuelRecords";
-import type { Vehicle } from "@/lib/useVehicles";
+import type { FuelRecord, Vehicle, VehicleType } from "@/lib/types";
 
 // ------------------------------------------------------------------
 // 合成データ（実データは使わない）
@@ -149,7 +148,7 @@ const BASIC_ROWS: LogRow[] = [
   { date: "2024-03-01", odo: "1600.0", fuel: "18.00", price: "3060", uniqueId: "3" },
 ];
 
-const vehicle = (id: string, name: string, type: "car" | "bike" = "car"): Vehicle => ({
+const vehicle = (id: string, name: string, type: VehicleType = "car"): Vehicle => ({
   id,
   user_id: "user_123",
   name,

@@ -11,17 +11,19 @@ import {
   migrationFailedRecently,
   migrationErrorMessage,
   withStatus,
+  writeLocalJson,
   CrossTabLockError,
   LOCAL_RECORDS_KEY,
   LOCAL_DEFAULT_VEHICLE_ID,
 } from "./migrateLocalData";
 import {
-  FUEL_RECORDS_CHANGED_EVENT,
   isDefaultVehicleSelected,
   isUnclassifiedRecord,
   isUuid,
   matchesSelectedVehicle,
+  sortRecordsByDateDesc,
 } from "./recordFilters";
+import { FUEL_RECORDS_CHANGED_EVENT, notifyRecordsChanged, useWindowEvent } from "./events";
 import {
   CLOUD_LOAD_ERROR_MESSAGE,
   PERMISSION_DENIED_MESSAGE,
@@ -31,12 +33,13 @@ import {
   isPermissionDeniedError,
   readCache,
   readOnlyError,
+  recordsCacheKey,
   setOutage,
   toUserFacingWriteError,
   useSupabaseOutage,
   writeCache,
 } from "./supabaseHealth";
-import { normalizeTimestamp } from "./backup";
+import { normalizeTimestamp } from "./dates";
 import {
   applyFillChain,
   distanceModeOf,
@@ -44,50 +47,11 @@ import {
   normalizeRecord,
   sanitizeMemo,
   sanitizeOdometer,
-  type DistanceMode,
-  type FuelType,
 } from "./fillChain";
-import type { Vehicle } from "./useVehicles";
+import type { DistanceMode, FuelRecord, Vehicle } from "./types";
 
-export type { FuelType } from "./fillChain";
-export { FUEL_TYPES, FUEL_TYPE_LABELS, MEMO_MAX_LENGTH, isFuelType, normalizeRecord } from "./fillChain";
-
-export type FuelRecord = {
-  id: string;
-  date: string;
-  /**
-   * 区間距離 (km)。トリップモードの車両では入力値、オドメーターモードの車両では odometer の差分から
-   * 導出した値（useFuelRecords が読み取り時に applyFillChain で上書きする）。
-   */
-  total_distance: number | null;
-  fuel_amount: number | null;
-  gas_station: string | null;
-  price_per_unit: number | null;
-  total_cost: number | null;
-  /** 燃費 (km/L)。useFuelRecords が読み取り時に applyFillChain で再計算した値（部分給油は null） */
-  fuel_efficiency: number | null;
-  vehicle_id?: string | null;
-  created_at?: string | null;
-  /** 給油時の積算距離 (km)。オドメーターモードの車両では必須入力（0004 で追加） */
-  odometer?: number | null;
-  /** 満タン給油か。省略は true。false は部分給油（0004 で追加） */
-  is_full?: boolean;
-  /** この給油の前に記録し忘れた給油がある。省略は false。true なら連鎖を切る（0004 で追加） */
-  missed_previous?: boolean;
-  /** 燃料種別。null / 省略は未指定（0004 で追加） */
-  fuel_type?: FuelType | null;
-  /** メモ（200 文字まで）。null / 省略はなし（0004 で追加） */
-  memo?: string | null;
-  /**
-   * 導出値（保存しない。DB・localStorage・バックアップ・CSV には書かない）: この記録が満タン給油で閉じた走行区間（run）の
-   * Σ区間距離 (km)。applyFillChain が燃費の出た記録にだけ付ける。統計（lib/stats.ts の summarize）が run 単位で集計するのに使う
-   */
-  run_distance?: number;
-  /** 導出値（保存しない）: 同じ run の Σ給油量 (L)。run_distance と同じ記録にだけ付く */
-  run_fuel?: number;
-  /** 導出値（保存しない）: 同じ run の Σ支払総額 (円)。run 内に支払総額の無い記録があれば null */
-  run_cost?: number | null;
-};
+/** @deprecated lib/types.ts から import する（互換のための再エクスポート） */
+export type { FuelRecord } from "./types";
 
 export type UseFuelRecordsOptions = {
   /**
@@ -161,18 +125,6 @@ export function pickRecordColumns(input: Partial<FuelRecord>): Partial<Pick<Fuel
   return out as Partial<Pick<FuelRecord, RecordColumn>>;
 }
 
-const recordsCacheKey = (userId: string, vehicleId: string | null) =>
-  `fuel_lens_cache_records_${userId}_${vehicleId ?? "all"}`;
-
-function sortRecordsByDateDesc(list: FuelRecord[]): FuelRecord[] {
-  return [...list].sort((a, b) => {
-    const timeA = a.date ? new Date(a.date).getTime() : 0;
-    const timeB = b.date ? new Date(b.date).getTime() : 0;
-    if (timeB !== timeA) return timeB - timeA;
-    if (a.id === b.id) return 0;
-    return b.id > a.id ? 1 : -1;
-  });
-}
 
 function parseLocalRecords(raw: string | null): FuelRecord[] {
   if (!raw) return [];
@@ -227,9 +179,9 @@ function readLocalRecords(): FuelRecord[] {
   return parseLocalRecords(localStorage.getItem(LOCAL_RECORDS_KEY));
 }
 
+/** ローカルの記録を保存する。容量超過などで保存できなければ日本語の Error を投げる（writeLocalJson） */
 function writeLocalRecords(list: FuelRecord[]) {
-  if (typeof window === "undefined") return;
-  localStorage.setItem(LOCAL_RECORDS_KEY, JSON.stringify(list));
+  writeLocalJson(LOCAL_RECORDS_KEY, list);
 }
 
 /** 読み込み失敗時に画面へ出す日本語メッセージ（英語の生エラーは console.error のみに出す） */
@@ -383,15 +335,10 @@ export function useFuelRecords(
   }, [loadData]);
 
   // 車両削除など、別経路で給油記録が変更されたら再読み込みする
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const handler = () => {
-      const currentFetchId = ++fetchCounter.current;
-      loadData(currentFetchId);
-    };
-    window.addEventListener(FUEL_RECORDS_CHANGED_EVENT, handler);
-    return () => window.removeEventListener(FUEL_RECORDS_CHANGED_EVENT, handler);
-  }, [loadData]);
+  useWindowEvent(FUEL_RECORDS_CHANGED_EVENT, () => {
+    const currentFetchId = ++fetchCounter.current;
+    loadData(currentFetchId);
+  });
 
   const requireWritable = () => {
     if (readOnly) throw readOnlyError(outage);
@@ -505,13 +452,6 @@ export function useFuelRecords(
     }
 
     setRecords(prev => prev.filter(r => r.id !== id));
-  };
-
-  /** 給油記録が別経路で変わったことを全フックインスタンスへ知らせる（自分も含めて再読み込みされる） */
-  const notifyRecordsChanged = () => {
-    if (typeof window !== "undefined") {
-      window.dispatchEvent(new CustomEvent(FUEL_RECORDS_CHANGED_EVENT, { detail: { bulk: true } }));
-    }
   };
 
   /**
@@ -683,14 +623,9 @@ export function useFuelRecords(
   }, [loadData]);
 
   // 障害バナーの「再試行」・自動再試行で再読み込みする
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const handler = () => {
-      void refresh();
-    };
-    window.addEventListener(SUPABASE_RETRY_EVENT, handler);
-    return () => window.removeEventListener(SUPABASE_RETRY_EVENT, handler);
-  }, [refresh]);
+  useWindowEvent(SUPABASE_RETRY_EVENT, () => {
+    void refresh();
+  });
 
   return {
     /** 連鎖計算（lib/fillChain.ts）を適用済みの記録。日付の降順 */

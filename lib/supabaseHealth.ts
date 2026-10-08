@@ -248,15 +248,30 @@ export function writeCache(key: string, value: unknown): void {
   }
 }
 
+/** 車両一覧のキャッシュキー（useVehicles が書く） */
+export function vehiclesCacheKey(userId: string): string {
+  return `fuel_lens_cache_vehicles_${userId}`;
+}
+
+/** userId の記録キャッシュのキーの接頭辞（clearUserCaches が前方一致で消す） */
+function recordsCachePrefix(userId: string): string {
+  return `fuel_lens_cache_records_${userId}_`;
+}
+
+/** 車両ごとの記録一覧のキャッシュキー（useFuelRecords が書く）。vehicleId が null なら "all" */
+export function recordsCacheKey(userId: string, vehicleId: string | null): string {
+  return `${recordsCachePrefix(userId)}${vehicleId ?? "all"}`;
+}
+
 /**
- * userId のキャッシュ（`fuel_lens_cache_vehicles_<uid>` と `fuel_lens_cache_records_<uid>_*`）を削除する。
+ * userId のキャッシュ（vehiclesCacheKey と recordsCacheKey のすべて）を削除する。
  * ログアウト・ユーザー切り替え時に、前のユーザーのデータを端末に残さないために使う。
  */
 export function clearUserCaches(userId: string): void {
   if (typeof window === "undefined" || !userId) return;
   try {
-    const vehiclesKey = `fuel_lens_cache_vehicles_${userId}`;
-    const recordsPrefix = `fuel_lens_cache_records_${userId}_`;
+    const vehiclesKey = vehiclesCacheKey(userId);
+    const recordsPrefix = recordsCachePrefix(userId);
     const targets: string[] = [];
     for (let i = 0; i < localStorage.length; i++) {
       const key = localStorage.key(i);
