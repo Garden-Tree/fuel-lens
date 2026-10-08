@@ -1,57 +1,18 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
-import { useAuth } from "@clerk/nextjs";
-import {
-  getSupabaseClient,
-  isAuthTokenError,
-  SupabaseAuthTokenError,
-  AUTH_TOKEN_ERROR_MESSAGE,
-} from "./supabaseClient";
-import {
-  migrateLocalData,
-  migrationFailedRecently,
-  migrationErrorMessage,
-  withStatus,
-  writeLocalJson,
-  CrossTabLockError,
-  LOCAL_RECORDS_KEY,
-  LOCAL_DEFAULT_VEHICLE_ID,
-} from "./migrateLocalData";
-import {
-  isDefaultVehicleSelected,
-  isUnclassifiedRecord,
-  isUuid,
-  matchesSelectedVehicle,
-  sortRecordsByDateDesc,
-} from "./recordFilters";
+import { isUnclassifiedRecord, isUuid, sortRecordsByDateDesc } from "./recordFilters";
 import { FUEL_RECORDS_CHANGED_EVENT, notifyRecordsChanged, useWindowEvent } from "./events";
-import {
-  CLOUD_LOAD_ERROR_MESSAGE,
-  PERMISSION_DENIED_MESSAGE,
-  SUPABASE_RETRY_EVENT,
-  classifySupabaseFailure,
-  clearOutage,
-  isPermissionDeniedError,
-  readCache,
-  readOnlyError,
-  recordsCacheKey,
-  setOutage,
-  toUserFacingWriteError,
-  useSupabaseOutage,
-  writeCache,
-} from "./supabaseHealth";
-import { normalizeTimestamp } from "./dates";
-import {
-  applyFillChain,
-  distanceModeOf,
-  isFuelType,
-  normalizeRecord,
-  sanitizeMemo,
-  sanitizeOdometer,
-} from "./fillChain";
+import { SUPABASE_RETRY_EVENT, useSupabaseOutage } from "./supabaseHealth";
+import { applyFillChain, distanceModeOf, normalizeRecord } from "./fillChain";
+import { applyRecordPatch } from "./data/columns";
+import { matchesRecordScope, recordScopeOf } from "./data/scope";
+import { DataError } from "./data/types";
+import { loadErrorMessage, requireStores, useDataStores } from "./data/useDataStores";
 import type { DistanceMode, FuelRecord, Vehicle } from "./types";
 
 /** @deprecated lib/types.ts から import する（互換のための再エクスポート） */
 export type { FuelRecord } from "./types";
+/** @deprecated lib/data/columns.ts から import する（互換のための再エクスポート） */
+export { pickRecordColumns } from "./data/columns";
 
 export type UseFuelRecordsOptions = {
   /**
@@ -68,76 +29,6 @@ export type UseFuelRecordsOptions = {
    */
   vehicles?: readonly Pick<Vehicle, "id" | "distance_mode">[];
 };
-
-/**
- * addRecord / updateRecord / addRecords で保存する列（id・user_id 以外の FuelRecord の列）。
- * 導出値の run_distance / run_fuel / run_cost は DB の列ではないので含めない（連鎖計算済みの記録を渡しても保存されない）
- */
-const RECORD_COLUMNS = [
-  "date",
-  "total_distance",
-  "fuel_amount",
-  "gas_station",
-  "price_per_unit",
-  "total_cost",
-  "fuel_efficiency",
-  "vehicle_id",
-  "created_at",
-  "odometer",
-  "is_full",
-  "missed_previous",
-  "fuel_type",
-  "memo",
-] as const satisfies readonly (keyof FuelRecord)[];
-
-type RecordColumn = (typeof RECORD_COLUMNS)[number];
-
-/**
- * 保存する値を既知の列だけに絞り、0004 で追加した列の値を検証する（純粋関数）。
- * - 渡されたキー（値が undefined でないもの）だけを返す。Supabase へ送らなかった列には DB の既定値が入る
- *   （0004 適用前の DB でも、新しい列を指定しない保存は従来どおり成功する）
- * - is_full / missed_previous は真偽値以外なら捨てる（DB の既定値 true / false）
- * - odometer は 0 以上の有限数、fuel_type は 4 値、memo は 200 文字まで（空は null）に正規化する
- */
-export function pickRecordColumns(input: Partial<FuelRecord>): Partial<Pick<FuelRecord, RecordColumn>> {
-  const out: Partial<Record<RecordColumn, unknown>> = {};
-  for (const key of RECORD_COLUMNS) {
-    const value = input[key];
-    if (value === undefined) continue;
-    switch (key) {
-      case "odometer":
-        out.odometer = sanitizeOdometer(value);
-        break;
-      case "is_full":
-      case "missed_previous":
-        if (typeof value === "boolean") out[key] = value;
-        break;
-      case "fuel_type":
-        out.fuel_type = isFuelType(value) ? value : null;
-        break;
-      case "memo":
-        out.memo = sanitizeMemo(value);
-        break;
-      default:
-        out[key] = value;
-    }
-  }
-  return out as Partial<Pick<FuelRecord, RecordColumn>>;
-}
-
-
-function parseLocalRecords(raw: string | null): FuelRecord[] {
-  if (!raw) return [];
-  try {
-    const parsed: unknown = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return [];
-    return parsed.filter(
-      (r): r is FuelRecord => !!r && typeof r === "object" && typeof (r as FuelRecord).id === "string"
-    );
-  } catch {
-    return [];
-  }
-}
 
 /** 読み込んだ記録（ローカル・クラウド・キャッシュ）の新しい列に既定値を入れる */
 function normalizeAll(list: readonly FuelRecord[]): FuelRecord[] {
@@ -174,43 +65,17 @@ export function applyFillChainByVehicle(
   return out;
 }
 
-function readLocalRecords(): FuelRecord[] {
-  if (typeof window === "undefined") return [];
-  return parseLocalRecords(localStorage.getItem(LOCAL_RECORDS_KEY));
-}
-
-/** ローカルの記録を保存する。容量超過などで保存できなければ日本語の Error を投げる（writeLocalJson） */
-function writeLocalRecords(list: FuelRecord[]) {
-  writeLocalJson(LOCAL_RECORDS_KEY, list);
-}
-
-/** 読み込み失敗時に画面へ出す日本語メッセージ（英語の生エラーは console.error のみに出す） */
-function errorMessage(e: unknown): string {
-  if (isAuthTokenError(e)) return AUTH_TOKEN_ERROR_MESSAGE;
-  if (isPermissionDeniedError(e)) return PERMISSION_DENIED_MESSAGE;
-  if (e instanceof CrossTabLockError) return e.message;
-  return CLOUD_LOAD_ERROR_MESSAGE;
-}
-
-/** 認証トークン欠落は障害（outage）ではなくアプリエラーとして扱う */
-function classify(status: number | null | undefined, e: unknown) {
-  return isAuthTokenError(e) ? null : classifySupabaseFailure(status, e);
-}
-
-/** 呼び出し元（alert 等）に見せるエラーへ正規化する。認証トークン欠落は日本語メッセージに置き換える。 */
-function normalizeError(e: unknown, status?: number): Error {
-  if (isAuthTokenError(e)) return new SupabaseAuthTokenError();
-  // 生エラーのログと日本語メッセージへの変換は toUserFacingWriteError に集約する
-  return toUserFacingWriteError(e, status);
-}
-
+/**
+ * 選択中の車両の給油記録（連鎖計算済み）と、その追加・更新・削除。
+ * 保存先（localStorage / Supabase）の違いは lib/data/ のストアが吸収し、このフックは状態と通知だけを持つ。
+ */
 export function useFuelRecords(
   selectedVehicleId?: string,
   defaultVehicleId?: string,
   options: UseFuelRecordsOptions = {}
 ) {
   const { enabled = true, vehicles } = options;
-  const { getToken, userId, isSignedIn, isLoaded } = useAuth();
+  const { isLoaded, isSignedIn, stores } = useDataStores();
   /**
    * 保存値のままの記録（新しい列は既定値で補完済み）。画面へは連鎖計算を適用した `records` を返す。
    * 連鎖計算を描画時に行うので、追加・更新・削除で隣の記録の燃費が変わっても、車両の方式を切り替えても即座に反映される。
@@ -220,10 +85,11 @@ export function useFuelRecords(
   const [error, setError] = useState<string | null>(null);
   const outage = useSupabaseOutage();
   const fetchCounter = useRef(0);
-  /** クラウドから正常に読み込めた後、このキーへ records を書き戻す（障害時の閲覧専用表示用） */
-  const cacheKeyRef = useRef<string | null>(null);
+  // 「再試行」イベントの再読み込みだけ、クラウドの初期化の失敗メモ（30 秒）を飛ばす
+  const forceBootstrap = useRef(false);
 
-  const readOnly = !!isSignedIn && outage != null;
+  const readOnly = isSignedIn && outage != null;
+  const scope = useMemo(() => recordScopeOf(selectedVehicleId, defaultVehicleId), [selectedVehicleId, defaultVehicleId]);
 
   // 車両ごとの距離の入力方式。vehicles 配列の参照が変わっても、方式が同じなら同じ Map を保つ
   const modesKey = JSON.stringify((vehicles ?? []).map(v => [v.id, distanceModeOf(v)]));
@@ -239,95 +105,58 @@ export function useFuelRecords(
     [rawRecords, selectedMode]
   );
 
-  useEffect(() => {
-    if (cacheKeyRef.current) writeCache(cacheKeyRef.current, rawRecords);
-  }, [rawRecords]);
-
   const loadData = useCallback(async (fetchId: number) => {
     if (!isLoaded) return;
     setLoading(true);
     setError(null);
+    const isCurrent = () => fetchId === fetchCounter.current;
+    const force = forceBootstrap.current;
+    forceBootstrap.current = false;
+    if (!stores) return;
 
-    if (!isSignedIn) {
-      cacheKeyRef.current = null;
+    if (stores.kind === "local") {
       try {
-        const all = readLocalRecords();
-        if (fetchId !== fetchCounter.current) return;
-        const filtered = all.filter(r => matchesSelectedVehicle(r, selectedVehicleId, defaultVehicleId));
-        setRecords(sortRecordsByDateDesc(normalizeAll(filtered)));
+        const list = await stores.records.list(scope);
+        if (!isCurrent()) return;
+        setRecords(sortRecordsByDateDesc(list));
       } finally {
-        if (fetchId === fetchCounter.current) setLoading(false);
+        if (isCurrent()) setLoading(false);
       }
       return;
     }
-
-    if (!userId) return;
 
     // 車両一覧の読み込み完了を待つ（呼び出し側が enabled=false を渡した場合は保留）
     if (!enabled) return;
 
     // 選択中の車両IDが UUID でない = 車両一覧が未確定（または読み込み失敗）。
     // この状態ではクエリを発行せず、空のまま loading を解除する。
-    if (!isUuid(selectedVehicleId)) {
-      cacheKeyRef.current = null;
+    if (!isUuid(scope.vehicleId)) {
       setRecords([]);
       setLoading(false);
       return;
     }
 
-    const supabase = getSupabaseClient(userId, getToken);
-    const includeUnclassified = isDefaultVehicleSelected(selectedVehicleId, defaultVehicleId);
-    const cacheKey = recordsCacheKey(userId, selectedVehicleId);
-
     try {
-      // ローカルデータの移行（useVehicles からも呼ばれるが、ロックにより 1 回しか走らない）。
-      // useVehicles 側で直近に失敗していれば（RLS 違反など）、ここで同じ失敗を繰り返さない。
-      if (!migrationFailedRecently(userId)) {
-        try {
-          await migrateLocalData(supabase, userId);
-        } catch (e) {
-          const kind = classify((e as { status?: number })?.status, e);
-          if (kind) throw e;
-          // 障害以外の移行失敗（ローカルデータは復元済み）。未アップロードであることを error で知らせる。
-          if (!isAuthTokenError(e) && fetchId === fetchCounter.current) setError(migrationErrorMessage(e));
-        }
-      }
-      if (fetchId !== fetchCounter.current) return;
+      // ローカルデータの移行と既定車両の確保（タブ内で 1 回。useVehicles と共有）
+      const { migrationError } = await stores.bootstrap({ force });
+      if (!isCurrent()) return;
+      // 障害以外の移行失敗（ローカルデータは復元済み）。未アップロードであることを error で知らせる
+      if (migrationError) setError(migrationError);
 
-      // クエリ構築: 選択中の車両UUIDに一致するものを取得。
-      // vehicle_id が null の記録（未分類）は「既定（先頭）車両」を選択している場合のみ含める。
-      // 常に含めると、車両が複数あるとき全車両に同じ記録が重複表示・重複集計されてしまう。
-      // selectedVehicleId は上で UUID 形式を検証済みなので、フィルタ式に安全に埋め込める。
-      let query = supabase.from("fuel_records").select("*").order("date", { ascending: false });
-      query = includeUnclassified
-        ? query.or(`vehicle_id.eq.${selectedVehicleId},vehicle_id.is.null`)
-        : query.eq("vehicle_id", selectedVehicleId);
-
-      const { data, error: queryError, status } = await query;
-      if (fetchId !== fetchCounter.current) return;
-      if (queryError) throw withStatus(queryError, status);
-
-      clearOutage();
-      cacheKeyRef.current = cacheKey;
-      setRecords(sortRecordsByDateDesc(normalizeAll((data ?? []) as FuelRecord[])));
+      const list = await stores.records.list(scope);
+      if (!isCurrent()) return;
+      setRecords(sortRecordsByDateDesc(list));
     } catch (e) {
-      if (fetchId !== fetchCounter.current) return;
-      console.error("給油データの取得失敗:", e);
-
-      const kind = classify((e as { status?: number })?.status, e);
-      if (kind) setOutage(kind);
-      else setError(errorMessage(e));
-
+      if (!isCurrent()) return;
+      // 障害は outage で通知する（ストアが記録済み）。それ以外は日本語メッセージを error に出す
+      const message = loadErrorMessage(e);
+      if (message) setError(message);
       // 全車両の記録を読み込むフォールバックはしない。最後に同期した一覧があれば閲覧専用で表示する。
-      cacheKeyRef.current = null;
-      const cached = readCache<FuelRecord[]>(cacheKey);
-      setRecords(Array.isArray(cached) ? sortRecordsByDateDesc(normalizeAll(cached)) : []);
+      setRecords(sortRecordsByDateDesc(normalizeAll(stores.records.cached(scope) ?? [])));
     } finally {
-      if (fetchId === fetchCounter.current) {
-        setLoading(false);
-      }
+      if (isCurrent()) setLoading(false);
     }
-  }, [isSignedIn, isLoaded, userId, getToken, selectedVehicleId, defaultVehicleId, enabled]);
+  }, [isLoaded, stores, scope, enabled]);
 
   useEffect(() => {
     const currentFetchId = ++fetchCounter.current;
@@ -340,117 +169,32 @@ export function useFuelRecords(
     loadData(currentFetchId);
   });
 
-  const requireWritable = () => {
-    if (readOnly) throw readOnlyError(outage);
-  };
-
-  const applyLocalFilter = (list: FuelRecord[]) =>
-    sortRecordsByDateDesc(list.filter(r => matchesSelectedVehicle(r, selectedVehicleId, defaultVehicleId)));
+  /** 選択中の車両（と、既定車両なら未分類）の記録だけを日付の降順で残す。読み込み時と同じ判定 */
+  const inScope = (list: FuelRecord[]) => sortRecordsByDateDesc(list.filter(r => matchesRecordScope(r, scope)));
 
   /**
    * 選択中の車両に記録を追加する。0004 の列（odometer / is_full / missed_previous / fuel_type / memo）は省略可
    * （省略時は満タン・記録漏れなし・未指定）。戻り値は保存値のままの記録（連鎖計算の結果は records に反映される）。
+   * ログイン中は選択中の車両が UUID でなければ（車両一覧が未確定）日本語エラーを投げる（未分類で保存しない）。
    */
   const addRecord = async (record: Omit<FuelRecord, "id" | "vehicle_id">) => {
-    // vehicle_id は選択中の車両、created_at はここで決める（呼び出し側の値は使わない）
-    const columns = pickRecordColumns(record);
-    delete columns.vehicle_id;
-    delete columns.created_at;
-    if (!isSignedIn) {
-      const localTarget =
-        selectedVehicleId && !selectedVehicleId.startsWith("default-") ? selectedVehicleId : LOCAL_DEFAULT_VEHICLE_ID;
-      const newRecord: FuelRecord = normalizeRecord({
-        date: record.date,
-        total_distance: null,
-        fuel_amount: null,
-        gas_station: null,
-        price_per_unit: null,
-        total_cost: null,
-        fuel_efficiency: null,
-        ...columns,
-        id: Date.now().toString(),
-        vehicle_id: localTarget,
-        created_at: new Date().toISOString(),
-      });
-      writeLocalRecords([newRecord, ...readLocalRecords()]);
-      setRecords(prev => applyLocalFilter([newRecord, ...prev]));
-      return newRecord;
-    }
-
-    requireWritable();
-    if (!isUuid(selectedVehicleId)) {
-      // 車両一覧が未確定のまま保存すると vehicle_id=null の「未分類」記録になってしまうため拒否する
-      throw new Error("車両情報の読み込みが完了していないため保存できません。しばらく待ってから再度お試しください。");
-    }
-
-    const supabase = getSupabaseClient(userId, getToken);
-    const { data, error: insertError, status } = await supabase
-      .from("fuel_records")
-      .insert({ ...columns, user_id: userId, vehicle_id: selectedVehicleId })
-      .select()
-      .single();
-
-    if (insertError) {
-      const kind = classify(status, insertError);
-      if (kind) setOutage(kind);
-      throw normalizeError(insertError, status);
-    }
-
-    const added = normalizeRecord(data as FuelRecord);
-    setRecords(prev => sortRecordsByDateDesc([added, ...prev]));
+    // vehicle_id は選択中の車両、created_at はストアが決める（呼び出し側の値は使わない）
+    const added = await requireStores(stores).records.add({ ...record, vehicle_id: selectedVehicleId ?? null });
+    setRecords(prev => inScope([added, ...prev]));
     return added;
   };
 
   /**
    * 記録を更新する。既知の列だけを保存し（id・user_id などは無視）、0004 の列は pickRecordColumns で検証する。
-   * 渡さなかった列は変更しない。
+   * 渡さなかった列は変更しない。車両移動（vehicle_id 変更）で選択中の車両に属さなくなった記録は一覧から外す。
    */
   const updateRecord = async (id: string, updates: Partial<FuelRecord>) => {
-    const columns = pickRecordColumns(updates);
-    const merge = (r: FuelRecord) => (r.id === id ? normalizeRecord({ ...r, ...columns }) : r);
-    if (!isSignedIn) {
-      const all = readLocalRecords();
-      if (all.length > 0) {
-        writeLocalRecords(all.map(merge));
-      }
-      setRecords(prev => applyLocalFilter(prev.map(merge)));
-      return;
-    }
-
-    requireWritable();
-    if (Object.keys(columns).length === 0) return;
-    const supabase = getSupabaseClient(userId, getToken);
-    const { error: updateError, status } = await supabase.from("fuel_records").update(columns).eq("id", id);
-    if (updateError) {
-      const kind = classify(status, updateError);
-      if (kind) setOutage(kind);
-      throw normalizeError(updateError, status);
-    }
-
-    // 車両移動（vehicle_id 変更）で選択中車両に属さなくなった記録は一覧から外す。
-    // 読み込み時と同じ判定（未分類は既定車両にのみ表示）を使う。
-    setRecords(prev => applyLocalFilter(prev.map(merge)));
+    await requireStores(stores).records.update(id, updates);
+    setRecords(prev => inScope(prev.map(r => (r.id === id ? applyRecordPatch(r, updates) : r))));
   };
 
   const deleteRecord = async (id: string) => {
-    if (!isSignedIn) {
-      const all = readLocalRecords();
-      if (all.length > 0) {
-        writeLocalRecords(all.filter(r => r.id !== id));
-      }
-      setRecords(prev => prev.filter(r => r.id !== id));
-      return;
-    }
-
-    requireWritable();
-    const supabase = getSupabaseClient(userId, getToken);
-    const { error: deleteError, status } = await supabase.from("fuel_records").delete().eq("id", id);
-    if (deleteError) {
-      const kind = classify(status, deleteError);
-      if (kind) setOutage(kind);
-      throw normalizeError(deleteError, status);
-    }
-
+    await requireStores(stores).records.remove(id);
     setRecords(prev => prev.filter(r => r.id !== id));
   };
 
@@ -467,100 +211,20 @@ export function useFuelRecords(
     items: Omit<FuelRecord, "id">[],
     options: { onProgress?: (done: number, total: number) => void } = {}
   ): Promise<number> => {
-    const { onProgress } = options;
     if (items.length === 0) return 0;
-
-    if (!isSignedIn) {
-      const base = Date.now().toString(36);
-      const nowIso = new Date().toISOString();
-      const added: FuelRecord[] = items.map((item, i) =>
-        normalizeRecord({
-          id: `restored-${base}-${i}`,
-          date: item.date,
-          total_distance: item.total_distance,
-          fuel_amount: item.fuel_amount,
-          gas_station: item.gas_station,
-          price_per_unit: item.price_per_unit,
-          total_cost: item.total_cost,
-          fuel_efficiency: item.fuel_efficiency,
-          vehicle_id: item.vehicle_id ?? null,
-          created_at: normalizeTimestamp(item.created_at) ?? nowIso,
-          odometer: item.odometer,
-          is_full: item.is_full,
-          missed_previous: item.missed_previous,
-          fuel_type: item.fuel_type,
-          memo: item.memo,
-        })
-      );
-      try {
-        writeLocalRecords([...readLocalRecords(), ...added]);
-      } catch (e) {
-        console.error("ローカル給油記録の保存失敗:", e);
-        throw new Error("ブラウザの保存容量が不足しているため、記録を追加できませんでした。");
-      }
-      onProgress?.(added.length, added.length);
-      notifyRecordsChanged();
-      return added.length;
-    }
-
-    requireWritable();
-    if (!userId) throw new Error("ログイン情報を確認できませんでした。再読み込みしてください。");
-    if (items.some(item => !isUuid(item.vehicle_id))) {
-      // ログイン中に vehicle_id=null（未分類）で保存しない
-      throw new Error("車両が決まっていない記録があるため追加できません。画面を再読み込みしてから再度お試しください。");
-    }
-
-    const supabase = getSupabaseClient(userId, getToken);
-    const nowIso = new Date().toISOString();
-    const payload = items.map(item => ({
-      user_id: userId,
-      vehicle_id: item.vehicle_id,
-      date: item.date,
-      total_distance: item.total_distance,
-      fuel_amount: item.fuel_amount,
-      gas_station: item.gas_station,
-      price_per_unit: item.price_per_unit,
-      total_cost: item.total_cost,
-      fuel_efficiency: item.fuel_efficiency,
-      // insert(配列) は全行のキーの和集合を送るため、created_at は全行に必ず入れる。
-      // Postgres が拒否・誤読しない ISO 文字列に正規化し、無効なら現在時刻にする
-      created_at: normalizeTimestamp(item.created_at) ?? nowIso,
-      // 0004 の列は値があるものだけ送る。キーの無い行には defaultToNull: false により列の既定値
-      // （満タン・記録漏れなし・null）が入る
-      ...pickRecordColumns({
-        odometer: item.odometer,
-        is_full: item.is_full,
-        missed_previous: item.missed_previous,
-        fuel_type: item.fuel_type,
-        memo: item.memo,
-      }),
-    }));
-
-    const CHUNK = 100;
-    let inserted = 0;
+    let added: number;
     try {
-      for (let i = 0; i < payload.length; i += CHUNK) {
-        const chunk = payload.slice(i, i + CHUNK);
-        const { error: insertError, status } = await supabase
-          .from("fuel_records")
-          .insert(chunk, { defaultToNull: false });
-        if (insertError) throw withStatus(insertError, status);
-        inserted += chunk.length;
-        onProgress?.(inserted, payload.length);
-      }
+      added = await requireStores(stores).records.addMany(items, options.onProgress);
     } catch (e) {
-      const kind = classify((e as { status?: number })?.status, e);
-      if (kind) setOutage(kind);
-      const base = normalizeError(e);
-      if (inserted > 0) {
+      const done = e instanceof DataError ? e.done : 0;
+      if (done > 0) {
         notifyRecordsChanged();
-        throw new Error(`${inserted} 件を追加したところで中断しました。${base.message}`, { cause: e });
+        throw new Error(`${done} 件を追加したところで中断しました。${(e as Error).message}`, { cause: e });
       }
-      throw base;
+      throw e;
     }
-
     notifyRecordsChanged();
-    return inserted;
+    return added;
   };
 
   /** 全車両の記録へ車両ごとの連鎖計算を適用する（未分類は既定車両の連鎖に入れる） */
@@ -583,39 +247,8 @@ export function useFuelRecords(
    */
   const fetchAllRecords = useCallback(async (): Promise<FuelRecord[]> => {
     if (!isLoaded) throw new Error("読み込み中です。しばらく待ってから再度お試しください。");
-    if (!isSignedIn) return chainAll(readLocalRecords());
-    if (!userId) throw new Error("ログイン情報を確認できませんでした。再読み込みしてください。");
-
-    const supabase = getSupabaseClient(userId, getToken);
-    const PAGE = 1000;
-    const all: FuelRecord[] = [];
-    try {
-      let from = 0;
-      for (;;) {
-        const { data, error: queryError, status } = await supabase
-          .from("fuel_records")
-          .select("*")
-          .eq("user_id", userId)
-          .order("date", { ascending: false })
-          .order("id", { ascending: true })
-          .range(from, from + PAGE - 1);
-        if (queryError) throw withStatus(queryError, status);
-        const page = (data ?? []) as FuelRecord[];
-        // 空のページが返るまで読む。Supabase の max-rows が PAGE より小さく設定されていても、
-        // 「PAGE 件未満 = 最終ページ」と誤認してバックアップが黙って欠けないように、
-        // 実際に返った件数だけ読み進める
-        if (page.length === 0) break;
-        all.push(...page);
-        from += page.length;
-      }
-    } catch (e) {
-      console.error("全給油データの取得失敗:", e);
-      const kind = classify((e as { status?: number })?.status, e);
-      if (kind) setOutage(kind);
-      throw new Error(errorMessage(e), { cause: e });
-    }
-    return chainAll(all);
-  }, [isLoaded, isSignedIn, userId, getToken, chainAll]);
+    return chainAll(await requireStores(stores).records.listAll());
+  }, [isLoaded, stores, chainAll]);
 
   const refresh = useCallback(() => {
     const currentFetchId = ++fetchCounter.current;
@@ -624,6 +257,7 @@ export function useFuelRecords(
 
   // 障害バナーの「再試行」・自動再試行で再読み込みする
   useWindowEvent(SUPABASE_RETRY_EVENT, () => {
+    forceBootstrap.current = true;
     void refresh();
   });
 

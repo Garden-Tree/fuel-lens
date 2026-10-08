@@ -4,10 +4,9 @@ import {
   LOCAL_DEFAULT_VEHICLE_ID,
   LOCAL_RECORDS_KEY,
   LOCAL_VEHICLES_KEY,
-  ensureDefaultVehicle,
   migrateLocalData,
-  withStatus,
 } from "@/lib/migrateLocalData";
+import { ensureDefaultVehicle, withStatus } from "@/lib/data/cloudStore";
 
 // ---------------------------------------------------------------------------
 // localStorage / window stubs

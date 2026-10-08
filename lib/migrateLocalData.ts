@@ -1,25 +1,38 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { DistanceMode, FuelType, Vehicle, VehicleType } from "./types";
+import type { Vehicle, VehicleType } from "./types";
 import { isValidCalendarDate, localDateString } from "./dates";
 import { isUuid } from "./recordFilters";
 import { PERMISSION_DENIED_MESSAGE, isPermissionDeniedError } from "./supabase/errors";
-import { isDistanceMode, isFuelType, sanitizeMemo, sanitizeOdometer } from "./fillChain";
+import { isFuelType, sanitizeMemo, sanitizeOdometer } from "./fillChain";
+import { CrossTabLockError, withCrossTabLock } from "./crossTabLock";
+import {
+  DEFAULT_VEHICLE_NAME,
+  LOCAL_DEFAULT_VEHICLE_ID,
+  LOCAL_RECORDS_KEY,
+  LOCAL_VEHICLES_KEY,
+} from "./data/localStore";
+import {
+  ensureDefaultVehicleUnlocked,
+  ensureUserRow,
+  vehicleInsertRow,
+  vehicleSettingsColumns,
+  withStatus,
+  type VehicleSeed,
+} from "./data/cloudStore";
 
 /**
  * ログアウト中に localStorage へ保存した車両・給油記録を、ログイン後に
  * Supabase へ 1 回だけ移行する。
  *
  * 二重登録を防ぐための仕組み:
- *  1. タブをまたぐ排他ロック。`navigator.locks`（Web Locks API）が使える環境では
- *     `fuel_lens_migration_<userId>` を exclusive で取得する（タブが閉じれば自動解放）。
- *     使えない環境では localStorage のリース `fuel_lens_migration_lock_<userId>`
- *     （タイムスタンプ付き・実行中は定期更新・約 2 分で失効）で代替する。
+ *  1. タブをまたぐ排他ロック（lib/crossTabLock.ts の withCrossTabLock）。Web Locks API の
+ *     `fuel_lens_migration_<userId>`、使えない環境では localStorage のリースで代替する。
  *     Clerk はログイン状態を全タブに同期するため、同一ユーザーの移行が複数タブで
  *     ほぼ同時に始まり得る。ロックを持っている間だけ `<key>_migrating_<userId>` の
  *     残骸（前回クラッシュ分）を引き継ぐ。ロックなしで引き継ぐと、別タブが実行中の
  *     データを「残骸」と誤認して全件を二重登録してしまう。
- *  2. タブ内では userId ごとの実行中 Promise をモジュールスコープで保持し、
- *     useVehicles / useFuelRecords から同時に呼ばれても 1 回しか走らない。
+ *  2. タブ内では userId ごとの実行中 Promise をモジュールスコープで保持し、同時に呼ばれても 1 回しか走らない。
+ *     呼び出し元はクラウドの初期化（lib/data/cloudBootstrap.ts）だけ。
  *  3. 挿入前にローカルキーを `<key>_migrating_<userId>` へ「移動」する。元キーは
  *     以降の読み込みで空になるため、同じデータを二度読み込まない。
  *  4. 失敗時は移動したデータを元キーへマージして戻す（次回ログイン時に再試行）。
@@ -27,39 +40,25 @@ import { isDistanceMode, isFuelType, sanitizeMemo, sanitizeOdometer } from "./fi
  *  5. 車両の挿入が終わるたびに localId→uuid の対応表を保存し、記録の挿入が
  *     途中で失敗した場合の再試行で車両を二重登録しない。記録もチャンク挿入の
  *     たびに退避データから取り除く。
- *  6. 既定車両の自動作成（ensureDefaultVehicle）も同じクロスタブロックで直列化し、
+ *  6. 既定車両の自動作成（lib/data/cloudStore.ts の ensureDefaultVehicle）も同じクロスタブロックで直列化し、
  *     新規ユーザーが複数タブを開いても「メインカー」が 1 台しか作られないようにする。
  */
 
-export const LOCAL_RECORDS_KEY = "fuel_lens_data";
-export const LOCAL_VEHICLES_KEY = "fuel_lens_vehicles";
-export const LOCAL_DEFAULT_VEHICLE_ID = "default-car";
-export const DEFAULT_VEHICLE_NAME = "メインカー";
-
-/** 未ログイン時の保存（localStorage）が容量超過などで失敗したときのメッセージ */
-export const LOCAL_STORAGE_FULL_MESSAGE =
-  "ブラウザの保存領域がいっぱいです。不要な記録を削除するかバックアップしてください。";
-
-/**
- * 未ログイン時のデータ（LOCAL_RECORDS_KEY / LOCAL_VEHICLES_KEY）を localStorage へ保存する。
- * 容量超過（QuotaExceededError）などで保存できなければ、生エラーを console.error に出し、
- * LOCAL_STORAGE_FULL_MESSAGE の Error を投げる（英語の DOMException を画面に出さない）。SSR 中は何もしない。
- */
-export function writeLocalJson(key: string, value: unknown): void {
-  if (typeof window === "undefined") return;
-  try {
-    localStorage.setItem(key, JSON.stringify(value));
-  } catch (e) {
-    console.error("ローカルデータの保存失敗:", e);
-    throw new Error(LOCAL_STORAGE_FULL_MESSAGE, { cause: e });
-  }
-}
+// 定数と writeLocalJson は lib/data/localStore.ts へ移した。互換のため 1 リリースの間ここから再エクスポートする
+export {
+  LOCAL_RECORDS_KEY,
+  LOCAL_VEHICLES_KEY,
+  LOCAL_DEFAULT_VEHICLE_ID,
+  DEFAULT_VEHICLE_NAME,
+  LOCAL_STORAGE_FULL_MESSAGE,
+  writeLocalJson,
+} from "./data/localStore";
+/** @deprecated lib/crossTabLock.ts から import する（互換のための再エクスポート） */
+export { CrossTabLockError } from "./crossTabLock";
 
 const migratingRecordsKey = (userId: string) => `${LOCAL_RECORDS_KEY}_migrating_${userId}`;
 const migratingVehiclesKey = (userId: string) => `${LOCAL_VEHICLES_KEY}_migrating_${userId}`;
 const vehicleMapKey = (userId: string) => `fuel_lens_migration_vehicle_map_${userId}`;
-const lockName = (userId: string) => `fuel_lens_migration_${userId}`;
-const leaseKey = (userId: string) => `fuel_lens_migration_lock_${userId}`;
 
 export type MigrationResult = {
   migratedVehicles: number;
@@ -70,9 +69,6 @@ export type MigrationResult = {
 
 const NOOP_RESULT: MigrationResult = { migratedVehicles: 0, migratedRecords: 0, didWrite: false };
 
-/** 車両の設定（0004 で追加した列）。ローカルに値があるものだけを持ち、送信する */
-type VehicleSettingsColumns = { distance_mode?: DistanceMode; default_fuel_type?: FuelType };
-type VehicleSeed = { name: string; type: VehicleType } & VehicleSettingsColumns;
 type LocalVehicle = { id: string } & VehicleSeed;
 type LocalRecordRaw = Record<string, unknown>;
 
@@ -123,19 +119,6 @@ function toLocalVehicles(items: unknown[]): LocalVehicle[] {
     out.push({ id: item.id, name, type: normalizeVehicleType(item.type), ...vehicleSettingsColumns(item) });
   }
   return dedupeById(out);
-}
-
-/** ローカル車両の distance_mode / default_fuel_type のうち、有効な値のものだけを返す（無ければ DB の既定値） */
-function vehicleSettingsColumns(item: { distance_mode?: unknown; default_fuel_type?: unknown }): VehicleSettingsColumns {
-  const out: VehicleSettingsColumns = {};
-  if (isDistanceMode(item.distance_mode)) out.distance_mode = item.distance_mode;
-  if (isFuelType(item.default_fuel_type)) out.default_fuel_type = item.default_fuel_type;
-  return out;
-}
-
-/** 車両の insert 行（設定は値があるものだけ） */
-function vehicleInsertRow(userId: string, v: VehicleSeed) {
-  return { user_id: userId, name: v.name, type: v.type, ...vehicleSettingsColumns(v) };
 }
 
 /**
@@ -208,248 +191,11 @@ function normalizeRecordDates(rawDate: unknown, rawCreatedAt: unknown): { date: 
   return { date, created_at: created.toISOString() };
 }
 
-function sleep(ms: number): Promise<void> {
-  return new Promise(resolve => setTimeout(resolve, ms));
-}
-
-/** PostgrestError に HTTP ステータスを添えて投げ直すためのヘルパー */
-export function withStatus<E extends object>(error: E, status: number | undefined): E & { status?: number } {
-  const e = error as E & { status?: number };
-  if (typeof e.status !== "number" && typeof status === "number") {
-    try {
-      e.status = status;
-    } catch {
-      // frozen な場合は無視
-    }
-  }
-  return e;
-}
-
-// ------------------------------------------------------------------
-// クロスタブ排他ロック
-// ------------------------------------------------------------------
-
-const LEASE_TTL_MS = 2 * 60 * 1000;
-const LEASE_REFRESH_MS = 20 * 1000;
-const LEASE_POLL_MS = 250;
-/** Web Locks の取得待ちの上限。別タブがロックを持ったまま固まっても無限に待たない */
-const LOCK_WAIT_TIMEOUT_MS = 30 * 1000;
-
-/** クロスタブロックを取得できなかったときのエラー（メッセージは日本語でそのまま画面に出してよい） */
-export class CrossTabLockError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = "CrossTabLockError";
-  }
-}
-
-type Lease = { ts: number; token: string };
-
-function readLease(key: string): Lease | null {
-  try {
-    const raw = localStorage.getItem(key);
-    if (!raw) return null;
-    const parsed: unknown = JSON.parse(raw);
-    if (!isObjectRecord(parsed)) return null;
-    const ts = parsed.ts;
-    const token = parsed.token;
-    if (typeof ts !== "number" || typeof token !== "string") return null;
-    return { ts, token };
-  } catch {
-    return null;
-  }
-}
-
-function leaseIsStale(lease: Lease | null): boolean {
-  return !lease || Date.now() - lease.ts > LEASE_TTL_MS;
-}
-
-/**
- * Web Locks が使えない環境向けのリース方式ロック。
- * リースが無い／約 2 分より古い場合にだけ取得でき、実行中は定期的に更新する。
- */
-async function withLease<T>(key: string, fn: () => Promise<T>): Promise<T> {
-  const token = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
-  const giveUpAt = Date.now() + LEASE_TTL_MS + 10_000;
-
-  for (;;) {
-    if (leaseIsStale(readLease(key))) {
-      localStorage.setItem(key, JSON.stringify({ ts: Date.now(), token } satisfies Lease));
-      // 同時に書き込んだ別タブに負けていないか確認する
-      await sleep(30);
-      if (readLease(key)?.token === token) break;
-      continue;
-    }
-    if (Date.now() > giveUpAt) {
-      throw new CrossTabLockError("他のタブでデータ移行が実行中のため、処理を開始できませんでした。しばらくしてから再読み込みしてください。");
-    }
-    await sleep(LEASE_POLL_MS);
-  }
-
-  const timer = setInterval(() => {
-    try {
-      localStorage.setItem(key, JSON.stringify({ ts: Date.now(), token } satisfies Lease));
-    } catch {
-      // ベストエフォート
-    }
-  }, LEASE_REFRESH_MS);
-
-  try {
-    return await fn();
-  } finally {
-    clearInterval(timer);
-    try {
-      if (readLease(key)?.token === token) localStorage.removeItem(key);
-    } catch {
-      // ベストエフォート
-    }
-  }
-}
-
-/**
- * userId 単位のクロスタブ排他ロックの下で fn を実行する。
- * Web Locks API があればそれを使い（タブ終了で自動解放）、無ければリース方式にフォールバックする。
- * Web Locks の取得待ちは約 30 秒で打ち切り、CrossTabLockError を投げる（取得後の fn の実行時間は制限しない）。
- */
-function withCrossTabLock<T>(userId: string, fn: () => Promise<T>): Promise<T> {
-  if (typeof navigator !== "undefined" && navigator.locks && typeof navigator.locks.request === "function") {
-    // ロックはコールバックの Promise が解決するまで保持される（タブが閉じられれば自動解放）
-    return new Promise<T>((resolve, reject) => {
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), LOCK_WAIT_TIMEOUT_MS);
-      navigator.locks
-        .request(lockName(userId), { mode: "exclusive", signal: controller.signal }, async () => {
-          clearTimeout(timer);
-          try {
-            resolve(await fn());
-          } catch (e) {
-            reject(e);
-          }
-        })
-        .catch((e: unknown) => {
-          clearTimeout(timer);
-          // fn の例外はコールバック内で処理済みなので、ここに来るのはロック取得自体の失敗だけ
-          reject(
-            controller.signal.aborted
-              ? new CrossTabLockError("他のタブの処理が完了しないため移行を中断しました。再読み込みしてください。")
-              : e
-          );
-        });
-    });
-  }
-  return withLease(leaseKey(userId), fn);
-}
-
-// ------------------------------------------------------------------
-// 既定車両の確保（useVehicles と移行処理で共有）
-// ------------------------------------------------------------------
-
-const userRowInflight = new Map<string, Promise<void>>();
-
-/**
- * users テーブルに userId の行があることを保証する（冪等）。
- *
- * 本番 DB では vehicles.user_id / fuel_records.user_id に users(id) への外部キー
- * （vehicles_user_id_fkey / fuel_records_user_id_fkey）があり、0001_schema_and_rls.sql も新規プロジェクトで
- * 同じ FK を作成する。そのため新規ユーザーの初回ログインで UserSync の upsert より先に車両・記録を
- * 挿入すると 23503（FK 違反）で失敗する。
- * id だけを ON CONFLICT DO NOTHING で挿入する（email などは UserSync が管理するので送らない）。
- * 成功した Promise はタブ内で userId ごとに使い回し、失敗時は破棄して次回再試行する。
- *
- * @throws Supabase エラー（status 付き）
- */
-export function ensureUserRow(supabase: SupabaseClient, userId: string): Promise<void> {
-  const existing = userRowInflight.get(userId);
-  if (existing) return existing;
-
-  const run = (async () => {
-    const { error, status } = await supabase
-      .from("users")
-      .upsert({ id: userId }, { onConflict: "id", ignoreDuplicates: true });
-    if (error) throw withStatus(error, status);
-  })();
-  userRowInflight.set(userId, run);
-  run.catch(() => {
-    if (userRowInflight.get(userId) === run) userRowInflight.delete(userId);
-  });
-  return run;
-}
-
-/**
- * ロックを取らない内部実装。runMigration（ロック保持中）から呼ぶ。
- * `created` は既定車両をこの呼び出しで新規作成したかどうか。
- */
-async function ensureDefaultVehicleUnlocked(
-  supabase: SupabaseClient,
-  userId: string,
-  seed?: VehicleSeed
-): Promise<{ vehicles: Vehicle[]; created: boolean }> {
-  const { data, error, status } = await supabase
-    .from("vehicles")
-    .select("*")
-    .order("created_at", { ascending: true })
-    .order("id", { ascending: true });
-  if (error) throw withStatus(error, status);
-
-  const list = (data ?? []) as Vehicle[];
-  if (list.length > 0) return { vehicles: list, created: false };
-
-  // 車両が 1 台でもあれば users 行は FK（vehicles_user_id_fkey。本番 DB に存在し、0001 も作成する）により
-  // 必ず存在する。挿入する場合だけ保証すればよい。
-  await ensureUserRow(supabase, userId);
-
-  const { data: inserted, error: insertErr, status: insertStatus } = await supabase
-    .from("vehicles")
-    .insert(vehicleInsertRow(userId, seed ?? { name: DEFAULT_VEHICLE_NAME, type: "car" }))
-    .select()
-    .single();
-  if (insertErr) throw withStatus(insertErr, insertStatus);
-  return { vehicles: [inserted as Vehicle], created: true };
-}
-
-const ensureInflight = new Map<string, Promise<Vehicle[]>>();
-
-/**
- * ユーザーの車両一覧を created_at 昇順で返す。1 台もなければ既定車両を作成する。
- * 同一 userId で並行して呼ばれても作成は 1 回（タブ内の Promise 共有 + クロスタブロック）。
- *
- * @throws Supabase エラー（呼び出し側で障害分類する）。エラーには `status` を付与する。
- */
-export function ensureDefaultVehicle(
-  supabase: SupabaseClient,
-  userId: string,
-  seed?: VehicleSeed
-): Promise<Vehicle[]> {
-  const existing = ensureInflight.get(userId);
-  if (existing) return existing;
-
-  const run = withCrossTabLock(userId, async () => (await ensureDefaultVehicleUnlocked(supabase, userId, seed)).vehicles);
-  ensureInflight.set(userId, run);
-  run.finally(() => {
-    if (ensureInflight.get(userId) === run) ensureInflight.delete(userId);
-  }).catch(() => {});
-  return run;
-}
-
 // ------------------------------------------------------------------
 // 移行本体
 // ------------------------------------------------------------------
 
 const migrationInflight = new Map<string, Promise<MigrationResult>>();
-/** 直近の失敗時刻（userId → epoch ms）。呼び出し側が短時間の再試行を抑止するための参考値。 */
-const migrationLastFailureAt = new Map<string, number>();
-const FAILURE_MEMO_MS = 30 * 1000;
-
-/**
- * 直近 `withinMs` 以内に migrateLocalData が失敗していれば true。
- * useVehicles が失敗を握りつぶした直後に useFuelRecords が同じ移行を再実行して
- * 退避⇄復元を繰り返さないよう、2 番目以降の呼び出し側で参照する。
- * migrateLocalData 自体は常に再試行する（ここで拒否はしない）。
- */
-export function migrationFailedRecently(userId: string, withinMs: number = FAILURE_MEMO_MS): boolean {
-  const at = migrationLastFailureAt.get(userId);
-  return at != null && Date.now() - at < withinMs;
-}
 
 /**
  * 障害以外の理由（RLS 違反・制約違反など）で移行に失敗したときに画面へ出すメッセージ。
@@ -476,15 +222,22 @@ export function migrateLocalData(supabase: SupabaseClient, userId: string): Prom
   run.finally(() => {
     if (migrationInflight.get(userId) === run) migrationInflight.delete(userId);
   }).catch(() => {});
-  run.then(
-    () => {
-      migrationLastFailureAt.delete(userId);
-    },
-    () => {
-      migrationLastFailureAt.set(userId, Date.now());
-    }
-  );
   return run;
+}
+
+/**
+ * 移行するローカルデータ（未ログイン時の記録・車両、前回失敗した退避データ）が localStorage にあるか。
+ * クラウドの初期化（cloudBootstrap）が、完了済みでも移行をやり直すべきか（ログアウト中に記録した等）を判断するのに使う。
+ */
+export function hasLocalDataToMigrate(userId: string): boolean {
+  if (typeof window === "undefined" || !userId) return false;
+  try {
+    return [LOCAL_RECORDS_KEY, LOCAL_VEHICLES_KEY, migratingRecordsKey(userId), migratingVehiclesKey(userId)].some(
+      key => localStorage.getItem(key) != null
+    );
+  } catch {
+    return false;
+  }
 }
 
 /** 退避キーの内容を元キーへマージして戻す（失敗時の復元）。 */
