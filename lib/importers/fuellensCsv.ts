@@ -26,7 +26,7 @@ import {
   type FuelType,
   type VehicleType,
 } from "../types";
-import { hashString, isBlankRow, parseCsvNumber, parseCsvRows, parseFlexibleDate } from "./fuelio";
+import { hashString, isBlankRow, parseCsvNumber, parseCsvRows, parseFlexibleDate } from "./csvParse";
 
 /** 履歴画面の車両別 CSV のヘッダー（app/history/page.tsx の exportToCsv と同じ） */
 export const HISTORY_CSV_HEADERS = [

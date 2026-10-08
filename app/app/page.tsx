@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect, useCallback, Suspense } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { SignedIn, SignedOut, SignInButton, UserButton, useAuth } from "@clerk/nextjs";
+import { useAuth } from "@clerk/nextjs";
 import {
   Camera,
   History,
@@ -15,21 +15,19 @@ import {
   Edit2,
   X,
   Calculator,
-  ChevronRight,
-  BarChart3,
-  Settings
+  ChevronRight
 } from "lucide-react";
 import imageCompression from "browser-image-compression";
-import { useFuelRecords } from "@/lib/useFuelRecords";
 import type { FuelRecord, RecordInput } from "@/lib/types";
 import EditFuelRecordForm from "@/components/EditFuelRecordForm";
 import ScanReviewSheet from "@/components/ScanReviewSheet";
-import { useVehicles } from "@/lib/useVehicles";
+import { useVehicleScope } from "@/lib/useVehicleScope";
 import VehicleSelector from "@/components/VehicleSelector";
 import { useToast } from "@/components/Toast";
+import { HOME_HEADER_LINKS, HookErrorLine, PageHeader, ReadOnlyCaption } from "@/components/AppShell";
 import { useRecordForm, findDuplicateRecord } from "@/lib/useRecordForm";
 import { todayLocalISO } from "@/lib/dates";
-import { distanceModeOf, formChainPosition, openRunBefore, previousOdometer } from "@/lib/fillChain";
+import { openRunBefore, previousOdometer } from "@/lib/fillChain";
 import RecordBadges, { efficiencyNullReason, formatOdometer } from "@/components/RecordBadges";
 import type { AnalyzeErrorResponse, AnalyzeSuccessResponse } from "@/lib/analyze";
 import { takeSharedImage } from "@/lib/shareInbox";
@@ -118,38 +116,26 @@ export default function Home() {
   const toastRef = useRef(toast);
   // AIスキャンはログイン必須（/api/analyze が 401 を返す）。未ログイン時のヒント表示に使う
   const { isLoaded: authLoaded, isSignedIn } = useAuth();
-  // 車両管理フックの統合
+  // 選択中の車両とその記録（useVehicles + useFuelRecords）。
+  // 未分類（vehicle_id=null）の記録は既定（先頭）車両を選択中のときだけ含まれる。
+  // isLoading は車両・記録のどちらかの読み込み中（`loading` はスキャン中を表すローカル state）
   const {
     vehicles,
     selectedVehicleId,
     setSelectedVehicleId,
-    addVehicle,
-    deleteVehicle,
-    updateVehicle,
-    loading: vehiclesLoading,
-    error: vehiclesError,
-    readOnly: vehiclesReadOnly,
-  } = useVehicles();
-  // 選択中車両IDと既定（先頭）車両IDを渡してレコード一覧を動的に同期。
-  // 既定車両IDは、未分類（vehicle_id=null）の記録をどの車両に含めるか判定するために使う。
-  // 車両一覧の読み込みが終わるまでレコードの読み込みは保留する。
-  // vehicles は連鎖計算（オドメーターモードの区間距離・部分給油の燃費）で各車両の方式を知るために渡す。
-  const {
+    selectedVehicle,
+    distanceMode,
     records,
-    addRecord,
-    updateRecord,
-    loading: recordsLoading,
-    error: recordsError,
+    vehiclesLoading,
+    loading: isLoading,
+    error: hookError,
     readOnly,
-  } = useFuelRecords(selectedVehicleId, vehicles[0]?.id, { enabled: !vehiclesLoading, vehicles });
-  const selectedVehicle = vehicles.find(v => v.id === selectedVehicleId) ?? null;
-  const distanceMode = distanceModeOf(selectedVehicle);
-  // フォームの getPreviousOdometer / getOpenRun は開いたときに渡すため、最新の records を ref 経由で読む
-  // （フォームを開いている間に記録が再読み込みされても反映する）
-  const recordsRef = useRef(records);
-  useEffect(() => {
-    recordsRef.current = records;
-  }, [records]);
+    scopeKey,
+    vehicleActions,
+    recordActions: { addRecord, updateRecord },
+    getPreviousOdometer,
+    getOpenRun,
+  } = useVehicleScope();
 
   const [loading, setLoading] = useState(false);
   const [loadingStep, setLoadingStep] = useState<"compress" | "analyze" | null>(null);
@@ -224,8 +210,6 @@ export default function Home() {
     window.addEventListener("paste", handlePaste);
     return () => window.removeEventListener("paste", handlePaste);
   }, []);
-
-  const isLoading = vehiclesLoading || recordsLoading;
 
   /**
    * 画像を圧縮してプレビューに出し、解析する。
@@ -486,25 +470,6 @@ export default function Home() {
     setSharedPending(null);
   };
 
-  // フォーム内で日付・オドメーターを変えたときの「前回のオドメーター」。
-  // 編集中の記録は自身を除き、created_at・id は保存値のまま並べる（formChainPosition。同じ日付の記録の中の位置を連鎖計算と揃える）
-  const getPreviousOdometer = useCallback(
-    (date: string, excludeRecordId?: string, odometer?: number | null) => {
-      const list = recordsRef.current;
-      return previousOdometer(list, formChainPosition(list, date, excludeRecordId, odometer));
-    },
-    []
-  );
-
-  // フォーム内で日付・オドメーターを変えたときの「直前に開いている run」（部分給油の合算用。位置は getPreviousOdometer と同じ）
-  const getOpenRun = useCallback(
-    (date: string, excludeRecordId?: string, odometer?: number | null) => {
-      const list = recordsRef.current;
-      return openRunBefore(list, selectedVehicle, formChainPosition(list, date, excludeRecordId, odometer));
-    },
-    [selectedVehicle]
-  );
-
   const startEditing = (record: FuelRecord) => {
     form.reset(record, {
       vehicle: selectedVehicle,
@@ -585,10 +550,9 @@ export default function Home() {
   // 開いたままだと、切り替え前の車両の記録を更新してしまうため。
   // 距離の入力方式を切り替えたときも、フォームの入力欄（走行距離 / オドメーター）が合わなくなるので閉じる。
   // （エフェクトではなく「前回の値を state に保持してレンダー中に調整する」React 推奨パターン）
-  const formContextKey = `${selectedVehicleId}:${distanceMode}`;
-  const [formVehicleKey, setFormVehicleKey] = useState(formContextKey);
-  if (formVehicleKey !== formContextKey) {
-    setFormVehicleKey(formContextKey);
+  const [formScopeKey, setFormScopeKey] = useState(scopeKey);
+  if (formScopeKey !== scopeKey) {
+    setFormScopeKey(scopeKey);
     cancelEditing();
   }
 
@@ -630,8 +594,6 @@ export default function Home() {
     ? vehicles.find(v => v.id === selectedVehicleId)?.name || "車両"
     : "車両";
 
-  const hookError = vehiclesError || recordsError;
-
   // ショートカット実行条件: スキャンは読み込み完了かつ解析中・確認中でないこと、手動入力はさらに閲覧専用でないこと
   const shortcutScanReady = mounted && !isLoading && !loading && !scanResult;
   const shortcutManualReady = mounted && !isLoading && !readOnly;
@@ -655,70 +617,23 @@ export default function Home() {
       <div className="w-full max-w-5xl">
 
         {/* ヘッダー */}
-        <header className="flex items-center justify-between py-4 mb-2 w-full">
-          <div className="flex items-center gap-2">
-            <div className="w-10 h-10 bg-gradient-to-tr from-blue-600 to-cyan-400 rounded-xl flex items-center justify-center shadow-lg shadow-blue-900/20">
-              <Fuel className="text-white w-6 h-6 fill-current" />
-            </div>
-            <h1 className="text-xl font-bold tracking-tight">FuelLens</h1>
-          </div>
-
-          <div className="flex items-center gap-3">
-            <Link href="/stats" aria-label="グラフ" className="p-2 bg-gray-800/50 rounded-full border border-gray-700/50 text-gray-400 hover:text-white transition group flex items-center gap-2">
-              <span className="hidden md:inline text-sm font-semibold pr-1">グラフ</span>
-              <BarChart3 className="w-5 h-5" aria-hidden="true" />
-            </Link>
-            <Link href="/history" aria-label="給油履歴" className="p-2 bg-gray-800/50 rounded-full border border-gray-700/50 text-gray-400 hover:text-white transition group flex items-center gap-2">
-              <span className="hidden md:inline text-sm font-semibold pr-1">給油履歴</span>
-              <History className="w-5 h-5" aria-hidden="true" />
-            </Link>
-            <Link href="/settings" aria-label="設定" className="p-2 bg-gray-800/50 rounded-full border border-gray-700/50 text-gray-400 hover:text-white transition group flex items-center gap-2">
-              <Settings className="w-5 h-5" aria-hidden="true" />
-            </Link>
-
-            <SignedOut>
-              <SignInButton forceRedirectUrl="/app">
-                <button className="bg-blue-600 hover:bg-blue-500 text-white text-sm font-bold py-1.5 px-4 rounded-full transition shadow-lg">
-                  ログイン
-                </button>
-              </SignInButton>
-            </SignedOut>
-            <SignedIn>
-              <UserButton />
-            </SignedIn>
-          </div>
-        </header>
+        <PageHeader title="FuelLens" icon={Fuel} links={HOME_HEADER_LINKS} />
 
         {/* データ取得エラー / 閲覧専用の表示 */}
-        {hookError && (
-          <p role="alert" className="text-xs text-red-400 mb-2 px-1">{hookError}</p>
-        )}
-        {mounted && readOnly && (
-          <p role="status" className="text-[11px] text-amber-400/90 mb-2 px-1">閲覧専用（クラウド接続待ち）</p>
-        )}
+        <HookErrorLine error={hookError} />
+        <ReadOnlyCaption show={readOnly} />
 
-        {/* 車両切り替えセレクタータブ */}
-        {vehiclesLoading ? (
-          <div className="w-full mb-6">
-            <div className="flex items-center gap-2 overflow-x-auto pb-2 scrollbar-none">
-              <div className="flex items-center gap-2 p-1.5 bg-gray-950/40 border border-gray-800/80 rounded-2xl shadow-inner">
-                <div className="w-20 h-8 md:h-[36px] bg-gray-850 rounded-xl animate-pulse" />
-                <div className="w-20 h-8 md:h-[36px] bg-gray-850 rounded-xl animate-pulse" />
-                <div className="w-[34px] h-[34px] bg-gray-850 rounded-xl animate-pulse" />
-              </div>
-            </div>
-          </div>
-        ) : (
-          <VehicleSelector
-            vehicles={vehicles}
-            selectedVehicleId={selectedVehicleId}
-            onSelect={setSelectedVehicleId}
-            onAddVehicle={addVehicle}
-            onDeleteVehicle={deleteVehicle}
-            onUpdateVehicle={updateVehicle}
-            readOnly={vehiclesReadOnly}
-          />
-        )}
+        {/* 車両切り替えセレクタータブ（車両の読み込み中はスケルトン） */}
+        <VehicleSelector
+          loading={vehiclesLoading}
+          vehicles={vehicles}
+          selectedVehicleId={selectedVehicleId}
+          onSelect={setSelectedVehicleId}
+          onAddVehicle={vehicleActions.addVehicle}
+          onDeleteVehicle={vehicleActions.deleteVehicle}
+          onUpdateVehicle={vehicleActions.updateVehicle}
+          readOnly={readOnly}
+        />
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-start w-full">
           <div className="flex flex-col gap-6 w-full">

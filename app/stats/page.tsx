@@ -1,9 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import Link from "next/link";
-import { SignedIn, SignedOut, SignInButton, UserButton } from "@clerk/nextjs";
-import { ArrowLeft, TrendingUp } from "lucide-react";
+import { TrendingUp } from "lucide-react";
 import {
   LineChart,
   Line,
@@ -17,8 +15,7 @@ import {
   ReferenceLine
 } from "recharts";
 
-import { useFuelRecords } from "@/lib/useFuelRecords";
-import { useVehicles } from "@/lib/useVehicles";
+import { useVehicleScope } from "@/lib/useVehicleScope";
 import { formatPricePerUnit } from "@/lib/calculations";
 import {
   type EfficiencyAxis,
@@ -45,6 +42,7 @@ import {
   summarizeStations,
 } from "@/lib/stats";
 import VehicleSelector from "@/components/VehicleSelector";
+import { HookErrorLine, PageHeader, ReadOnlyCaption } from "@/components/AppShell";
 
 interface TooltipProps {
   active?: boolean;
@@ -167,23 +165,18 @@ const PERIOD_OPTIONS: ReadonlyArray<{ value: Period; label: string }> = [
 ];
 
 export default function StatsPage() {
+  // 選択中の車両とその記録（useVehicles + useFuelRecords。記録は車両ごとの方式で連鎖計算済み）
   const {
     vehicles,
     selectedVehicleId,
     setSelectedVehicleId,
-    addVehicle,
-    deleteVehicle,
-    updateVehicle,
-    loading: vehiclesLoading,
-    error: vehiclesError,
+    records,
+    vehiclesLoading,
+    loading,
+    error: loadError,
     readOnly,
-  } = useVehicles();
-  const { records, loading: recordsLoading, error: recordsError } = useFuelRecords(
-    selectedVehicleId,
-    vehicles[0]?.id,
-    // vehicles は連鎖計算（オドメーターモードの区間距離・部分給油の燃費）で各車両の方式を知るために渡す
-    { enabled: !vehiclesLoading, vehicles }
-  );
+    vehicleActions,
+  } = useVehicleScope();
 
   // 期間フィルタ (全期間 / 1年 / 6ヶ月 / 3ヶ月)
   const [period, setPeriod] = useState<Period>("all");
@@ -233,34 +226,6 @@ export default function StatsPage() {
   // 「前回比」は最新の給油についての表示なので、比較の基準（前回・30日/90日平均）が期間フィルタで欠けないよう全記録で求める
   const latestPriceDelta = useMemo(() => priceDelta(records), [records]);
 
-  const loadError = vehiclesError ?? recordsError;
-
-  const header = (
-    <header className="flex items-center justify-between py-4 mb-2 sticky top-0 bg-black/80 backdrop-blur-md z-10 w-full">
-      <div className="flex items-center gap-4">
-        <Link href="/app" aria-label="ホームに戻る" className="p-2 bg-gray-900 rounded-full hover:bg-gray-800 transition">
-          <ArrowLeft className="w-5 h-5 text-gray-300" aria-hidden="true" />
-        </Link>
-        <h1 className="text-xl md:text-2xl font-bold flex items-center gap-2">
-          <TrendingUp className="w-6 h-6 text-blue-500" /> 統計・推移
-        </h1>
-      </div>
-
-      <div className="flex items-center gap-3">
-        <SignedOut>
-          <SignInButton forceRedirectUrl="/stats">
-            <button className="bg-blue-600 hover:bg-blue-500 text-white text-sm font-bold py-1.5 px-4 rounded-full transition shadow-lg">
-              ログイン
-            </button>
-          </SignInButton>
-        </SignedOut>
-        <SignedIn>
-          <UserButton />
-        </SignedIn>
-      </div>
-    </header>
-  );
-
   // ヘッダーと車両セレクターは読み込み状態に関係なく常に同じツリー位置に置く。
   // 記録の再読み込み（車両追加・切替など）のたびに VehicleSelector が再マウントされると、
   // 内部の「車両の管理」モーダルが閉じてしまうため。スケルトン切替は下のコンテンツ部分だけで行う。
@@ -268,41 +233,24 @@ export default function StatsPage() {
     <main className="min-h-screen bg-black text-white p-4 md:p-8 pb-20 font-sans flex flex-col items-center">
       <div className="w-full max-w-5xl">
 
-        {header}
+        <PageHeader title="統計・推移" icon={TrendingUp} backHref="/app" />
 
-        {loadError && (
-          <p role="alert" className="text-xs text-red-400 mb-3 break-words">
-            {loadError}
-          </p>
-        )}
-        {readOnly && (
-          <p role="status" className="text-[11px] text-amber-400/90 mb-3">閲覧専用（クラウド接続待ち）</p>
-        )}
+        <HookErrorLine error={loadError} />
+        <ReadOnlyCaption show={readOnly} />
 
         {/* 車両セレクタータブ (車両の初期ロード中のみスケルトン) */}
-        {vehiclesLoading ? (
-          <div className="w-full mb-6">
-            <div className="flex items-center gap-2 overflow-x-auto pb-2 scrollbar-none">
-              <div className="flex items-center gap-2 p-1.5 bg-gray-950/40 border border-gray-800/80 rounded-2xl shadow-inner">
-                <div className="w-20 h-8 md:h-[36px] bg-gray-850 rounded-xl animate-pulse" />
-                <div className="w-20 h-8 md:h-[36px] bg-gray-850 rounded-xl animate-pulse" />
-                <div className="w-[34px] h-[34px] bg-gray-850 rounded-xl animate-pulse" />
-              </div>
-            </div>
-          </div>
-        ) : (
-          <VehicleSelector
-            vehicles={vehicles}
-            selectedVehicleId={selectedVehicleId}
-            onSelect={setSelectedVehicleId}
-            onAddVehicle={addVehicle}
-            onDeleteVehicle={deleteVehicle}
-            onUpdateVehicle={updateVehicle}
-            readOnly={readOnly}
-          />
-        )}
+        <VehicleSelector
+          loading={vehiclesLoading}
+          vehicles={vehicles}
+          selectedVehicleId={selectedVehicleId}
+          onSelect={setSelectedVehicleId}
+          onAddVehicle={vehicleActions.addVehicle}
+          onDeleteVehicle={vehicleActions.deleteVehicle}
+          onUpdateVehicle={vehicleActions.updateVehicle}
+          readOnly={readOnly}
+        />
 
-        {vehiclesLoading || recordsLoading ? (
+        {loading ? (
           <>
             {/* コンパクトなスケルトン（期間フィルタ・サマリー・グラフ2枚） */}
             <div className="flex justify-end mb-4">

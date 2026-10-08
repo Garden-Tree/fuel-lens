@@ -13,6 +13,7 @@ import {
 } from "@/lib/useRecordForm";
 import { formatPricePerUnit } from "@/lib/calculations";
 import { MEMO_MAX_LENGTH, isFuelType } from "@/lib/fillChain";
+import { formatKm } from "@/lib/format";
 import { FUEL_TYPES, FUEL_TYPE_LABELS } from "@/lib/types";
 
 interface Props {
@@ -43,10 +44,6 @@ function inputClass(opts: { error?: string; highlight?: boolean }) {
   if (opts.error) return `${BASE_INPUT} border-red-500 focus-visible:ring-red-500 focus-visible:border-red-500`;
   if (opts.highlight) return `${BASE_INPUT} border-amber-500`;
   return `${BASE_INPUT} border-gray-600`;
-}
-
-function formatKm(value: number): string {
-  return value.toLocaleString("ja-JP", { maximumFractionDigits: 2 });
 }
 
 export default function EditFuelRecordForm({

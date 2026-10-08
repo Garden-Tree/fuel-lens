@@ -2,6 +2,11 @@
 
 レシートとメーターが写った画像を Gemini で解析し、給油情報を JSON で返す API です。
 実装は `app/api/analyze/route.ts`、純粋ヘルパーと型は `lib/analyze.ts`（単体テストは `tests/analyze.test.ts`）にあります。
+`route.ts` は `maxDuration` と、実際の依存（Clerk の `auth`、`callGemini`、`process.env`、モジュールレベルのレートリミッタ）を渡すだけの薄い `POST` です。
+処理の本体は `lib/server/analyze/` に分かれています。`handler.ts`（`handleAnalyze(req, deps)`。下記の処理順序とエラーコードを実装し、依存を注入できるので `tests/analyzeHandler.test.ts` で fake を使って検証）、
+`geminiClient.ts`（`import "server-only"`。プロンプト・スキーマ・`callGemini`・上流エラーの分類 `classifyUpstreamError`）、
+`rateLimit.ts`（`createRateLimiter` と匿名お試し回数 `createAnonymousQuota`。Map と時計を注入でき `tests/rateLimit.test.ts` で検証）、
+`errors.ts`（`callGemini` が投げる分類済みエラー `GeminiCallError`。`server-only` を持たないので `handler.ts` から実体を読める）です。
 `lib/analyze.ts` が import するのは依存のないドメインモジュール（`lib/types.ts` / `lib/dates.ts` / `lib/calculations.ts`）だけです。
 
 ## リクエスト

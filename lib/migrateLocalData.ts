@@ -2,7 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { DistanceMode, FuelType, Vehicle, VehicleType } from "./types";
 import { isValidCalendarDate, localDateString } from "./dates";
 import { isUuid } from "./recordFilters";
-import { PERMISSION_DENIED_MESSAGE, isPermissionDeniedError } from "./supabaseHealth";
+import { PERMISSION_DENIED_MESSAGE, isPermissionDeniedError } from "./supabase/errors";
 import { isDistanceMode, isFuelType, sanitizeMemo, sanitizeOdometer } from "./fillChain";
 
 /**

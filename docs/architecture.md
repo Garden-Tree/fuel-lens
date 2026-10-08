@@ -22,6 +22,7 @@ FuelLens の構成、データの流れ、主要なモジュールの役割を�
 | `components/ManageVehiclesModal.tsx` / `components/VehicleSelector.tsx` | 車両の管理モーダル / 車両の切り替え |
 | `components/BackupPanel.tsx` | 設定画面の本体。データ概要、JSON / CSV の書き出し、復元（ファイル選択 → 件数プレビュー → 確認 → 追加） |
 | `components/ImportPanel.tsx` | 設定画面の「インポート」。Fuelio / FuelLens の CSV を読み込み、復元と同じ流れで追加する（[8 章](#インポートcsv)） |
+| `components/RestoreCounts.tsx` / `components/settingsUi.ts` | 復元・取り込みの件数プレビュー（と補足の箇条書き） / 設定画面の 2 パネルで共有するクラス名と処理中フラグの型（`SettingsBusy`） |
 | `components/Toast.tsx` | `ToastProvider` と `useToast()`（通知と確認ダイアログ） |
 | `components/UserSync.tsx` | ログイン中のユーザーを `users` テーブルへ upsert |
 | `components/SupabaseStatusBanner.tsx` | クラウド障害時の警告バナーと「再試行」 |
@@ -32,10 +33,11 @@ FuelLens の構成、データの流れ、主要なモジュールの役割を�
 | `lib/analyze.ts` | `/api/analyze` の純粋ヘルパーと型。import するのは依存のないドメインモジュール（`lib/types.ts` / `lib/dates.ts` / `lib/calculations.ts`）だけ |
 | `lib/calculations.ts` | `calculateFuelMetrics`（燃費・単価の計算） |
 | `lib/fillChain.ts` | 給油の連鎖計算 `applyFillChain`（オドメーターの差分・部分給油の合算・記録漏れでの連鎖切断）と、燃料種別・距離の入力方式の判定・既定値補完（`normalizeRecord` / `normalizeVehicle`）、フォームの位置（`formChainPosition`）。純粋関数（[10 章](#10-給油の連鎖計算fill-chain)） |
-| `lib/stats.ts` | 統計ページの純粋な集計ロジック（[11 章](#11-統計)） |
+| `lib/stats/` | 統計ページの純粋な集計ロジック。`period` / `summary` / `series` / `prices` / `stationRows` に分割し、`index.ts` から再エクスポート（`@/lib/stats`）（[11 章](#11-統計)） |
 | `lib/stations.ts` | スタンド名の正規化（`normalizeStationName`）、ブランド判定（`detectBrand` と辞書 `STATION_BRANDS`）、グルーピングキー（`stationKey`）。純粋関数 |
 | `lib/recordFilters.ts` | 車両・未分類の判定と、記録一覧の並び順（`sortRecordsByDateDesc`。日付の無い・不正な記録は最後）。純粋関数 |
 | `lib/backup.ts` | バックアップ JSON の組み立て・検証（`parseBackup`）・復元計画（`planRestore` / `finalizeRestoreRecords`）。純粋関数 |
+| `lib/restore.ts` / `lib/useRestoreRunner.ts` | 復元・取り込みの実行手順 `executeRestore`（データ操作は引数で受け取る。node でテスト可能）と、それを設定画面の UI（処理中フラグ・進捗・toast）につなぐフック（[8 章](#実行の共通化)） |
 | `lib/csv.ts` | CSV の組み立て・エスケープ・ダウンロード。履歴画面の CSV 出力と設定画面の全車両 CSV で共有 |
 | `lib/importers/fuelio.ts` / `lib/importers/fuellensCsv.ts` | CSV の取り込み（Fuelio / FuelLens の CSV → バックアップ形式）。純粋関数 |
 | `lib/useVehicles.ts` / `lib/useFuelRecords.ts` / `lib/useRecordForm.ts` | データフックとフォーム状態（[4 章](#4-フック-api)） |
@@ -43,6 +45,9 @@ FuelLens の構成、データの流れ、主要なモジュールの役割を�
 | `lib/migrateLocalData.ts` | ローカル → クラウドの移行と既定車両の自動作成（[5 章](#5-ローカル--クラウド移行)） |
 | `lib/supabaseClient.ts` | ユーザーごとの Supabase クライアント（Clerk JWT 付き） |
 | `lib/supabaseHealth.ts` | 障害の分類、閲覧専用モード、キャッシュ、再試行（[6 章](#6-障害時の動作)） |
+| `lib/supabase/errors.ts` / `outage.ts` / `retry.ts` / `cache.ts` | `supabaseHealth.ts` の実体。errors = 失敗の分類とエラーメッセージ（純粋関数。`migrateLocalData.ts` はここだけを import）、outage = 障害状態の記録・通知・`useSupabaseOutage`、retry = 再試行イベントと自動再試行、cache = per-user キャッシュ。`supabaseHealth.ts` は互換用の再エクスポート |
+| `lib/format.ts` | 表示用の純粋フォーマット（`efficiencyNullReason` / `formatOdometer` / `formatKm`） |
+| `lib/importers/csvParse.ts` | CSV 取り込みの共有プリミティブ（`parseCsvRows` / `parseCsvNumber` / `parseFlexibleDate` / `hashString` / `isBlankRow`）。`fuelio.ts` は互換のため再エクスポート |
 | `lib/shareInbox.ts` | Web Share Target の受け取り箱。Service Worker が IndexedDB に置いた共有画像を、トークン一致かつ 10 分以内のときだけ取り出して削除する（`takeSharedImage` / `clearSharedImage`。[9 章](#9-pwa)） |
 | `public/sw.js` | Service Worker。Web Share Target（POST `/share`）の受け取り専用で、キャッシュはしない（[9 章](#9-pwa)） |
 | `components/ServiceWorkerRegister.tsx` | `public/sw.js` を登録する（本番ビルドのみ。開発中は `NEXT_PUBLIC_ENABLE_SW=1` で有効化）。`app/layout.tsx` にマウント |
@@ -158,6 +163,28 @@ FuelLens の構成、データの流れ、主要なモジュールの役割を�
 - `fetchAllRecords()` は全車両の記録を日付の降順で返します（`useCallback` で安定。バックアップ・全車両 CSV・重複判定用）。
   車両ごとにまとめて（未分類は `defaultVehicleId` の車両に入れて）それぞれの方式で連鎖計算を適用済みです（`applyFillChainByVehicle`）。
   ログイン中は 1,000 件ずつページングして全件を読みます。読み込み前や失敗時は日本語メッセージの `Error` を投げます。
+
+### `useVehicleScope({ list? })`（`lib/useVehicleScope.ts`）
+
+`useVehicles` と `useFuelRecords` を組み合わせ、画面が共通で使う「選択中の車両とその記録」をまとめて返します（/app・/history・/stats が使用）。
+下の 2 つのフックはそのまま呼ぶので、データ更新の 2 経路と閲覧専用の扱いは変わりません。
+
+戻り値: `vehicles`, `selectedVehicleId`, `setSelectedVehicleId`, `selectedVehicle`（一覧に無ければ `null`）, `distanceMode`, `defaultVehicleId`（`vehicles[0]?.id`）,
+`records`, `loading`（`vehiclesLoading || recordsLoading`）, `vehiclesLoading`, `recordsLoading`, `error`（車両 → 記録の順に最初のエラー）, `readOnly`, `outage`,
+`scopeKey`（`${selectedVehicleId}:${distanceMode}`）, `vehicleActions`（`addVehicle` / `addVehicles` / `updateVehicle` / `deleteVehicle`）,
+`recordActions`（`addRecord` / `addRecords` / `updateRecord` / `deleteRecord` / `fetchAllRecords` / `refresh`）, `getPreviousOdometer`, `getOpenRun`。
+
+- 記録は車両一覧の読み込み完了後に読み込み（`enabled: !vehiclesLoading`）、`vehicles` を渡して車両ごとの方式で連鎖計算します（上の呼び出し規約どおり）。
+- `getPreviousOdometer` / `getOpenRun` は `useRecordForm` の `reset` に渡すフォーム用の関数です。最新の `records` を ref 経由で読み、
+  位置は `formChainPosition`（編集中の記録自身を除く）で決めます。各画面で同じ実装を持たないこと。
+- 車両または距離の入力方式が変わったら、開いているフォームを閉じます。画面側は `scopeKey` の前回値を state に持ち、レンダー中に比較して調整します。
+- `list: false` は選択中の車両の一覧を読み込みません（`useFuelRecords` に `enabled: false`）。全件取得・一括追加などの操作だけ使う画面用で、
+  このとき `recordsLoading` は `false`、`loading` は車両の読み込みだけを表します（未ログイン時はローカルの記録が読まれるので `records` が空とは限らない）。
+- 純粋関数 `scopeKeyOf` / `composeScopeError` / `combineScopeLoading` も同じファイルから export しています（`tests/useVehicleScope.test.ts`）。
+
+画面の共通部品は `components/AppShell.tsx` にあります: `PageHeader`（ロゴまたは戻るリンク・見出し・ナビゲーションリンク・ログインボタン。
+ログイン後の戻り先は `usePathname()`）、`HookErrorLine`（`error` の赤い行）、`ReadOnlyCaption`（「閲覧専用（クラウド接続待ち）」）。
+車両セレクターの読み込み中スケルトンは `VehicleSelector` の `loading` プロップで表示します。
 
 ### `error` / `outage` / `readOnly`（両フック共通）
 
@@ -297,6 +324,21 @@ Supabase Free のプロジェクトが一時停止すると、API は HTTP 540 �
   同じファイルをもう一度復元すれば、重複判定により残りだけが追加されます。
 - 復元で追加した記録の ID は、未ログインでは `restored-` で始まるローカル採番、ログイン中は DB が採番する UUID になります（バックアップ内の ID は引き継ぎません）。
 
+### 実行の共通化
+
+復元（BackupPanel）と取り込み（ImportPanel）は、確認ダイアログの後の実行を同じコードで行います。
+
+- `lib/restore.ts` の `executeRestore(backup, { vehicles, fetchAllRecords, addVehicles, addRecords }, onProgress?)` が上の手順 3〜4
+  （全記録の取り直し → `planRestore` → `addVehicles` → `finalizeRestoreRecords` → `addRecords`）を実行し、
+  `{ vehiclesAdded, recordsAdded, skipped, changed }` を返します。進捗は `prepare` → `vehicles`（新規車両があるとき）→ `records`（`done` / `total`）の順に通知します。
+  失敗時は `RestoreError` を投げます。メッセージは元のエラー（`addRecords` の「N 件を追加したところで中断しました。…」など）のままです。
+- `lib/useRestoreRunner.ts` の `useRestoreRunner` が、処理中フラグ（`"restore"` / `"import"`）、進捗の文言（「準備中…」「車両を追加中…（n 台）」「記録を追加中… d / t 件」）、
+  成功・失敗の toast（「復元しました: …」/「取り込みました: …」と、失敗時の「もう一度ファイルを選ぶと、残りを…」）をまとめます。両パネルは `run({ backup, kind })` を呼ぶだけです。
+  lib から components に依存しないよう、`toast` は呼び出し側（`useToast()`）から渡します。
+- **データ概要の再読み込み**: 実行が終わると（成功・失敗とも）両パネルが `onDone(changed)` を呼び、設定画面は `changed` のときだけ記録数を読み込み直します。
+  `changed` は「書き込み（`addVehicles` / `addRecords`）を 1 回でも行った」で、失敗しても途中まで追加済みの可能性があれば `true` です。
+  重複だけで何も追加しなかったとき・書き込み前に失敗したときは読み直しません（以前の復元は毎回、取り込みは追加したときだけ読み直していたのを揃えた）。
+
 ### インポート（CSV）
 
 設定画面の「インポート」（`components/ImportPanel.tsx`）で、他アプリや FuelLens 自身の CSV を取り込みます。
@@ -408,7 +450,7 @@ CSV を `lib/importers/` の純粋関数でバックアップ形式（`FuelLensB
   UI・統計・CSV・バックアップが見る値は常に導出値です。
 - **統計**: `applyFillChain` は燃費が出た記録（run を閉じた満タン給油）にだけ、保存しない導出値 `run_distance` / `run_fuel` / `run_cost`
   （その run の Σ区間距離・Σ給油量・Σ支払総額。支払総額の無い記録を含む run は `run_cost = null`）を付けます。
-  `lib/stats.ts` の `summarize` は平均燃費（Σ`run_distance` ÷ Σ`run_fuel`）と円/km（Σ`run_cost` ÷ Σ`run_distance`）を run 単位で求め、
+  `lib/stats/` の `summarize` は平均燃費（Σ`run_distance` ÷ Σ`run_fuel`）と円/km（Σ`run_cost` ÷ Σ`run_distance`）を run 単位で求め、
   持ち越し行・部分給油で分子と分母の区間がずれないようにします。平均単価・合計値・燃費の単純平均は記録ごと（部分給油も合計に含める）。
   全件が満タンのトリップモードでは従来の値と同じです。`run_*` は `pickRecordColumns`・移行・バックアップ・CSV のどれにも含まれません。
 - **書き込み**: フォームは自分の記録について導出できる値（トリップモードの `fuel_efficiency`、単価）を計算して保存します。
@@ -429,7 +471,7 @@ CSV を `lib/importers/` の純粋関数でバックアップ形式（`FuelLensB
 
 ## 11. 統計
 
-`/stats` は選択中の車両の記録（連鎖計算済み）を期間フィルタ（`filterByPeriod`）で絞り、`lib/stats.ts` の純粋関数で集計します。
+`/stats` は選択中の車両の記録（連鎖計算済み）を期間フィルタ（`filterByPeriod`）で絞り、`lib/stats/` の純粋関数で集計します。
 平均燃費・円/km を run 単位で求める理由は [10 章](#10-給油の連鎖計算fill-chain) の「統計」を参照してください。
 
 ### 単価トレンドとスタンド比較

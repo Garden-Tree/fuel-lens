@@ -28,8 +28,8 @@
 
 | 候補 | 利用者にとっての価値 | 規模 | 主な変更ファイル |
 |---|---|---|---|
-| 車両比較と月次コストの積み上げ | 複数車両の燃費・支出を並べて比較し、月次コストを車両別に積み上げて表示する | M | `app/stats/page.tsx`、`lib/stats.ts`、`lib/useFuelRecords.ts`（全車両の取得） |
-| 月次予算 | 月ごとの燃料費の予算に対する進み具合が分かる | S | `lib/stats.ts`（`buildMonthlyCostSeries` を利用）、`app/stats/page.tsx`、予算の保存先 |
+| 車両比較と月次コストの積み上げ | 複数車両の燃費・支出を並べて比較し、月次コストを車両別に積み上げて表示する | M | `app/stats/page.tsx`、`lib/stats/`、`lib/useFuelRecords.ts`（全車両の取得） |
+| 月次予算 | 月ごとの燃料費の予算に対する進み具合が分かる | S | `lib/stats/`（`buildMonthlyCostSeries` を利用）、`app/stats/page.tsx`、予算の保存先 |
 | 整備リマインダー | オイル交換などの時期を距離・日付で知らせる | M | 新規テーブルとマイグレーション（RLS ポリシーを追加したら [supabase/README.md](../supabase/README.md#2-rls-が有効か確認する) の監査対象一覧も更新）、新規画面 |
 
 ### 基盤・運用

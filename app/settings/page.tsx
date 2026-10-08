@@ -1,14 +1,15 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import Link from "next/link";
 import { SignedIn, SignedOut, SignInButton, UserButton, useAuth } from "@clerk/nextjs";
 import { ArrowLeft, Settings } from "lucide-react";
 
 import { useFuelRecords } from "@/lib/useFuelRecords";
 import { useVehicles } from "@/lib/useVehicles";
-import BackupPanel, { type BackupBusy } from "@/components/BackupPanel";
-import ImportPanel, { type ImportBusy } from "@/components/ImportPanel";
+import BackupPanel from "@/components/BackupPanel";
+import ImportPanel from "@/components/ImportPanel";
+import type { SettingsBusy } from "@/components/settingsUi";
 
 export default function SettingsPage() {
   const { isSignedIn } = useAuth();
@@ -28,11 +29,16 @@ export default function SettingsPage() {
     error: recordsError,
   } = useFuelRecords(selectedVehicleId, vehicles[0]?.id, { enabled: !vehiclesLoading, vehicles });
 
-  // インポート後に BackupPanel のデータ概要（記録数）を読み込み直す。
+  // 復元・インポートの後に BackupPanel のデータ概要（記録数）を読み込み直す。
   // key で作り直すと処理中の復元がアンマウントされるため、refreshToken で再取得だけさせる
   const [dataVersion, setDataVersion] = useState(0);
   // バックアップ・復元・取り込みを同時に動かさないよう、処理中フラグを 2 つのパネルで共有する
-  const [busy, setBusy] = useState<BackupBusy | ImportBusy | null>(null);
+  const [busy, setBusy] = useState<SettingsBusy | null>(null);
+  // 復元・取り込みの後（成功・失敗とも）に両パネルから呼ばれる。書き込みを行ったとき（changed。
+  // 失敗でも途中まで追加済みの可能性がある）だけ記録数を読み込み直す。何も追加しなかったときは読み直さない
+  const handleRestoreDone = useCallback((changed: boolean) => {
+    if (changed) setDataVersion(v => v + 1);
+  }, []);
 
   // 閲覧専用（ログイン中かつクラウド障害中）。useVehicles と useFuelRecords の readOnly は同じ障害状態から決まるので片方だけ使う
   const readOnly = vehiclesReadOnly;
@@ -74,6 +80,7 @@ export default function SettingsPage() {
 
         <BackupPanel
           refreshToken={dataVersion}
+          onDone={handleRestoreDone}
           busy={busy}
           setBusy={setBusy}
           vehicles={vehicles}
@@ -96,7 +103,7 @@ export default function SettingsPage() {
             fetchAllRecords={fetchAllRecords}
             addVehicles={addVehicles}
             addRecords={addRecords}
-            onImported={() => setDataVersion(v => v + 1)}
+            onDone={handleRestoreDone}
             busy={busy}
             setBusy={setBusy}
           />
