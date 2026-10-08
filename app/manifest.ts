@@ -17,6 +17,17 @@ export default function manifest(): MetadataRoute.Manifest {
       { src: "/icons/icon-512.png", sizes: "512x512", type: "image/png", purpose: "any" },
       { src: "/icons/icon-maskable-512.png", sizes: "512x512", type: "image/png", purpose: "maskable" },
     ],
+    // Web Share Target: ギャラリー等の「共有」から写真を受け取る。
+    // POST /share は Service Worker（public/sw.js）が横取りし、画像はサーバーへ送らず端末内で /app のスキャンに渡す。
+    // テキストやリンクの共有先には出さないよう、files だけを宣言する（title / text / url は受け取らない）。
+    share_target: {
+      action: "/share",
+      method: "POST",
+      enctype: "multipart/form-data",
+      params: {
+        files: [{ name: "image", accept: ["image/*"] }],
+      },
+    },
     shortcuts: [
       {
         name: "スキャン",
