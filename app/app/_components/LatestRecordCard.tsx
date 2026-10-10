@@ -3,7 +3,8 @@
 import { useId, useMemo } from "react";
 import { Pencil } from "lucide-react";
 import EditFuelRecordForm from "@/components/EditFuelRecordForm";
-import { heroModelOf, type EfficiencyDelta } from "@/lib/home/hero";
+import { heroDisplayOf, heroModelOf, type EfficiencyDelta } from "@/lib/home/hero";
+import { efficiencyNullReason } from "@/lib/format";
 import { formatShortDate } from "@/lib/home/recent";
 import type { UseRecordFormReturn } from "@/lib/useRecordForm";
 import type { FuelRecord } from "@/lib/types";
@@ -19,12 +20,15 @@ export type RecordFormCardProps = {
   onSave: () => void;
 };
 
-/** 入力フォームのカード（手動入力・最新記録の編集）。ヒーローと同じ角丸 20px の面に、アクセント色の枠 */
+/**
+ * 入力フォームのカード（手動入力・最新記録の編集）。ヒーローと同じ角丸 20px・アクセント色の枠。
+ * 中のグループリスト（`bg-surface`）が面として見えるように、カード自体は地の色（`bg-ground`）にする。
+ */
 export function RecordFormCard({ title, form, saving, readOnly, canSave, onCancel, onSave }: RecordFormCardProps) {
   const headingId = useId();
   return (
-    <section aria-labelledby={headingId} className="w-full rounded-hero border border-accent/40 bg-surface p-4 sm:p-5">
-      <h2 id={headingId} className="mb-4 text-[15px] font-bold text-ink">
+    <section aria-labelledby={headingId} className="w-full rounded-hero border border-accent/40 bg-ground p-3 sm:p-5">
+      <h2 id={headingId} className="mb-3 px-1 text-[15px] font-bold text-ink">
         {title}
       </h2>
       <EditFuelRecordForm
@@ -92,7 +96,9 @@ export default function LatestRecordCard({
   onSave,
 }: LatestRecordCardProps) {
   const headingId = useId();
-  const model = useMemo(() => heroModelOf(records, record), [records, record]);
+  // 最新の記録の燃費が出ていなければ、燃費の出ている最も新しい記録をメーターに出す（最新の記録は注記で知らせる）
+  const { display, skipped } = useMemo(() => heroDisplayOf(records, record, scanned), [records, record, scanned]);
+  const model = useMemo(() => heroModelOf(records, display), [records, display]);
 
   if (isEditing) {
     return (
@@ -108,8 +114,11 @@ export default function LatestRecordCard({
     );
   }
 
-  const date = formatShortDate(record.date) ?? "日付不明";
-  const station = record.gas_station?.trim();
+  const date = formatShortDate(display.date) ?? "日付不明";
+  const station = display.gas_station?.trim();
+  const skippedNote = skipped
+    ? `最新の${formatShortDate(skipped.date) ?? "記録"}は${efficiencyNullReason(skipped) ?? "燃費を計算できない記録"}`
+    : null;
 
   return (
     <section
@@ -126,7 +135,7 @@ export default function LatestRecordCard({
         </p>
         <button
           type="button"
-          onClick={() => onEdit(record)}
+          onClick={() => onEdit(display)}
           disabled={readOnly}
           className="-my-2 -mr-2 inline-flex h-10 shrink-0 items-center gap-1 rounded-xl px-2 font-medium text-accent transition-colors hover:bg-surface-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-50"
         >
@@ -136,6 +145,8 @@ export default function LatestRecordCard({
       </div>
 
       <EfficiencyGauge value={model.efficiency} reason={model.nullReason} average={model.average} scale={model.scale} />
+
+      {skippedNote && <p className="text-center text-xs text-warn">{skippedNote}</p>}
 
       {(model.delta || model.average !== null) && (
         <div className="flex flex-wrap justify-center gap-2 text-[13px]">

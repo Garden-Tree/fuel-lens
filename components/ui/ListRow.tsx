@@ -6,7 +6,7 @@ import { ChevronRight } from "lucide-react";
  * グループリストの 1 行（最小の高さ 46px・左右 16px）。
  * - `href` があれば Next の `<Link>`、`onClick` があれば `<button>`、どちらも無ければ `<div>` で描画する。
  * - 左から leading（アイコン・日付など）/ title・subtitle / trailing（数値など）/ シェブロン。
- * - title・subtitle は 1 行に収まらなければ省略記号で切る。
+ * - title・subtitle は 1 行に収まらなければ省略記号で切る（`wrapSubtitle` なら subtitle は折り返して全文を出す）。
  *
  * 使い方:
  *   <ListRow href="/history" title="コスモ石油" subtitle="9月11日・ハイオク" trailing={<Num>15.12</Num>} showChevron />
@@ -18,6 +18,8 @@ export type ListRowProps = {
   trailing?: ReactNode;
   /** 右端に「›」を出す（遷移する行の目印） */
   showChevron?: boolean;
+  /** subtitle を省略せずに折り返す（設定画面の説明文など、切ると意味が欠ける補足） */
+  wrapSubtitle?: boolean;
   href?: string;
   onClick?: () => void;
   disabled?: boolean;
@@ -33,13 +35,15 @@ const BASE =
 const INTERACTIVE =
   "transition-colors hover:bg-surface-2/60 active:bg-surface-2 focus:outline-none focus-visible:bg-surface-2 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-50";
 
-function RowContent({ title, subtitle, leading, trailing, showChevron }: ListRowProps) {
+function RowContent({ title, subtitle, leading, trailing, showChevron, wrapSubtitle }: ListRowProps) {
   return (
     <>
       {leading && <span className="flex shrink-0 items-center">{leading}</span>}
       <span className="flex min-w-0 flex-1 flex-col gap-0.5">
         <span className="truncate text-[15px]">{title}</span>
-        {subtitle && <span className="truncate text-xs text-sub">{subtitle}</span>}
+        {subtitle && (
+          <span className={`text-xs text-sub ${wrapSubtitle ? "break-words leading-relaxed" : "truncate"}`}>{subtitle}</span>
+        )}
       </span>
       {trailing && <span className="flex shrink-0 items-center gap-1">{trailing}</span>}
       {showChevron && <ChevronRight className="h-4 w-4 shrink-0 text-faint" aria-hidden="true" />}

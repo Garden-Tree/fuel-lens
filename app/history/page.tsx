@@ -365,7 +365,8 @@ export default function HistoryPage() {
                           onToggle={() => toggleRow(rec.id)}
                         >
                           {isEditing ? (
-                            <div className="py-2">
+                            // 行（bg-surface）の中に地の色のくぼみを作り、フォームのグループリストを面として見せる
+                            <div className="mx-2 mb-2 rounded-2xl bg-ground p-2">
                               <EditFuelRecordForm
                                 form={form}
                                 onCancel={editing.cancel}

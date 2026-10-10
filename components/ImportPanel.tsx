@@ -311,6 +311,7 @@ export default function ImportPanel({
           leading={<FileSpreadsheet className="h-5 w-5 text-accent" aria-hidden="true" />}
           title="Fuelio の CSV を選ぶ"
           subtitle={`Fuelio で書き出した CSV を${destination}のデータへ追加します`}
+          wrapSubtitle
           trailing={preparing ? spinner : undefined}
           showChevron={!preparing}
           onClick={openPicker}
@@ -320,6 +321,7 @@ export default function ImportPanel({
           leading={<FileInput className="h-5 w-5 text-money" aria-hidden="true" />}
           title="FuelLens の CSV を選ぶ"
           subtitle="全車両・車両別のどちらも読み込めます"
+          wrapSubtitle
           trailing={preparing ? spinner : undefined}
           showChevron={!preparing}
           onClick={openPicker}

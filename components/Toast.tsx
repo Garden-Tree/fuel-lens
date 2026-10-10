@@ -167,11 +167,12 @@ export function ToastProvider({ children }: { children: ReactNode }) {
       {/*
         トースト。
         スマホ幅（< sm）では画面上部に出す。下部だとボトムシート（スキャン確認シート等）の
-        保存/破棄ボタンを最大 8 秒覆ってしまうため。sm 以上は従来どおり画面下部。
+        保存/破棄ボタンを最大 8 秒覆ってしまうため。sm 以上は画面下部
+        （lg 未満は下部タブバー 56px＋スキャンボタンのはみ出し＋safe-area の上に出す）。
       */}
       <div
         aria-live="polite"
-        className="pointer-events-none fixed inset-x-0 top-[max(1rem,env(safe-area-inset-top))] z-[100] flex flex-col items-center gap-2 px-4 sm:top-auto sm:bottom-6"
+        className="pointer-events-none fixed inset-x-0 top-[max(1rem,env(safe-area-inset-top))] z-[100] flex flex-col items-center gap-2 px-4 sm:top-auto sm:bottom-[calc(env(safe-area-inset-bottom)+88px)] lg:bottom-6"
       >
         {toasts.map((t) => (
           <div

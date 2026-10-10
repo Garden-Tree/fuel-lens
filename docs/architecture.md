@@ -8,19 +8,22 @@ FuelLens の構成、データの流れ、主要なモジュールの役割を�
 | パス | 役割 |
 |---|---|
 | `app/page.tsx` | ランディングページ（Server Component）。対話部分は `components/landing/*` |
-| `app/app/page.tsx`、`app/app/_components/` | メイン画面。スキャン（画像の選択・ドロップ・貼り付け）、手動入力、最新記録の確認・編集。ページはフックと部品を組み合わせるだけで、部品は `_components/`（`ScanPanel` / `LatestRecordCard` / `ManualEntryCard` / `RecordCardSkeleton` / `HistoryLinkCard` / `ShortcutActionHandler`）に分割（[メイン画面の構成](#メイン画面の構成app)） |
-| `app/history/page.tsx` | 履歴一覧。編集・削除・別車両への移動・年月フィルタ・並べ替え・CSV 出力 |
-| `app/stats/page.tsx`、`app/stats/_components/` | 統計サマリーとグラフ（recharts）。ページは車両・期間の状態と `buildStatsModel` の結果を部品に渡すだけで、部品は `_components/` に分割。燃費・支払総額・単価の推移とスタンド別の単価。期間フィルタ（全期間 / 1 年 / 6 ヶ月 / 3 ヶ月）（[11 章](#11-統計)） |
-| `app/settings/page.tsx` | 設定画面（`/settings`）。データ概要とバックアップ・復元（[8 章](#8-バックアップと復元)） |
+| `app/app/page.tsx`、`app/app/_components/` | ホーム画面（`/app`）。燃費メーターのヒーロー、今月の集計、最近の記録、記録の入口（撮影 / アルバム / 手動）。スキャン（画像の選択・ドロップ・貼り付け）と手動入力・最新記録の編集もここ。ページはフックと部品を組み合わせるだけで、部品は `_components/`（`EfficiencyGauge` / `LatestRecordCard` / `MonthSummarySection` / `RecentRecordsSection` / `ScanEntryList` / `WelcomeCard` / `DropZoneRow` / `ManualEntryCard` / `ScanPanel` / `RecordCardSkeleton` / `ShortcutActionHandler`）に分割。表示用の純粋関数は `lib/home/`（[メイン画面の構成](#メイン画面の構成app)） |
+| `app/history/page.tsx`、`app/history/_components/` | 履歴一覧。年・月・並び順のチップ（`HistoryToolbar`）と CSV 出力、月ごとの見出し付きの一覧（`RecordRow`）、行を開いて明細・編集・別車両への移動・削除（`RecordDetail`）。`/history#record-<id>` でその記録を開く。絞り込み・月ごとのまとめは純粋関数 `lib/history/`（[履歴画面の構成](#履歴画面の構成history)） |
+| `app/stats/page.tsx`、`app/stats/_components/` | 統計の平均燃費ヒーロー（推移グラフ付き）・費用・月ごとの給油代・単価の推移（recharts）。ページは車両・期間の状態と `buildStatsModel` の結果を部品に渡すだけで、部品は `_components/` に分割（recharts 用の色は `chartTheme.ts`）。期間フィルタ（3 ヶ月 / 6 ヶ月 / 1 年 / 全期間）。スタンド比較の部品は残してあるが画面には出さない（[11 章](#11-統計)） |
+| `app/settings/page.tsx` | 設定画面（`/settings`）。見出し付きのグループリストで、データ概要・バックアップ・復元・インポート（[8 章](#8-バックアップと復元)） |
 | `app/manifest.ts` | PWA の Web App Manifest（`/manifest.webmanifest`。[9 章](#9-pwa)） |
 | `app/api/analyze/route.ts` | Gemini で画像を解析する API（[api-analyze.md](./api-analyze.md)） |
 | `app/api/keepalive/route.ts` | Supabase 自動停止対策のエンドポイント（[operations.md](./operations.md#3-supabase-の自動停止と-keepalive)） |
-| `app/layout.tsx` | `ClerkProvider` / `ToastProvider` / `UserSync` / `SupabaseStatusBanner`、`metadata` と `viewport` |
+| `app/layout.tsx` | `ClerkProvider` / `ToastProvider` / `UserSync` / `SupabaseStatusBanner`、フォント（Noto Sans JP + JetBrains Mono）、`metadata` と `viewport` |
+| `app/globals.css` | デザイントークン（`@theme`）と `num` などのユーティリティ（[design-system.md](./design-system.md)） |
+| `components/AppShell.tsx` / `components/AppNav.tsx` / `components/ScanActionMenu.tsx` | アプリ画面の枠。`AppFrame`（本文の器とナビ）/ `PageHeader`（見出し + 車両チップ）/ `HookErrorLine` / `ReadOnlyCaption`、ナビ（スマホは下部タブバー、PC は左サイドバー）、スキャンメニュー（撮影する / アルバムから選ぶ / 手動で入力）（[ナビゲーションとスキャンメニュー](#ナビゲーションとスキャンメニュー)） |
+| `components/ui/*` | デザインシステムの部品（`Section` / `GroupedList` / `ListRow` / `ValueRow` / `SegmentedControl` / `Chip` / `IconButton` / `Num` / `Menu` / `MenuItem` / `BrandMark`）。`@/components/ui` から import する |
 | `app/error.tsx` / `app/global-error.tsx` / `app/not-found.tsx` | エラー画面・404 |
 | `components/ScanReviewSheet.tsx` | スキャン結果の確認シート（保存前に確認・修正する） |
 | `components/EditFuelRecordForm.tsx` | 記録の入力フォーム（手動入力・編集・確認シートで共用） |
-| `components/RecordStats.tsx` | 記録カードの明細（給油量・走行距離 / 区間距離・ODO・スタンド・メモ。`compact` はバッジも）。`variant="card"` は /app の最新記録カード、`variant="compact"` は /history のカード |
-| `components/ManageVehiclesModal.tsx` / `components/VehicleSelector.tsx` | 車両の管理モーダル / 車両の切り替え |
+| `components/RecordBadges.tsx` | 部分給油・記録漏れ・燃料種別のバッジ（履歴の行で使用） |
+| `components/ManageVehiclesModal.tsx` / `components/VehicleSelector.tsx` | 車両の管理モーダル / 車両の切り替え（ヘッダー右の「<車両名> ▾」チップ → メニュー。最後の項目「車両を管理」でモーダルを開く） |
 | `components/Modal.tsx` | 共通モーダル。`useFocusTrap` + `useBackdropClose` + Escape + 任意の本文スクロールロックを束ね、`role="dialog"` / `aria-modal` / `aria-labelledby` を付ける。保存中は `disableClose` で Escape・背景クリック・× を無視。`Modal.Header`（見出しと ×）/ `Modal.Body` / `Modal.Footer`、Escape だけ別処理にする `onEscape` |
 | `components/vehicles/*` / `lib/useVehicleDraft.ts` | 車両の管理モーダルの部品。`VehicleRow`（表示 / 編集行、削除確認文 `deleteConfirmMessage`）、`AddVehicleForm`、`VehicleSettingsFields`（距離の入力方式・既定の燃料種別・車両タイプの切り替え、`modeSwitchNote`）。追加フォーム・編集行の下書きと検証は `useVehicleDraft` |
 | `components/BackupPanel.tsx` | 設定画面の本体。データ概要、JSON / CSV の書き出し、復元（ファイル選択 → 件数プレビュー → 確認 → 追加） |
@@ -51,7 +54,9 @@ FuelLens の構成、データの流れ、主要なモジュールの役割を�
 | `lib/supabaseClient.ts` | ユーザーごとの Supabase クライアント（Clerk JWT 付き） |
 | `lib/supabaseHealth.ts` | 障害の分類、閲覧専用モード、キャッシュ、再試行（[6 章](#6-障害時の動作)） |
 | `lib/supabase/errors.ts` / `outage.ts` / `retry.ts` / `cache.ts` | `supabaseHealth.ts` の実体。errors = 失敗の分類とエラーメッセージ（純粋関数。`migrateLocalData.ts` は `lib/supabase/` のうちここだけを import）、outage = 障害状態の記録・通知・`useSupabaseOutage`、retry = 再試行イベントと自動再試行、cache = per-user キャッシュ。`supabaseHealth.ts` は互換用の再エクスポート |
-| `lib/format.ts` | 表示用の純粋フォーマット（`efficiencyNullReason` / `formatOdometer` / `formatKm`） |
+| `lib/format.ts` | 表示用の純粋フォーマット（`efficiencyNullReason` / `formatOdometer` / `formatKm` / `formatPriceDiff`） |
+| `lib/home/` | ホーム画面の表示用の純粋関数。`hero`（ヒーローのモデルと前回比）/ `gauge`（燃費メーターの目盛りと円弧の座標）/ `month`（今月の集計）/ `recent`（最近の記録の行と日付の書式） |
+| `lib/history/` | 履歴画面の純粋関数。`recordList`（年・月の絞り込み・並べ替え・数値の書式・行の DOM id と `#record-<id>` の解析）/ `groupByMonth`（月ごとのまとまりと合計） |
 | `lib/importers/csvParse.ts` | CSV 取り込みの共有プリミティブ（`parseCsvRows` / `parseCsvNumber` / `parseFlexibleDate` / `hashString` / `isBlankRow`）。`fuelio.ts` は互換のため再エクスポート |
 | `lib/scan/` | メイン画面のスキャン。`analyzeClient.ts`（`compressToDataUrl` / `requestAnalyze`。React に依存しない I/O）、`shortcuts.ts`（`?action=` の判定 `resolveShortcutAction` / `shortcutReadinessOf`。純粋関数）、フック `useScanPipeline` / `useImageDropPaste` / `useShortcutActions`（[メイン画面の構成](#メイン画面の構成app)） |
 | `lib/useRecordEditing.ts` | 記録の編集・手動入力のフォームの開閉と保存（重複確認・toast・車両切り替えで閉じる）。/app と /history で共用 |
@@ -257,7 +262,7 @@ useVehicles / useFuelRecords
 
 ### `useRecordEditing({ scope, form, toast, confirm, updatedMessage?, onAdded? })`（`lib/useRecordEditing.ts`）
 
-/app の最新記録カードと /history のカードで共用する、編集・手動入力フォームの開閉と保存です。`scope` は `useVehicleScope()` の戻り値をそのまま渡します。
+/app のヒーロー（最新記録）と /history の行で共用する、編集・手動入力フォームの開閉と保存です。`scope` は `useVehicleScope()` の戻り値をそのまま渡します。
 戻り値: `editingRecordId`, `isEditing`, `isManualEntry`, `saving`, `startEditing(record)`（閲覧専用中は何もしない）, `startManualEntry()`（今日の日付の新規記録）, `cancel()`, `save()`, `addWithDuplicateCheck(record)`。
 
 - `save()` は手動入力なら `addWithDuplicateCheck`（同じ日付・給油量・支払総額の記録があれば「重複して保存しますか？」を確認。キャンセルならフォームは開いたまま）、編集なら `updateRecord` です。
@@ -275,11 +280,46 @@ useVehicles / useFuelRecords
 | `useImageDropPaste({ onImage, isBusy, toast })`（`lib/scan/`） | ドロップ先に付ける `dropZoneProps` と `isDragging`、window 全体のペースト（入力欄にフォーカスがあるときは無視）。最新のハンドラは `useEffectEvent` で参照する |
 | `useRecordEditing` | 手動入力・最新記録の編集。確認シートの保存も `addWithDuplicateCheck` を使う |
 | `ShortcutActionHandler`（`useShortcutActions`） | `?action=scan` / `album` / `manual` / `shared` / `share-unavailable` を `action` が付くたびに 1 回だけ実行し、`router.replace("/app")` で消す（/app を開いたままスキャンメニューから遷移しても実行する。`album` は capture なしのファイル選択）。実行条件は `shortcutReadinessOf`、判定は `resolveShortcutAction`。`useSearchParams` を使うので `<Suspense>` の内側に置き、/app の静的プリレンダーを保つ |
-| `ScanPanel` | 左カラム。カメラボタン・アルバム / 手動入力・ヒント・プレビュー（次を撮る / 読み取る / 手動で入力）・ドロップ先と、非表示のファイル入力。ショートカットのスキャンは `ref` の `openCamera()` |
-| `LatestRecordCard` / `ManualEntryCard` / `RecordCardSkeleton` | 右カラムの最新記録カード（表示・その場で編集・記録なしの案内。明細は `components/RecordStats.tsx`）/ 手動入力カード / 読み込み中 |
-| `HistoryLinkCard` | 履歴画面へのリンク |
+| `LatestRecordCard` / `EfficiencyGauge` | ヒーローカード。直前に保存した記録（なければ最新）の燃費を半円メーターで表示し、平均の目盛り・前回比と平均のチップを添える（見出しは「前回の燃費」、保存直後は「スキャンした記録」）。「編集」を押すとその場で入力フォームのカード（`RecordFormCard`）に切り替わる。燃費が無い記録（部分給油など）は数値の代わりに理由（`efficiencyNullReason`）を出す。モデルは `lib/home/hero.ts`（前回比・平均は `summarize`、目盛りは `lib/home/gauge.ts` の `gaugeScaleOf`） |
+| `ManualEntryCard` | 手動入力のカード（見出し「手動で記録を追加」。`RecordFormCard` を共用） |
+| `WelcomeCard` | 記録が 1 件も無いときのヒーロー（「最初の給油を記録しましょう」） |
+| `MonthSummarySection` | 「今月」（見出しは「10月」など）のグループリスト: 給油代・給油量（回数）・単価（前回比）。集計は `lib/home/month.ts` の `monthSummaryOf`（ローカル暦） |
+| `RecentRecordsSection` | 「最近の記録」の 3 件（店舗名・日付・燃料種別・支払総額、右に燃費）。行は `/history#record-<id>` へ、「すべて見る」は `/history` へ。行は `lib/home/recent.ts` の `recentRowOf` |
+| `ScanEntryList` | 記録の入口（撮影する / アルバムから選ぶ / 手動で入力）のグループリスト。記録が無いときは左カラム、あるときは PC の右カラムだけに出す（スマホはタブバーのスキャンボタンから）。未ログインでは撮影・アルバムを無効にして案内を出す |
+| `DropZoneRow` | PC だけに出す細いドロップ先の案内（押すとアルバム）。ドロップ・貼り付け自体はページ全体で受け付ける |
+| `ScanPanel` | 解析中・プレビュー中（次を撮る / 読み取る / 手動で入力）の状態カードと、非表示のファイル入力（カメラ / アルバム）。何もなければ入力だけ。撮影・アルバムは `ref` の `openCamera()` / `openAlbum()` で開く |
+| `RecordCardSkeleton` | 読み込み中のスケルトン（左カラム。右カラムは `RecentRecordsSkeleton`） |
 
-部品のテストは `tests/components/ScanPanel.test.tsx` / `LatestRecordCard.test.tsx`、純粋関数は `tests/analyze.test.ts` / `scanShortcuts.test.ts` / `scanClient.test.ts`（`requestAnalyze` を fetch のモックで検証）です。
+レイアウトは、スマホが 1 カラム（ヒーロー → 今月 → 最近の記録）、PC（lg 以上）が 2 カラム（左: ヒーローと今月 / 右: 最近の記録・記録の入口・ドロップ先）です。記録が無いときは左にヒーローの代わりに `WelcomeCard`、その下に `ScanEntryList` を出します。
+
+部品のテストは `tests/components/ScanPanel.test.tsx` / `LatestRecordCard.test.tsx`、純粋関数は `tests/home/*.test.ts`（`gauge` / `month` / `heroRecent`）/ `tests/analyze.test.ts` / `scanShortcuts.test.ts` / `scanClient.test.ts`（`requestAnalyze` を fetch のモックで検証）です。
+
+### 履歴画面の構成（`/history`）
+
+`app/history/page.tsx` が状態（年・月・並び順・開いている行・処理中の記録）を持ち、`app/history/_components/` の部品に渡します。
+
+| 部品・モジュール | 役割 |
+|---|---|
+| `HistoryToolbar` | 年・月・並び順のチップメニュー（`Menu`）と件数、右端に CSV の書き出し（`IconButton`）。記録が無いときは絞り込みを無効にする |
+| `RecordRow`（と `RecordColumnsHeader`） | 一覧の 1 行。左に日と曜日、中に店舗名と「燃料種別・給油量・区間」、右に燃費と支払総額。押すとその場で開く（`aria-expanded`）。PC（lg 以上）は給油量・区間・単価を右側の列に並べる。行の `id` は `record-<id>`。部分給油・記録漏れ・燃料種別のバッジは `components/RecordBadges.tsx` |
+| `RecordDetail` | 開いた行の明細（日付・スタンド・数値・オドメーター・メモ）と操作（編集 / 別の車両へ移動 / 削除） |
+| `lib/history/recordList.ts` | 年・月の絞り込み（`filterByYearMonth`）、並べ替え（`sortRecords`。給油日 / 登録の新しい順）、数値の書式、行の DOM id（`recordElementId`）と URL ハッシュの解析（`recordIdFromHash`） |
+| `lib/history/groupByMonth.ts` | 給油日順の一覧を月ごとにまとめる（`groupByMonth`。見出しは「2026年9月」、年を 1 つに絞ると「9月」。右に「n回・¥合計」）。登録順は月が前後するので、まとめずに 1 つの一覧にする |
+
+- 一覧は `GroupedList` ではなく同じ見た目の `<ul>` で描画します（`GroupedList` は `overflow-hidden` で、行の中のメニューが切れるため）。
+- 編集は `useRecordEditing` で、開いた行の中に `EditFuelRecordForm` を出します。編集中の行は見出しを押しても畳みません。
+- 車両を切り替えると、開いている行を閉じ、年・月の絞り込みも解除します（距離の入力方式の切り替えでは解除しない）。
+- **ディープリンク**: `/history#record-<id>`（ホームの「最近の記録」から）を開くと、読み込み後に 1 回、その行を開いて画面の中央へスクロールし、見出しボタンにフォーカスします（`hashchange` にも反応）。一覧に無い id は何もしません。
+
+### ナビゲーションとスキャンメニュー
+
+アプリ画面（/app・/history・/stats・/settings）は最上位を `AppFrame`（`components/AppShell.tsx`）で包みます。ランディング（/）では使いません。
+
+- ナビ項目は `APP_NAV_ITEMS`（ホーム / 履歴 / 統計 / 設定。`components/AppNav.tsx`）。スマホ（lg 未満）は下部のタブバー（`AppTabBar`。中央にスキャンボタン）、PC（lg 以上）は左のサイドバー（`AppSidebar`。ロゴ・4 項目・「スキャンして記録」・ログイン / ユーザーボタン）。`PageHeader` はスマホではログイン / ユーザーボタンも右端に出します。
+- スキャンボタンは `ScanActionMenu`（`components/ScanActionMenu.tsx`）を開きます。項目は「撮影する」（`/app?action=scan`）/「アルバムから選ぶ」（`/app?action=album`）/「手動で入力」（`/app?action=manual`）。スマホはボトムシート、PC はボタン直下のポップオーバー（`ScanMenuAnchor` で位置を渡す）。メニューの開閉は `AppFrame` の state です。
+- 未ログインでは撮影・アルバムを無効にし、「AIスキャンはログイン後に使えます。手動入力はログインなしでも使えます。」と案内します（`/api/analyze` がログイン必須のため。手動入力だけ選べる）。
+- 項目は `/app?action=…` への遷移なので、実行は `/app` の `ShortcutActionHandler`（`useShortcutActions`）が受け持ちます。/app を表示中でも `action` が付くたびに 1 回だけ実行し、実行後に URL から消します。他の画面から選んだ場合は /app へ遷移してから実行します。
+- `aria-current="page"` で現在の項目を示し、現在の画面の判定は `isNavItemActive`（パスの前方一致）です。
 
 ## 5. ローカル → クラウド移行
 
@@ -367,7 +407,7 @@ Supabase Free のプロジェクトが一時停止すると、API は HTTP 540 �
 
 ## 8. バックアップと復元
 
-設定画面（`/settings`。メイン画面ヘッダーの「設定」リンクから開く）で、全車両・全記録の書き出しと復元を行います。
+設定画面（`/settings`。下部タブバー / サイドバーの「設定」から開く）で、全車両・全記録の書き出しと復元を行います。
 画面は `components/BackupPanel.tsx`、ロジックは `lib/backup.ts`（JSON）と `lib/csv.ts`（CSV）の純粋関数です。
 未ログイン（localStorage）でもログイン中（Supabase）でも使えます。保存先の違いは `useVehicles` / `useFuelRecords` が吸収します。
 
@@ -475,10 +515,10 @@ CSV を `lib/importers/` の純粋関数でバックアップ形式（`FuelLensB
 **Service Worker は共有の受け取り専用で、キャッシュはしません。オフライン動作には対応していません**（[今後の候補](./roadmap.md)）。
 
 - `app/manifest.ts` が `/manifest.webmanifest` を返します。`name` / `short_name` は `FuelLens`、`start_url` は `/app`、`display` は `standalone`、
-  `orientation` は `portrait`、背景色とテーマ色は `#030712` です。`app/layout.tsx` の `metadata.manifest` から参照し、テーマ色は `viewport.themeColor` にも設定しています。
+  `orientation` は `portrait`、背景色とテーマ色は `#0B0F14`（`ground` トークン）です。`app/layout.tsx` の `metadata.manifest` から参照し、テーマ色は `viewport.themeColor` にも設定しています。
 - アイコンは `public/icons/` の `icon-192.png` / `icon-512.png`（通常）と `icon-maskable-512.png`（maskable。余白付きの全面塗り）、
   iOS 用の `public/apple-touch-icon.png`（180x180。`metadata.icons.apple`）です。
-- ショートカット（アイコンの長押しメニュー）は「スキャン」`/app?action=scan` と「手動で入力」`/app?action=manual` の 2 つです。
+- ショートカット（アイコンの長押しメニュー）は「スキャン」`/app?action=scan` と「手動で入力」`/app?action=manual` の 2 つです（アプリ内のスキャンメニューにある「アルバムから選ぶ」`?action=album` はマニフェストには載せていない）。
   `lib/scan/useShortcutActions.ts`（`app/app/page.tsx` の `ShortcutActionHandler`）が `action` パラメータを 1 回だけ処理し、処理後にパラメータを URL から取り除きます（再読み込みで繰り返し開かないため）。
 - **Web Share Target（共有から読み取り）**: `manifest` の `share_target` は `POST /share`（`multipart/form-data`、画像は `image` フィールド、`accept: image/*`）です。
   `params` は `files` だけを宣言し（`title` / `text` / `url` は無し）、テキストやリンクの共有先には FuelLens を出しません。
@@ -571,13 +611,26 @@ CSV を `lib/importers/` の純粋関数でバックアップ形式（`FuelLensB
 平均燃費・円/km を run 単位で求める理由は [10 章](#10-給油の連鎖計算fill-chain) の「統計」を参照してください。
 画面が使う値（期間フィルタ後の記録、サマリー、各グラフの系列と軸、スタンド比較の表示行と棒の長さ、前回比）は純粋関数 `buildStatsModel`（`lib/stats/model.ts`）が一度に導出し、`app/stats/_components/` の部品は model の一部を受け取って描画するだけです。
 
+画面の構成（上から。スマホは 1 カラム、PC は 2 カラム）:
+
+| 部品 | 内容 |
+|---|---|
+| `PeriodFilter` | 期間の `SegmentedControl`（3ヶ月 / 6ヶ月 / 1年 / 全期間）と、日付不明の記録の注記 |
+| `EfficiencyHero`（`SummaryCards.tsx`）+ `EfficiencyChart` | 平均燃費（大きな数値。Σkm/ΣL）と最高・最低、単純平均の補足。同じカードの下半分に燃費の推移グラフ（平均線つき） |
+| `CostSummary`（`SummaryCards.tsx`） | 「費用」のグループリスト（給油代の合計・1kmあたり・平均単価・給油回数） |
+| `MonthlyCostChart` | 「月ごとの給油代」 |
+| `PriceTrendChart` | 「単価の推移」（平均線と前回比 / 30日平均比 / 90日平均比のチップ） |
+| `StatsSkeleton` / `ChartEmpty` / `AverageTick` | 読み込み中 / 点が足りないときの空表示 / 平均線の目盛りラベル |
+
+PC は 2 カラムで、左上が `EfficiencyHero`、右上が `CostSummary`、下段が月ごと・単価のグラフです。グラフの色・フォントは `chartTheme.ts`（SVG の属性には Tailwind のクラスが効かないため、トークンと同じ値を複製している。[design-system.md](./design-system.md#recharts-の色)）。
+
 ### 単価トレンドとスタンド比較
 
-> スタンド比較（店舗別の平均単価）は 2026-10-08 に画面から外しました（利用者の要望）。部品 `app/stats/_components/StationComparison.tsx` と `lib/stats/prices.ts` / `stationRows.ts` の計算・テストは残しています。
+> スタンド比較（店舗別の平均単価）は 2026-10-08 に画面から外しました（利用者の要望）。部品 `app/stats/_components/StationComparison.tsx`（どこからも使われていない）と `lib/stats/prices.ts` / `stationRows.ts` の計算・テストは残しています。
 
 - **単価**: 記録の `price_per_unit`（正の値）を使い、無ければ支払総額 ÷ 給油量を `calculateFuelMetrics` と同じ 0.1 円単位で丸めて補います（`recordPrice`）。
 - **単価の推移**: `buildPriceSeries` が日付の有効な記録を日付昇順（同日は id 順）に並べます。2 点未満は空表示です。
-  平均線は期間の平均単価（Σ支払総額 ÷ Σ給油量。サマリーカードの「平均単価」と同じ規則）で、目盛りは `buildPriceAxis` が小数第 1 位で作ります。
+  平均線は期間の平均単価（Σ支払総額 ÷ Σ給油量。費用の「平均単価」と同じ規則）で、目盛りは `buildPriceAxis` が小数第 1 位で作ります。
   見出しの「前回比 / 30日平均比 / 90日平均比」は `priceDelta` で、最新の単価から 1 つ前の単価、最新の給油日から遡って 30 日 / 90 日以内の
   ほかの給油の単価の単純平均を引いた値です。最新の給油についての表示なので、比較の基準が欠けないよう期間フィルタを掛けない全記録で求めます。
 - **スタンド別の単価**: `summarizeStations` が店舗名を `lib/stations.ts` の `stationKey` でまとめます。キーは「ブランド + 店舗名」で、

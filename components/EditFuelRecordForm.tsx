@@ -254,6 +254,7 @@ export default function EditFuelRecordForm({
     >
       {/* 入力欄（設定画面のような行） */}
       <GroupedList>
+        {/* 日付も他の行と同じく右寄せ（Chrome の datetime-edit・iOS の date-and-time-value） */}
         <FormRow label="給油日" htmlFor={idFor("date")} badge={highlightFields?.date} below={renderError("date")}>
           <input
             id={idFor("date")}
@@ -262,7 +263,7 @@ export default function EditFuelRecordForm({
             value={draft.date}
             disabled={inputsDisabled}
             onChange={(e) => setField("date", e.target.value)}
-            className={`${rowInputClass({ error: errors.date, highlight: highlightFields?.date, numeric: true })} [color-scheme:dark]`}
+            className={`${rowInputClass({ error: errors.date, highlight: highlightFields?.date, numeric: true })} [color-scheme:dark] [&::-webkit-date-and-time-value]:text-right [&::-webkit-datetime-edit]:ml-auto [&::-webkit-datetime-edit]:flex-none`}
             {...ariaProps("date")}
           />
         </FormRow>
@@ -420,6 +421,7 @@ export default function EditFuelRecordForm({
             id={idFor("gas_station")}
             type="text"
             value={draft.gas_station}
+            placeholder="例: ENEOS 府中"
             maxLength={100}
             disabled={inputsDisabled}
             onChange={(e) => setField("gas_station", e.target.value)}

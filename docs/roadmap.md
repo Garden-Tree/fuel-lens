@@ -18,6 +18,7 @@
 | データアダプタ層（`lib/data/`） | 2026-10-08 | 記録・車両の保存先を `RecordStore` / `VehicleStore` に切り出し、localStorage 版とクラウド版が同じインターフェースを満たす。障害・閲覧専用・キャッシュは `withOutageHandling` / `withCache` が受け持ち、フックは状態・楽観更新・連鎖計算・イベントだけを扱う。詳細は [architecture.md 2 章](./architecture.md#データアダプタ層libdata) |
 | オドメーター → トリップ切替時の区間距離の書き戻し | 2026-10-08 | 車両の方式をオドメーターからトリップに切り替えるとき、連鎖計算で導出した区間距離を記録の `total_distance` に書き戻す（`planDistanceWriteBack`）。詳細は [design-fill-chain.md 4 章](./design-fill-chain.md#車両管理モーダル) |
 | スマホ幅（375〜430px）のレイアウト整理 | 2026-10-09 | 狭い画面での各画面のレイアウトを整理した |
+| D デザインへの刷新（スマホ・PC） | 2026-10-11 | 計器盤のようなダーク UI とグループリストに全画面を作り直した。スマホは下部タブバー（中央にスキャンボタン）、PC は左サイドバー。スキャンボタンは「撮影する / アルバムから選ぶ / 手動で入力」のメニュー（`/app?action=album` を追加）。ホームは燃費メーターのヒーロー・今月・最近の記録（履歴の該当記録へ `/history#record-<id>` で直接開く）、履歴は月ごとの見出し付きの一覧で行を開いて詳細・編集、統計は平均燃費のヒーローと費用の一覧。詳細は [design-system.md](./design-system.md) |
 
 ## 今後の候補
 
@@ -60,6 +61,7 @@
 - 燃費は連鎖計算（[architecture.md 10 章](./architecture.md#10-給油の連鎖計算fill-chain)）で読み取り時に導出します。部分給油の記録は燃費が null で、次の満タン給油にまとめて計算されます。
   オドメーターモードでは、先頭の記録、前回の記録にオドメーターが無い記録、`missed_previous` の記録は区間距離が分からず燃費も null になります（トリップ → オドメーターに切り替えても既存の記録は書き換えないので、切り替え直後は `odometer` の無い記録が該当します）。
   逆にオドメーター → トリップに切り替えるときは、導出した区間距離を `total_distance` に書き戻します（[design-fill-chain.md 4 章](./design-fill-chain.md#車両管理モーダル)）。書き戻した値は保存時点のもので、後から前後に記録を足しても更新されません。区間が出ない記録の保存値は残します。
+- 画面の配色はダーク固定で、ライトテーマや OS の設定への追従はありません。recharts の色は `app/stats/_components/chartTheme.ts` にトークンと同じ値を複製しているため、トークンを変えたときは手で合わせます（[design-system.md](./design-system.md#recharts-の色)）。
 - 履歴・統計・履歴画面の CSV 出力は選択中の車両単位です（全車両の CSV 出力は設定画面にあります。全車両を横断した集計はありません）。
 - 取り込みは FuelLens の JSON バックアップの復元と、Fuelio / FuelLens の CSV のインポートです（どちらも追記専用）。Fuelio の給油以外の記録（`## Costs` など）、マイル・ガロン単位の CSV、その他のアプリの CSV には対応していません。
 - Service Worker は Web Share Target の受け取り専用でキャッシュを持たず、オフラインでは動作しません。Web Share Target は Android Chrome のみ（iOS は非対応）。

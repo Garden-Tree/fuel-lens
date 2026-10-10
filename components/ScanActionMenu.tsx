@@ -72,7 +72,7 @@ export default function ScanActionMenu({ open, onClose, anchor = null }: ScanAct
           ? "fixed overflow-hidden rounded-2xl border border-line bg-surface text-ink shadow-2xl shadow-black/60"
           : "w-full max-w-lg rounded-t-hero border-t border-line bg-surface text-ink px-4 pt-4 pb-[calc(env(safe-area-inset-bottom)+16px)] shadow-2xl shadow-black/60"
       }
-      panelStyle={popover ? { left: anchor.left, top: anchor.bottom + 8, width: Math.max(anchor.width, 280) } : undefined}
+      panelStyle={popover ? { left: anchor.left, top: anchor.bottom + 8, width: Math.max(anchor.width, 320) } : undefined}
     >
       {popover ? (
         // ポップオーバーは見出しを視覚的に隠す（aria-labelledby の参照先としては残す）。閉じるのは Escape・外側のクリック

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { efficiencyDeltaOf, heroModelOf } from "@/lib/home/hero";
+import { efficiencyDeltaOf, heroDisplayOf, heroModelOf } from "@/lib/home/hero";
 import { formatMonthDay, formatShortDate, formatYen, recentRowOf, stationLabel } from "@/lib/home/recent";
 import type { FuelRecord } from "@/lib/types";
 
@@ -105,5 +105,25 @@ describe("recent rows", () => {
     });
     const partial = recentRowOf(rec("p", "2026-09-12", { is_full: false }));
     expect(partial).toMatchObject({ title: "店舗名なし", fuelLabel: null, costLabel: null, efficiency: null, partial: true });
+  });
+});
+
+describe("heroDisplayOf", () => {
+  const records = [full("c", "2026-10-10", 450, 30), full("b", "2026-09-20", 400, 32)];
+
+  it("最新の記録に燃費があればそのまま出す", () => {
+    expect(heroDisplayOf(records, records[0], false)).toEqual({ display: records[0], skipped: null });
+  });
+
+  it("最新が部分給油なら燃費の出ている最も新しい記録を出し、最新は skipped にする", () => {
+    const partial: FuelRecord = { ...records[0], id: "p", date: "2026-10-12", is_full: false, fuel_efficiency: null };
+    const list = [partial, ...records];
+    expect(heroDisplayOf(list, partial, false)).toEqual({ display: records[0], skipped: partial });
+  });
+
+  it("スキャン直後の記録は差し替えない。燃費のある記録が無ければそのまま", () => {
+    const partial: FuelRecord = { ...records[0], id: "p", date: "2026-10-12", is_full: false, fuel_efficiency: null };
+    expect(heroDisplayOf([partial, ...records], partial, true)).toEqual({ display: partial, skipped: null });
+    expect(heroDisplayOf([partial], partial, false)).toEqual({ display: partial, skipped: null });
   });
 });

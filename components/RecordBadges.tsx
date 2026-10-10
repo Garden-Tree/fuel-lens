@@ -14,7 +14,7 @@ const BADGE = "inline-flex shrink-0 items-center rounded-md px-1.5 py-px text-[1
 
 /**
  * 部分給油・記録漏れ・燃料種別のバッジ。どれも無ければ何も描画しない。
- * - `inline`: 行の補足（ボタンの中）に置くため span で描画する（既定は div）
+ * - `inline`: 行の補足（ボタンの中）に置くため span で描画する（既定は div）。横並びの中で縮まない（隣の文字に重ならない）
  * - `showFuelType={false}`: 燃料種別は文字で別に出すとき
  */
 export default function RecordBadges({
@@ -34,7 +34,7 @@ export default function RecordBadges({
   if (!partial && !missed && !fuelType) return null;
   const Tag = inline ? "span" : "div";
   return (
-    <Tag className={`${inline ? "inline-flex" : "flex flex-wrap"} items-center gap-1 ${className}`}>
+    <Tag className={`${inline ? "inline-flex shrink-0" : "flex flex-wrap"} items-center gap-1 ${className}`}>
       {partial && <span className={`${BADGE} bg-warn-bg text-warn`}>部分給油</span>}
       {missed && <span className={`${BADGE} bg-red-500/15 text-red-400`}>記録漏れ</span>}
       {fuelType && <span className={`${BADGE} bg-surface-2 text-sub`}>{FUEL_TYPE_LABELS[fuelType]}</span>}

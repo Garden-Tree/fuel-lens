@@ -1,6 +1,19 @@
 import type { ReactElement } from "react";
 
+import type { EfficiencyAxis } from "@/lib/stats";
 import { CHART_COLORS, CHART_TICK } from "./chartTheme";
+
+/**
+ * Y 軸に渡す目盛り。平均の目盛りと近すぎる目盛り（軸の幅の 12% 未満）を外す。
+ * recharts は重なる目盛りを自動で間引くため、そのままだと平均の目盛り（強調表示）が消えることがある。
+ * 間引きは YAxis の `interval={0}` で止め、重なりはここで避ける。
+ */
+export function visibleAxisTicks(axis: EfficiencyAxis): number[] | undefined {
+  const { ticks, domain, averageTick } = axis;
+  if (!ticks || !domain || averageTick == null) return ticks;
+  const minGap = (domain[1] - domain[0]) * 0.12;
+  return ticks.filter(t => t === averageTick || Math.abs(t - averageTick) >= minGap);
+}
 
 interface TickProps {
   x: number;

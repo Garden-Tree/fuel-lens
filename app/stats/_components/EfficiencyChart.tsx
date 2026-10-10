@@ -3,7 +3,7 @@ import { Area, AreaChart, CartesianGrid, ReferenceLine, ResponsiveContainer, Too
 
 import type { Period, StatsModel } from "@/lib/stats";
 import ChartEmpty from "./ChartEmpty";
-import { AverageLegend, averageTickRenderer } from "./AverageTick";
+import { AverageLegend, averageTickRenderer, visibleAxisTicks } from "./AverageTick";
 import { CHART_COLORS, CHART_TICK, CHART_TOOLTIP_CLASS } from "./chartTheme";
 
 interface TooltipProps {
@@ -96,6 +96,7 @@ export default function EfficiencyChart({ period, efficiency, averageEfficiency 
                 axisLine={false}
                 tickLine={false}
                 tickMargin={8}
+                minTickGap={20}
                 domain={timeDomain ?? ["auto", "auto"]}
                 tickFormatter={val => {
                   const date = new Date(val);
@@ -108,7 +109,8 @@ export default function EfficiencyChart({ period, efficiency, averageEfficiency 
                 tickLine={false}
                 tickMargin={4}
                 domain={efficiencyAxis.domain ?? ["auto", "auto"]}
-                ticks={efficiencyAxis.ticks}
+                ticks={visibleAxisTicks(efficiencyAxis)}
+                interval={0}
                 tick={averageTickRenderer(averageTick, 2)}
               />
               <Tooltip content={<CustomEfficiencyTooltip />} cursor={{ stroke: CHART_COLORS.cursor, strokeWidth: 1 }} />

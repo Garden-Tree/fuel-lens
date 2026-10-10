@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { Check } from "lucide-react";
 import { Chip } from "./Controls";
 
@@ -10,6 +10,7 @@ import { Chip } from "./Controls";
  * - 開くと選択中（`checked`）の項目、無ければ先頭の項目にフォーカスする。↑↓ / Home / End で移動、Escape で閉じてトリガーへ戻す。
  * - メニューの外を押す・Tab でフォーカスが外れると閉じる。
  * - 項目を選ぶと閉じる（`MenuItem` の onSelect の後）。
+ * - 画面の端からはみ出すときは、左右 16px の余白に収まるように横にずらす（狭い画面でヘッダーの中ほどにあるチップなど）。
  *
  * 使い方:
  *   <Menu label="車両の切り替え" trigger="マイカー" align="end">
@@ -58,6 +59,20 @@ export function Menu({
 
   // 無効になったら閉じる（レンダー中に state を調整する React 推奨パターン）
   if (disabled && open) setOpen(false);
+
+  // 画面の左右からはみ出すなら、描画前に横にずらして収める（16px の余白）
+  useLayoutEffect(() => {
+    const menu = menuRef.current;
+    if (!open || !menu) return;
+    menu.style.translate = "";
+    const rect = menu.getBoundingClientRect();
+    const margin = 16;
+    const viewport = document.documentElement.clientWidth;
+    let shift = 0;
+    if (rect.right > viewport - margin) shift = viewport - margin - rect.right;
+    if (rect.left + shift < margin) shift = margin - rect.left;
+    if (shift !== 0) menu.style.translate = `${shift}px 0`;
+  }, [open]);
 
   // 開いたら選択中の項目（無ければ先頭）へフォーカス
   useEffect(() => {
@@ -125,7 +140,7 @@ export function Menu({
             setOpen(true);
           }
         }}
-        className={`rounded-xl ${triggerClassName}`}
+        className={triggerClassName}
       >
         {trigger}
       </Chip>

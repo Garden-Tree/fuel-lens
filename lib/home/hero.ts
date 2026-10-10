@@ -41,6 +41,24 @@ export function efficiencyDeltaOf(current: number, previous: number): Efficiency
 }
 
 /**
+ * ヒーローに出す記録を選ぶ。
+ * 最新の記録の燃費が出ていない（部分給油・記録漏れなど）ときは、燃費の出ている最も新しい記録を出し、
+ * 最新の記録は注記（skipped）で知らせる。スキャン直後の記録はその記録自体を確認するため差し替えない。
+ * @param records 連鎖計算済み・日付の降順
+ */
+export function heroDisplayOf(
+  records: ReadonlyArray<FuelRecord>,
+  record: FuelRecord,
+  scanned: boolean
+): { display: FuelRecord; skipped: FuelRecord | null } {
+  if (scanned || positive(record.fuel_efficiency)) return { display: record, skipped: null };
+  const index = records.findIndex(r => r.id === record.id);
+  const older = index >= 0 ? records.slice(index + 1) : records;
+  const fallback = older.find(r => positive(r.fuel_efficiency));
+  return fallback ? { display: fallback, skipped: record } : { display: record, skipped: null };
+}
+
+/**
  * ヒーローカードのモデル。
  * @param records 選択中の車両の記録（連鎖計算済み・日付の降順。useVehicleScope の records）
  * @param record 表示する記録（直前に保存した記録、または最新の記録）

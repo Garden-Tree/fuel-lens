@@ -7,7 +7,7 @@ import type { Vehicle, VehicleSettings, VehicleType } from "@/lib/types";
 import ManageVehiclesModal from "./ManageVehiclesModal";
 
 /**
- * 車両の切り替えチップ「<車両名> ▾」（ヘッダー右側）。押すと車両の一覧（選択中にチェック）と「車両を管理」のメニューを開く。
+ * 車両の切り替えチップ「<車両名> ▾」（ヘッダー右側。デザイン D のモックどおり角丸 12px）。押すと車両の一覧（選択中にチェック）と「車両を管理」のメニューを開く。
  * 「車両を管理」は ManageVehiclesModal を開く。長い車両名は省略記号で切る。
  */
 interface VehicleSelectorProps {
@@ -62,7 +62,7 @@ export default function VehicleSelector({
         label="車両の切り替え"
         trigger={selectedName}
         triggerAriaLabel={`車両: ${selectedName}`}
-        triggerClassName="max-w-[min(240px,52vw)]"
+        triggerClassName="max-w-[min(240px,52vw)] rounded-xl"
         align="end"
       >
         {vehicles.map(v => (

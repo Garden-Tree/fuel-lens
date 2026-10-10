@@ -128,7 +128,7 @@ export default function LandingPage() {
                   <Sparkles className="w-4 h-4" />
                 </div>
                 <div>
-                  <p className="text-[10px] text-sub">AI OCR解析</p>
+                  <p className="text-[10px] text-sub">AI 読み取り</p>
                   <p className="text-xs font-bold text-ink">1枚の画像から自動抽出</p>
                 </div>
               </div>
@@ -141,7 +141,7 @@ export default function LandingPage() {
       <section id="features" className="py-20 border-y border-line bg-surface/40 relative">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center max-w-2xl mx-auto mb-16 space-y-4">
-            <h2 className="text-xs font-bold tracking-widest text-accent uppercase">FEATURES</h2>
+            <h2 className="text-xs font-bold tracking-widest text-accent ">機能</h2>
             <p className="text-3xl sm:text-4xl font-bold text-ink">燃費管理に必要な、すべての機能</p>
             <p className="text-sm sm:text-base text-sub">
               面倒な手計算やメモ書きはもう必要ありません。スマートな車生活をサポートする機能を取り揃えました。
@@ -222,7 +222,7 @@ export default function LandingPage() {
       <section id="demo" className="py-20 relative">
         <div className="max-w-4xl mx-auto px-4 sm:px-6">
           <div className="text-center max-w-2xl mx-auto mb-12 space-y-4">
-            <h2 className="text-xs font-bold tracking-widest text-accent uppercase">INTERACTIVE DEMO</h2>
+            <h2 className="text-xs font-bold tracking-widest text-accent ">体験デモ</h2>
             <p className="text-3xl font-bold text-ink">AIの読み取りを10秒で体験</p>
             <p className="text-sm text-sub">
               以下のシミュレーターで「デモ写真を解析」ボタンをクリックして、どのようにAIが写真を認識し燃費を算出するのかを体験してみてください。
@@ -237,7 +237,7 @@ export default function LandingPage() {
       <section id="how-to" className="py-20 border-y border-line bg-surface/40">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center max-w-2xl mx-auto mb-16 space-y-4">
-            <h2 className="text-xs font-bold tracking-widest text-accent uppercase">HOW IT WORKS</h2>
+            <h2 className="text-xs font-bold tracking-widest text-accent ">使い方</h2>
             <p className="text-3xl sm:text-4xl font-bold text-ink">たった3ステップの簡単管理</p>
             <p className="text-sm text-sub">
               給油時にサッとスマホを取り出すだけ。1回10秒の簡単なオペレーションです。
@@ -288,8 +288,8 @@ export default function LandingPage() {
       <section id="faq" className="py-20 relative">
         <div className="max-w-3xl mx-auto px-4 sm:px-6">
           <div className="text-center max-w-2xl mx-auto mb-12 space-y-4">
-            <h2 className="text-xs font-bold tracking-widest text-accent uppercase">FAQ</h2>
-            <p className="text-3xl font-bold text-ink">よくある質問</p>
+            <h2 className="text-xs font-bold tracking-widest text-accent ">よくある質問</h2>
+            <p className="text-3xl font-bold text-ink">気になる点にお答えします</p>
           </div>
 
           <FaqAccordion items={faqs} />
@@ -329,14 +329,14 @@ export default function LandingPage() {
           <BrandMark className="text-sm" />
 
           <p className="text-center md:text-left">
-            © {new Date().getFullYear()} FuelLens. All rights reserved. Google Gemini AI OCR Powered.
+            © {new Date().getFullYear()} FuelLens. 読み取りに Google Gemini AI を使用しています。
           </p>
 
           <div className="flex items-center gap-2 sm:gap-6">
             <a href="#features" className="hover:text-ink transition px-2 py-3 sm:p-0">機能</a>
             <a href="#demo" className="hover:text-ink transition px-2 py-3 sm:p-0">デモ</a>
             <a href="#how-to" className="hover:text-ink transition px-2 py-3 sm:p-0">使い方</a>
-            <a href="#faq" className="hover:text-ink transition px-2 py-3 sm:p-0">FAQ</a>
+            <a href="#faq" className="hover:text-ink transition px-2 py-3 sm:p-0">よくある質問</a>
           </div>
         </div>
       </footer>

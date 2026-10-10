@@ -55,7 +55,7 @@ export type PageHeaderProps = {
 };
 
 /**
- * 画面上部のヘッダー。左に見出し（20px・太字）、右に車両チップ（rightSlot）。
+ * 画面上部のヘッダー。左に見出し（20px・太字。縮めない）、右に車両チップ（rightSlot。狭いときはチップの車両名を省略する）。
  * スマホでは右端にログイン / ユーザーボタンも置く（PC はサイドバーの下部にある）。
  * ログイン後は今いる画面に戻る（`usePathname()` を forceRedirectUrl に使う）。
  */
@@ -66,7 +66,7 @@ export function PageHeader({ title, brand = false, rightSlot }: PageHeaderProps)
   // 上の余白に safe-area-inset-top を足す（ホーム画面から開いた PWA は black-translucent のステータスバーの下まで描画されるため）
   return (
     <header className="flex min-h-10 items-center justify-between gap-3 pb-3 pt-[calc(env(safe-area-inset-top)+12px)] lg:pb-5 lg:pt-0">
-      <h1 className="min-w-0 truncate text-xl font-bold">
+      <h1 className="shrink-0 text-xl font-bold">
         {brand ? (
           <>
             <span className="lg:hidden">

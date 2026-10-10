@@ -148,8 +148,9 @@ export default function RecordRow({ record, distanceMode, showMonth, expanded, o
           )}
         </span>
 
+        {/* 開閉の目印（スマホはモックどおり出さず、補足の「給油量・区間」に幅を回す） */}
         <ChevronDown
-          className={`h-4 w-4 shrink-0 text-faint transition-transform ${expanded ? "rotate-180" : ""}`}
+          className={`hidden h-4 w-4 shrink-0 text-faint transition-transform sm:block ${expanded ? "rotate-180" : ""}`}
           aria-hidden="true"
         />
       </button>

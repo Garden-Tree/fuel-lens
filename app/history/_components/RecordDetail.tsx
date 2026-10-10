@@ -119,7 +119,13 @@ export default function RecordDetail({
           編集
         </button>
         {moveTargets.length > 0 && (
-          <Menu label="移動先の車両" trigger="別の車両へ移動" triggerIcon={<Car className="h-4 w-4" />} disabled={disabled}>
+          <Menu
+            label="移動先の車両"
+            trigger="別の車両へ移動"
+            triggerIcon={<Car className="h-4 w-4" />}
+            triggerClassName="rounded-xl"
+            disabled={disabled}
+          >
             {moveTargets.map(v => (
               <MenuItem key={v.id} onSelect={() => onMove(v.id)}>
                 {v.name}

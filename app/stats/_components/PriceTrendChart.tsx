@@ -6,7 +6,7 @@ import { formatPricePerUnit } from "@/lib/calculations";
 import { formatDateLabel, formatPriceDiff } from "@/lib/format";
 import type { Period, PricePoint, StatsModel } from "@/lib/stats";
 import ChartEmpty from "./ChartEmpty";
-import { AverageLegend, averageTickRenderer } from "./AverageTick";
+import { AverageLegend, averageTickRenderer, visibleAxisTicks } from "./AverageTick";
 import { CHART_COLORS, CHART_TICK, CHART_TOOLTIP_CLASS } from "./chartTheme";
 
 interface PriceTooltipProps {
@@ -121,6 +121,7 @@ export default function PriceTrendChart({ period, price }: { period: Period; pri
                   axisLine={false}
                   tickLine={false}
                   tickMargin={8}
+                  minTickGap={20}
                   domain={priceTimeDomain ?? ["auto", "auto"]}
                   tickFormatter={val => {
                     const date = new Date(val);
@@ -133,7 +134,8 @@ export default function PriceTrendChart({ period, price }: { period: Period; pri
                   tickLine={false}
                   tickMargin={4}
                   domain={priceAxis.domain ?? ["auto", "auto"]}
-                  ticks={priceAxis.ticks}
+                  ticks={visibleAxisTicks(priceAxis)}
+                  interval={0}
                   tick={averageTickRenderer(priceAxis.averageTick, 1)}
                 />
                 <Tooltip content={<CustomPriceTooltip />} cursor={{ stroke: CHART_COLORS.cursor, strokeWidth: 1 }} />

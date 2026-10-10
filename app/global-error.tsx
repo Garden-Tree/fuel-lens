@@ -5,7 +5,7 @@ import { useEffect } from "react";
 /**
  * ルートレイアウト自体が失敗したときのフォールバック。
  * layout.tsx を置き換えるため、<html> と <body> を自前で描画する必要がある。
- * ここでは Toast などのプロバイダーも使えないので依存を最小限にする。
+ * ここでは Toast などのプロバイダーも使えないので依存を最小限にする（色は globals.css のトークンの値を直接書く）。
  */
 export default function GlobalError({
   error,
@@ -24,8 +24,8 @@ export default function GlobalError({
         style={{
           margin: 0,
           minHeight: "100vh",
-          background: "#030712",
-          color: "#ffffff",
+          background: "#0B0F14",
+          color: "#E8EDF3",
           fontFamily: "system-ui, -apple-system, 'Segoe UI', sans-serif",
           display: "flex",
           alignItems: "center",
@@ -35,11 +35,11 @@ export default function GlobalError({
       >
         <main style={{ maxWidth: 420, width: "100%", textAlign: "center" }}>
           <h1 style={{ fontSize: 20, fontWeight: 700, margin: "0 0 8px" }}>問題が発生しました</h1>
-          <p style={{ fontSize: 14, color: "#9ca3af", lineHeight: 1.7, margin: "0 0 8px" }}>
+          <p style={{ fontSize: 14, color: "#8C99A8", lineHeight: 1.7, margin: "0 0 8px" }}>
             アプリの読み込み中にエラーが発生しました。もう一度お試しいただくか、ホームに戻ってください。
           </p>
           {error.digest && (
-            <p style={{ fontSize: 11, color: "#4b5563", fontFamily: "monospace", margin: "0 0 20px" }}>
+            <p style={{ fontSize: 11, color: "#4C5968", fontFamily: "monospace", margin: "0 0 20px" }}>
               エラーID: {error.digest}
             </p>
           )}
@@ -51,8 +51,8 @@ export default function GlobalError({
                 padding: "12px 20px",
                 borderRadius: 12,
                 border: "none",
-                background: "#2563eb",
-                color: "#fff",
+                background: "#3AA0FF",
+                color: "#0B0F14",
                 fontSize: 14,
                 fontWeight: 700,
                 cursor: "pointer",
@@ -65,8 +65,9 @@ export default function GlobalError({
               style={{
                 padding: "12px 20px",
                 borderRadius: 12,
-                background: "#1f2937",
-                color: "#e5e7eb",
+                background: "#131A22",
+                border: "1px solid #253140",
+                color: "#E8EDF3",
                 fontSize: 14,
                 fontWeight: 700,
                 textDecoration: "none",

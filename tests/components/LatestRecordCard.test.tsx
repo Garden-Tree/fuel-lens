@@ -99,9 +99,16 @@ describe("LatestRecordCard", () => {
     expect(screen.getByText("（前回より悪化）")).toBeInTheDocument();
   });
 
-  it("部分給油なら数値の代わりに「部分給油（次の満タンで計算）」を出し、前回比は出さない", () => {
+  it("最新が部分給油なら燃費の出ている直近の記録をメーターに出し、最新は注記で知らせる", () => {
     const partial: FuelRecord = { ...RECORD, id: "p", date: "2026-10-01", fuel_efficiency: null, is_full: false, run_distance: undefined, run_fuel: undefined };
     setup({ record: partial, records: [partial, RECORD, OLDER] });
+    expect(screen.getByText(/は部分給油（次の満タンで計算）/)).toBeInTheDocument();
+    expect(screen.getByRole("img", { name: /^燃費メーター。\d/ })).toBeInTheDocument();
+  });
+
+  it("燃費の出ている記録が無い部分給油だけなら、数値の代わりに理由を出し前回比は出さない", () => {
+    const partial: FuelRecord = { ...RECORD, id: "p", date: "2026-10-01", fuel_efficiency: null, is_full: false, run_distance: undefined, run_fuel: undefined };
+    setup({ record: partial, records: [partial] });
     expect(screen.getByText("部分給油")).toBeInTheDocument();
     expect(screen.getByText("次の満タンで計算")).toBeInTheDocument();
     expect(screen.getByRole("img", { name: "燃費メーター。部分給油（次の満タンで計算）" })).toBeInTheDocument();
@@ -183,6 +190,11 @@ describe("RecentRecordsSection", () => {
     expect(rows[1]).toHaveTextContent("15.00");
     expect(rows[2]).toHaveTextContent("店舗名なし");
     expect(rows[2]).toHaveTextContent("9月10日・ハイオク・¥5,000");
-    for (const row of rows) expect(row).toHaveAttribute("href", "/history");
+    // 各行は履歴の該当記録を開くディープリンク（/history#record-<id>）
+    expect(rows.map(row => row.getAttribute("href"))).toEqual([
+      "/history#record-p",
+      `/history#record-${RECORD.id}`,
+      `/history#record-${OLDER.id}`,
+    ]);
   });
 });

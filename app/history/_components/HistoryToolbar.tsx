@@ -97,9 +97,9 @@ export default function HistoryToolbar({
 export function HistoryToolbarSkeleton() {
   return (
     <div className="mb-4 flex flex-wrap items-center gap-2 lg:mb-6" aria-hidden="true">
-      <div className="h-10 w-28 animate-pulse rounded-xl bg-surface" />
-      <div className="h-10 w-28 animate-pulse rounded-xl bg-surface" />
-      <div className="h-10 w-40 animate-pulse rounded-xl bg-surface" />
+      <div className="h-10 w-28 animate-pulse rounded-full bg-surface" />
+      <div className="h-10 w-28 animate-pulse rounded-full bg-surface" />
+      <div className="h-10 w-40 animate-pulse rounded-full bg-surface" />
       <div className="ml-auto h-10 w-10 animate-pulse rounded-full bg-surface" />
     </div>
   );

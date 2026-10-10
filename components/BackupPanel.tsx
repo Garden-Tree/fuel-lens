@@ -261,6 +261,7 @@ export default function BackupPanel({
             leading={<FileJson className="h-5 w-5 text-accent" aria-hidden="true" />}
             title="JSONで書き出す"
             subtitle="全車両と全記録。下の「復元」で読み込めます"
+            wrapSubtitle
             trailing={busy === "json" ? spinner : undefined}
             showChevron={busy !== "json"}
             onClick={handleExportJson}
@@ -270,6 +271,7 @@ export default function BackupPanel({
             leading={<FileSpreadsheet className="h-5 w-5 text-money" aria-hidden="true" />}
             title="全車両のCSVを書き出す"
             subtitle="表計算ソフトで見る用"
+            wrapSubtitle
             trailing={busy === "csv" ? spinner : undefined}
             showChevron={busy !== "csv"}
             onClick={handleExportCsv}
@@ -293,6 +295,7 @@ export default function BackupPanel({
             leading={<Upload className="h-5 w-5 text-warn" aria-hidden="true" />}
             title="バックアップファイルを選ぶ"
             subtitle={`FuelLens の JSON を読み込み、${isSignedIn ? "クラウド" : "このブラウザ"}のデータへ追加します`}
+            wrapSubtitle
             trailing={busy === "restore-prepare" ? spinner : undefined}
             showChevron={busy !== "restore-prepare"}
             onClick={() => fileInputRef.current?.click()}
