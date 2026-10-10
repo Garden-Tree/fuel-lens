@@ -6,7 +6,7 @@ import { TrendingUp } from "lucide-react";
 import { useVehicleScope } from "@/lib/useVehicleScope";
 import { type Period, buildStatsModel } from "@/lib/stats";
 import VehicleSelector from "@/components/VehicleSelector";
-import { HookErrorLine, PageHeader, ReadOnlyCaption } from "@/components/AppShell";
+import { AppFrame, HookErrorLine, PageHeader, ReadOnlyCaption } from "@/components/AppShell";
 import PeriodFilter from "./_components/PeriodFilter";
 import SummaryCards from "./_components/SummaryCards";
 import EfficiencyChart from "./_components/EfficiencyChart";
@@ -38,25 +38,27 @@ export default function StatsPage() {
   // 記録の再読み込み（車両追加・切替など）のたびに VehicleSelector が再マウントされると、
   // 内部の「車両の管理」モーダルが閉じてしまうため。スケルトン切替は下のコンテンツ部分だけで行う。
   return (
-    <main className="min-h-screen bg-black text-white p-4 md:p-8 pb-20 font-sans flex flex-col items-center">
-      <div className="w-full max-w-5xl">
+    <AppFrame>
+      <div className="w-full">
 
-        <PageHeader title="統計・推移" icon={TrendingUp} backHref="/app" />
+        <PageHeader
+          title="統計"
+          rightSlot={
+            <VehicleSelector
+              loading={vehiclesLoading}
+              vehicles={vehicles}
+              selectedVehicleId={selectedVehicleId}
+              onSelect={setSelectedVehicleId}
+              onAddVehicle={vehicleActions.addVehicle}
+              onDeleteVehicle={vehicleActions.deleteVehicle}
+              onUpdateVehicle={vehicleActions.updateVehicle}
+              readOnly={readOnly}
+            />
+          }
+        />
 
         <HookErrorLine error={loadError} />
         <ReadOnlyCaption show={readOnly} />
-
-        {/* 車両セレクタータブ (車両の初期ロード中のみスケルトン) */}
-        <VehicleSelector
-          loading={vehiclesLoading}
-          vehicles={vehicles}
-          selectedVehicleId={selectedVehicleId}
-          onSelect={setSelectedVehicleId}
-          onAddVehicle={vehicleActions.addVehicle}
-          onDeleteVehicle={vehicleActions.deleteVehicle}
-          onUpdateVehicle={vehicleActions.updateVehicle}
-          readOnly={readOnly}
-        />
 
         {loading ? (
           <StatsSkeleton />
@@ -91,6 +93,6 @@ export default function StatsPage() {
           </>
         )}
       </div>
-    </main>
+    </AppFrame>
   );
 }

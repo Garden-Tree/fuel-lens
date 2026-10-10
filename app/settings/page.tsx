@@ -2,10 +2,9 @@
 
 import { useCallback, useState } from "react";
 import { useAuth } from "@clerk/nextjs";
-import { Settings } from "lucide-react";
 
 import { useVehicleScope } from "@/lib/useVehicleScope";
-import { HookErrorLine, PageHeader, ReadOnlyCaption } from "@/components/AppShell";
+import { AppFrame, HookErrorLine, PageHeader, ReadOnlyCaption } from "@/components/AppShell";
 import BackupPanel from "@/components/BackupPanel";
 import ImportPanel from "@/components/ImportPanel";
 import type { SettingsBusy } from "@/components/settingsUi";
@@ -35,9 +34,9 @@ export default function SettingsPage() {
   }, []);
 
   return (
-    <main className="min-h-screen bg-black text-white p-4 md:p-8 pb-20 font-sans flex flex-col items-center">
-      <div className="w-full max-w-3xl">
-        <PageHeader title="設定" icon={Settings} backHref="/app" />
+    <AppFrame width="narrow">
+      <div className="w-full">
+        <PageHeader title="設定" />
 
         <HookErrorLine error={loadError} />
         <ReadOnlyCaption show={readOnly} />
@@ -73,6 +72,6 @@ export default function SettingsPage() {
           />
         </div>
       </div>
-    </main>
+    </AppFrame>
   );
 }

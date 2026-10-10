@@ -1,154 +1,103 @@
 "use client";
 
-import type { ReactNode } from "react";
-import Link from "next/link";
+import { useState, type ReactNode } from "react";
 import { usePathname } from "next/navigation";
 import { SignedIn, SignedOut, SignInButton, UserButton } from "@clerk/nextjs";
-import { ArrowLeft, BarChart3, History, Settings, type LucideIcon } from "lucide-react";
+import { AppSidebar, AppTabBar } from "./AppNav";
+import ScanActionMenu, { type ScanMenuAnchor } from "./ScanActionMenu";
+import { BrandMark } from "./ui/BrandMark";
 
 /**
- * 画面共通のヘッダー・エラー行・閲覧専用の注記（/app・/history・/stats）。
- * 見た目は各画面の従来のマークアップをそのまま移したもの。
+ * アプリ画面（/app・/history・/stats・/settings）の共通の枠と部品（docs/design-system.md「ナビゲーション」）。
+ * - AppFrame: ナビゲーション（スマホは下部タブバー、PC は左サイドバー）と本文の器
+ * - PageHeader: 見出しと右側の車両チップ
+ * - HookErrorLine / ReadOnlyCaption: 読み込みエラーの行・閲覧専用の注記
  */
 
-/** ヘッダー右側のナビゲーションリンク */
-export type HeaderLink = {
-  href: string;
-  /** aria-label。ラベル文字を表示する場合はその文字列にもなる */
-  label: string;
-  icon: LucideIcon;
-  /** ラベル文字を表示し始める画面幅。省略時はアイコンのみ */
-  showLabelFrom?: "sm" | "md";
-  /**
-   * 見た目。"pill" は /app の枠付きの丸ボタン、"solid" はサブページ（/history）の塗りの丸ボタン（アイコンは青）。
-   * 省略時は "pill"
-   */
-  tone?: "pill" | "solid";
+export type AppFrameProps = {
+  /** 本文の最大幅。default = 1040px、narrow = 768px（設定画面など 1 カラムの画面） */
+  width?: "default" | "narrow";
+  children: ReactNode;
 };
 
-/** /app のヘッダーのリンク（グラフ / 給油履歴 / 設定） */
-export const HOME_HEADER_LINKS: readonly HeaderLink[] = [
-  { href: "/stats", label: "グラフ", icon: BarChart3, showLabelFrom: "md" },
-  { href: "/history", label: "給油履歴", icon: History, showLabelFrom: "md" },
-  { href: "/settings", label: "設定", icon: Settings },
-];
-
-/** Tailwind はクラス名を静的に検出するため、組み立てずに完全な文字列で持つ */
-const LINK_CLASS: Record<NonNullable<HeaderLink["tone"]>, string> = {
-  pill: "p-2 min-w-10 min-h-10 shrink-0 justify-center bg-gray-800/50 rounded-full border border-gray-700/50 text-gray-400 hover:text-white transition group flex items-center gap-2",
-  solid: "p-2 min-w-10 min-h-10 shrink-0 justify-center bg-gray-900 rounded-full hover:bg-gray-800 transition text-gray-300 group flex items-center gap-2",
-};
-const LABEL_CLASS: Record<NonNullable<HeaderLink["tone"]>, Record<NonNullable<HeaderLink["showLabelFrom"]>, string>> = {
-  pill: {
-    sm: "hidden sm:inline text-sm font-semibold pr-1",
-    md: "hidden md:inline text-sm font-semibold pr-1",
-  },
-  solid: {
-    sm: "hidden sm:inline text-sm font-bold pr-1",
-    md: "hidden md:inline text-sm font-bold pr-1",
-  },
-};
-const ICON_CLASS: Record<NonNullable<HeaderLink["tone"]>, string> = {
-  pill: "w-5 h-5",
-  solid: "w-5 h-5 text-blue-400",
-};
-
-function HeaderNavLink({ link }: { link: HeaderLink }) {
-  const tone = link.tone ?? "pill";
-  const Icon = link.icon;
+/**
+ * 画面の枠。各ページの最上位で `<AppFrame>{ページの中身}</AppFrame>` のように使う（`<main>` は AppFrame が描画する）。
+ * スマホでは本文の下にタブバーの高さ＋safe-area 分の余白を空ける。スキャンメニューの開閉もここで持つ。
+ */
+export function AppFrame({ width = "default", children }: AppFrameProps) {
+  // null: 閉じている。anchor: null はスマホのボトムシート、値ありは PC のポップオーバー
+  const [menu, setMenu] = useState<{ anchor: ScanMenuAnchor | null } | null>(null);
   return (
-    <Link href={link.href} aria-label={link.label} className={LINK_CLASS[tone]}>
-      {link.showLabelFrom && <span className={LABEL_CLASS[tone][link.showLabelFrom]}>{link.label}</span>}
-      <Icon className={ICON_CLASS[tone]} aria-hidden="true" />
-    </Link>
+    <div className="min-h-dvh bg-ground text-ink lg:flex">
+      <AppSidebar onScan={anchor => setMenu({ anchor })} />
+      <div className="min-w-0 flex-1">
+        <main
+          className={`mx-auto w-full min-w-0 px-4 pb-[calc(env(safe-area-inset-bottom)+56px+32px)] lg:px-8 lg:pt-8 lg:pb-12 ${
+            width === "narrow" ? "max-w-3xl" : "max-w-[1040px]"
+          }`}
+        >
+          {children}
+        </main>
+      </div>
+      <AppTabBar onScan={() => setMenu({ anchor: null })} />
+      <ScanActionMenu open={menu !== null} anchor={menu?.anchor ?? null} onClose={() => setMenu(null)} />
+    </div>
   );
 }
 
 export type PageHeaderProps = {
   /** 見出し（h1） */
   title: string;
-  /**
-   * backHref なし（/app）: ロゴのアイコン（グラデーションの角丸の中に表示）。
-   * backHref あり: 見出しの前に置くアイコン（青）。省略可
-   */
-  icon?: LucideIcon;
-  /** 戻るリンクの行き先。指定するとサブページの見た目（戻るボタン・sticky ヘッダー）になる */
-  backHref?: string;
-  /** 戻るリンクの aria-label。既定は「ホームに戻る」 */
-  backLabel?: string;
-  /** ヘッダー右側のリンク（ログインボタンの前に並ぶ） */
-  links?: readonly HeaderLink[];
-  /** リンクとログインボタンの間に置く任意の要素 */
+  /** スマホでは見出しの代わりに FuelLens のロゴとワードマークを出す（/app）。PC では title を出す */
+  brand?: boolean;
+  /** 右側に置く要素（車両チップなど） */
   rightSlot?: ReactNode;
 };
 
 /**
- * 画面上部のヘッダー。ロゴ（または戻るリンク）と見出し、ナビゲーションリンク、Clerk のログイン / ユーザーボタン。
+ * 画面上部のヘッダー。左に見出し（20px・太字）、右に車両チップ（rightSlot）。
+ * スマホでは右端にログイン / ユーザーボタンも置く（PC はサイドバーの下部にある）。
  * ログイン後は今いる画面に戻る（`usePathname()` を forceRedirectUrl に使う）。
  */
-export function PageHeader({
-  title,
-  icon: Icon,
-  backHref,
-  backLabel = "ホームに戻る",
-  links = [],
-  rightSlot,
-}: PageHeaderProps) {
+export function PageHeader({ title, brand = false, rightSlot }: PageHeaderProps) {
   const pathname = usePathname();
   const redirectUrl = pathname || "/app";
-  const isSubPage = backHref !== undefined;
 
-  // 上の余白に safe-area-inset-top を足す（ホーム画面から開いた PWA は black-translucent のステータスバーの下まで描画されるため）。
-  // スマホ幅のサブページでは sticky ヘッダーを画面端まで広げ、左右の余白からスクロール中の内容が透けないようにする
+  // 上の余白に safe-area-inset-top を足す（ホーム画面から開いた PWA は black-translucent のステータスバーの下まで描画されるため）
   return (
-    <header
-      className={
-        isSubPage
-          ? "flex items-center justify-between gap-2 pb-3 pt-[calc(env(safe-area-inset-top)+0.75rem)] sm:pb-4 sm:pt-[calc(env(safe-area-inset-top)+1rem)] mb-2 sticky top-0 bg-black/80 backdrop-blur-md z-10 w-auto -mx-4 px-4 md:mx-0 md:px-0 md:w-full"
-          : "flex items-center justify-between gap-2 pb-3 pt-[calc(env(safe-area-inset-top)+0.75rem)] sm:pb-4 sm:pt-[calc(env(safe-area-inset-top)+1rem)] mb-2 w-full"
-      }
-    >
-      {isSubPage ? (
-        <div className="flex items-center gap-3 sm:gap-4 min-w-0">
-          <Link
-            href={backHref}
-            aria-label={backLabel}
-            className="p-2.5 shrink-0 bg-gray-900 rounded-full hover:bg-gray-800 transition"
-          >
-            <ArrowLeft className="w-5 h-5 text-gray-300" aria-hidden="true" />
-          </Link>
-          <h1 className="text-lg sm:text-xl md:text-2xl font-bold flex items-center gap-2 min-w-0">
-            {Icon && <Icon className="w-6 h-6 shrink-0 text-blue-500" aria-hidden="true" />}
-            <span className="truncate">{title}</span>
-          </h1>
-        </div>
-      ) : (
-        <div className="flex items-center gap-2 min-w-0">
-          {Icon && (
-            <div className="w-10 h-10 shrink-0 bg-gradient-to-tr from-blue-600 to-cyan-400 rounded-xl flex items-center justify-center shadow-lg shadow-blue-900/20">
-              <Icon className="text-white w-6 h-6 fill-current" aria-hidden="true" />
-            </div>
-          )}
-          <h1 className="text-lg sm:text-xl font-bold tracking-tight truncate">{title}</h1>
-        </div>
-      )}
+    <header className="flex min-h-10 items-center justify-between gap-3 pb-3 pt-[calc(env(safe-area-inset-top)+12px)] lg:pb-5 lg:pt-0">
+      <h1 className="min-w-0 truncate text-xl font-bold">
+        {brand ? (
+          <>
+            <span className="lg:hidden">
+              <BrandMark className="text-lg" />
+            </span>
+            <span className="hidden lg:inline">{title}</span>
+          </>
+        ) : (
+          title
+        )}
+      </h1>
 
-      <div className="flex items-center gap-1 sm:gap-3 shrink-0">
-        {links.map(link => (
-          <HeaderNavLink key={link.href} link={link} />
-        ))}
+      <div className="flex min-w-0 shrink items-center justify-end gap-2">
         {rightSlot}
-
-        <SignedOut>
-          <SignInButton forceRedirectUrl={redirectUrl}>
-            <button className="bg-blue-600 hover:bg-blue-500 text-white text-sm font-bold py-1.5 px-2.5 sm:px-4 min-h-10 whitespace-nowrap rounded-full transition shadow-lg">
-              ログイン
-            </button>
-          </SignInButton>
-        </SignedOut>
-        <SignedIn>
-          <UserButton />
-        </SignedIn>
+        <div className="flex shrink-0 items-center lg:hidden">
+          <SignedOut>
+            <SignInButton forceRedirectUrl={redirectUrl}>
+              <button
+                type="button"
+                className="h-10 whitespace-nowrap rounded-xl px-2.5 text-sm font-bold text-accent transition-colors hover:bg-surface focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+              >
+                ログイン
+              </button>
+            </SignInButton>
+          </SignedOut>
+          <SignedIn>
+            <span className="flex h-10 w-10 items-center justify-center">
+              <UserButton />
+            </span>
+          </SignedIn>
+        </div>
       </div>
     </header>
   );
@@ -168,7 +117,7 @@ export function HookErrorLine({ error }: { error: string | null | undefined }) {
 export function ReadOnlyCaption({ show }: { show: boolean }) {
   if (!show) return null;
   return (
-    <p role="status" className="text-[11px] text-amber-400/90 mb-2 px-1">
+    <p role="status" className="text-[11px] text-warn mb-2 px-1">
       閲覧専用（クラウド接続待ち）
     </p>
   );

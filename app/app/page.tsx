@@ -2,12 +2,11 @@
 
 import { Suspense, useRef, useState, useSyncExternalStore } from "react";
 import { useAuth } from "@clerk/nextjs";
-import { Fuel } from "lucide-react";
 import type { RecordInput } from "@/lib/types";
 import ScanReviewSheet from "@/components/ScanReviewSheet";
 import VehicleSelector from "@/components/VehicleSelector";
 import { useToast } from "@/components/Toast";
-import { HOME_HEADER_LINKS, HookErrorLine, PageHeader, ReadOnlyCaption } from "@/components/AppShell";
+import { AppFrame, HookErrorLine, PageHeader, ReadOnlyCaption } from "@/components/AppShell";
 import { useVehicleScope } from "@/lib/useVehicleScope";
 import { useRecordForm } from "@/lib/useRecordForm";
 import { useRecordEditing } from "@/lib/useRecordEditing";
@@ -29,7 +28,7 @@ const subscribeNothing = () => () => {};
  * - useScanPipeline: 圧縮 → /api/analyze → 確認シート（ScanReviewSheet）。保存は確認シートの「保存」のみ
  * - useImageDropPaste: 画像のドロップ・ペースト
  * - useRecordEditing: 手動入力・最新記録の編集（重複確認付きの保存）
- * - ShortcutActionHandler（Suspense の内側）: `?action=` の PWA ショートカット・共有
+ * - ShortcutActionHandler（Suspense の内側）: `?action=` の PWA ショートカット・スキャンメニュー・共有
  */
 export default function Home() {
   const { toast, confirm } = useToast();
@@ -101,34 +100,39 @@ export default function Home() {
   });
 
   return (
-    <main className="min-h-screen bg-gradient-to-b from-gray-900 to-black text-white p-4 md:p-8 pb-32 font-sans flex flex-col items-center">
+    <AppFrame>
       <Suspense fallback={null}>
         <ShortcutActionHandler
           readiness={readiness}
           onScan={() => scanPanelRef.current?.openCamera()}
+          onAlbum={() => scanPanelRef.current?.openAlbum()}
           onManual={startManualEntry}
           onShared={(token) => void scan.processSharedImage(token)}
           onShareUnavailable={() => toast(SHARE_UNAVAILABLE_MESSAGE, { type: "warning" })}
         />
       </Suspense>
-      <div className="w-full max-w-5xl">
-        <PageHeader title="FuelLens" icon={Fuel} links={HOME_HEADER_LINKS} />
+      <div className="w-full">
+        {/* ヘッダー（スマホはロゴ、PC は「ホーム」）と車両チップ（車両の読み込み中はスケルトン） */}
+        <PageHeader
+          title="ホーム"
+          brand
+          rightSlot={
+            <VehicleSelector
+              loading={scope.vehiclesLoading}
+              vehicles={vehicles}
+              selectedVehicleId={selectedVehicleId}
+              onSelect={scope.setSelectedVehicleId}
+              onAddVehicle={scope.vehicleActions.addVehicle}
+              onDeleteVehicle={scope.vehicleActions.deleteVehicle}
+              onUpdateVehicle={scope.vehicleActions.updateVehicle}
+              readOnly={readOnly}
+            />
+          }
+        />
 
         {/* データ取得エラー / 閲覧専用の表示 */}
         <HookErrorLine error={scope.error} />
         <ReadOnlyCaption show={readOnly} />
-
-        {/* 車両切り替えセレクタータブ（車両の読み込み中はスケルトン） */}
-        <VehicleSelector
-          loading={scope.vehiclesLoading}
-          vehicles={vehicles}
-          selectedVehicleId={selectedVehicleId}
-          onSelect={scope.setSelectedVehicleId}
-          onAddVehicle={scope.vehicleActions.addVehicle}
-          onDeleteVehicle={scope.vehicleActions.deleteVehicle}
-          onUpdateVehicle={scope.vehicleActions.updateVehicle}
-          readOnly={readOnly}
-        />
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-start w-full">
           <div className="flex flex-col gap-6 w-full">
@@ -197,6 +201,6 @@ export default function Home() {
           onDiscard={scan.discardResult}
         />
       )}
-    </main>
+    </AppFrame>
   );
 }

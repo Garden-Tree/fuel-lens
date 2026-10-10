@@ -128,4 +128,18 @@ describe("ScanPanel", () => {
     expect(click).toHaveBeenCalledTimes(1);
     expect(screen.getByRole("button", { name: "カメラで撮影してスキャン" })).toHaveFocus();
   });
+
+  it("openAlbum はアルバムボタンにフォーカスし、capture なしのファイル入力を開く", () => {
+    const ref = createRef<ScanPanelHandle>();
+    setup({ ref });
+    const albumInput = screen.getByLabelText("画像ファイルを選択");
+    const cameraInput = screen.getByLabelText("カメラで撮影");
+    expect(albumInput).not.toHaveAttribute("capture");
+    const albumClick = vi.spyOn(albumInput, "click");
+    const cameraClick = vi.spyOn(cameraInput, "click");
+    ref.current?.openAlbum();
+    expect(albumClick).toHaveBeenCalledTimes(1);
+    expect(cameraClick).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: "アルバムから選択" })).toHaveFocus();
+  });
 });

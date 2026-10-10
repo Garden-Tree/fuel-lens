@@ -1,14 +1,15 @@
 /**
  * PWA ショートカット・Web Share Target の `?action=` の判定（純粋関数）。
- * 実行は lib/scan/useShortcutActions.ts（1 ページロードにつき最大 1 回、実行後に URL から消す）。
+ * 実行は lib/scan/useShortcutActions.ts（`action` が付くたびに 1 回、実行後に URL から消す）。
  *
- * - `scan`: manifest のショートカット「スキャン」（カメラ / ファイル選択を開く）
- * - `manual`: manifest のショートカット「手動で入力」
+ * - `scan`: manifest のショートカット「スキャン」・アプリのスキャンメニュー「撮影する」（カメラを開く）
+ * - `album`: アプリのスキャンメニュー「アルバムから選ぶ」（ファイル選択を開く。カメラは起動しない）
+ * - `manual`: manifest のショートカット「手動で入力」・スキャンメニュー「手動で入力」
  * - `shared`: Service Worker が共有画像を受け取った（`&t=<token>` 付き）
  * - `share-unavailable`: SW 未準備・画像なしで共有を受け取れなかった
  */
 
-export const SHORTCUT_ACTIONS = ["scan", "manual", "shared", "share-unavailable"] as const;
+export const SHORTCUT_ACTIONS = ["scan", "album", "manual", "shared", "share-unavailable"] as const;
 export type ShortcutAction = (typeof SHORTCUT_ACTIONS)[number];
 
 /** 各アクションを実行してよいか */
@@ -25,7 +26,7 @@ export const SHARE_UNAVAILABLE_MESSAGE =
 
 /**
  * 画面の状態から、各アクションの実行条件を決める。
- * スキャンは読み込み完了かつ解析中・確認中でないこと、手動入力は読み込み完了かつ閲覧専用でないこと。
+ * スキャン（撮影・アルバム）は読み込み完了かつ解析中・確認中でないこと、手動入力は読み込み完了かつ閲覧専用でないこと。
  * 共有画像はスキャンと同じ条件に加え、ログイン状態の確定を待つ（401 時の案内文を正しく出すため）。
  * 案内（share-unavailable）はマウント後ならいつでもよい。
  */
@@ -62,6 +63,9 @@ export function resolveShortcutAction(
   switch (action) {
     case "scan":
       return readiness.scan ? "scan" : "wait";
+    case "album":
+      // アルバムからの選択も撮影と同じ条件（解析に進むため）
+      return readiness.scan ? "album" : "wait";
     case "manual":
       return readiness.manual ? "manual" : "wait";
     case "shared":

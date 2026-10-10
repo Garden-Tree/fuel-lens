@@ -60,11 +60,12 @@ interface ToastContextValue {
 
 const ToastContext = createContext<ToastContextValue | null>(null);
 
+// 面はすべて surface。種類は左端の色帯（border-l）と枠線の色で示す（docs/design-system.md）
 const TYPE_STYLES: Record<ToastType, string> = {
-  info: 'bg-gray-800 border-gray-700 text-gray-100',
-  success: 'bg-emerald-900/90 border-emerald-700 text-emerald-50',
-  warning: 'bg-amber-900/90 border-amber-700 text-amber-50',
-  error: 'bg-red-900/90 border-red-700 text-red-50',
+  info: 'border-border border-l-accent',
+  success: 'border-money-dim/60 border-l-money',
+  warning: 'border-warn/40 border-l-warn',
+  error: 'border-red-500/50 border-l-red-500',
 };
 
 export function ToastProvider({ children }: { children: ReactNode }) {
@@ -176,14 +177,14 @@ export function ToastProvider({ children }: { children: ReactNode }) {
           <div
             key={t.id}
             role={t.type === 'error' ? 'alert' : 'status'}
-            className={`pointer-events-auto flex w-full max-w-md items-start gap-3 rounded-xl border px-4 py-3 text-sm shadow-lg backdrop-blur ${TYPE_STYLES[t.type]}`}
+            className={`pointer-events-auto flex w-full max-w-md items-start gap-3 rounded-2xl border border-l-4 bg-surface px-4 py-3 text-sm text-ink shadow-2xl shadow-black/50 ${TYPE_STYLES[t.type]}`}
           >
             <p className="flex-1 whitespace-pre-line break-words">{t.message}</p>
             <button
               type="button"
               onClick={() => dismiss(t.id)}
               aria-label="閉じる"
-              className="rounded -m-2 p-2 sm:m-0 sm:p-0.5 text-current/70 hover:text-current focus:outline-none focus-visible:ring-2 focus-visible:ring-white/60"
+              className="rounded-full -m-2 p-2 sm:m-0 sm:p-0.5 text-sub hover:text-ink focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
             >
               ×
             </button>
@@ -194,7 +195,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
       {/* 確認ダイアログ */}
       {confirmState && (
         <div
-          className="fixed inset-0 z-[110] flex items-center justify-center bg-black/60 p-4"
+          className="fixed inset-0 z-[110] flex items-center justify-center bg-black/70 p-4"
           {...confirmBackdropHandlers}
         >
           <div
@@ -202,12 +203,12 @@ export function ToastProvider({ children }: { children: ReactNode }) {
             role="dialog"
             aria-modal="true"
             aria-labelledby="confirm-dialog-title"
-            className="w-full max-w-sm max-h-[85dvh] overflow-y-auto rounded-2xl border border-gray-700 bg-gray-900 p-5 shadow-2xl"
+            className="w-full max-w-sm max-h-[85dvh] overflow-y-auto rounded-hero border border-line bg-surface p-5 shadow-2xl shadow-black/50"
           >
-            <h2 id="confirm-dialog-title" className="text-base font-semibold text-white">
+            <h2 id="confirm-dialog-title" className="text-base font-bold text-ink">
               {confirmState.options.title ?? '確認'}
             </h2>
-            <p className="mt-2 whitespace-pre-line text-sm text-gray-300">{confirmState.message}</p>
+            <p className="mt-2 whitespace-pre-line text-sm text-sub">{confirmState.message}</p>
             <div className="mt-5 flex justify-end gap-2">
               {/*
                 破壊的操作ではキャンセル側に初期フォーカスを置く。
@@ -217,7 +218,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
                 ref={cancelButtonRef}
                 type="button"
                 onClick={() => closeConfirm(false)}
-                className="flex-1 sm:flex-none rounded-lg px-4 py-2.5 sm:py-2 text-sm text-gray-300 bg-gray-800/60 sm:bg-transparent hover:bg-gray-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-500"
+                className="flex-1 sm:flex-none min-h-11 rounded-xl px-4 text-sm font-medium text-ink bg-surface-2 hover:bg-border focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
               >
                 {confirmState.options.cancelLabel ?? 'キャンセル'}
               </button>
@@ -225,10 +226,10 @@ export function ToastProvider({ children }: { children: ReactNode }) {
                 ref={okButtonRef}
                 type="button"
                 onClick={() => closeConfirm(true)}
-                className={`flex-1 sm:flex-none rounded-lg px-4 py-2.5 sm:py-2 text-sm font-medium text-white focus:outline-none focus-visible:ring-2 ${
+                className={`flex-1 sm:flex-none min-h-11 rounded-xl px-4 text-sm font-bold focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-surface ${
                   confirmState.options.danger
-                    ? 'bg-red-600 hover:bg-red-500 focus-visible:ring-red-400'
-                    : 'bg-blue-600 hover:bg-blue-500 focus-visible:ring-blue-400'
+                    ? 'bg-red-600 text-white hover:bg-red-500 focus-visible:ring-red-400'
+                    : 'bg-accent text-ground hover:bg-[#5BB2FF] focus-visible:ring-accent'
                 }`}
               >
                 {confirmState.options.confirmLabel ?? 'OK'}

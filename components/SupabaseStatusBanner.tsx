@@ -38,15 +38,15 @@ export default function SupabaseStatusBanner() {
   return (
     <div
       role="alert"
-      className="w-full bg-amber-500 text-amber-950 border-b border-amber-600 shadow-md"
+      className="w-full bg-warn-bg text-warn border-b border-warn/30"
     >
-      <div className="mx-auto max-w-5xl flex items-start gap-2 px-4 py-2 text-xs md:text-sm font-semibold leading-snug">
+      <div className="mx-auto max-w-5xl flex items-start gap-2 px-4 py-2 text-xs md:text-sm font-medium leading-snug">
         <AlertTriangle className="w-4 h-4 mt-0.5 flex-shrink-0" aria-hidden="true" />
         <p className="flex-1">{outageMessage(outage)}</p>
         <button
           type="button"
           onClick={requestSupabaseRetry}
-          className="flex-shrink-0 inline-flex items-center gap-1 rounded-md border border-amber-700/50 bg-amber-400/60 px-2.5 py-2 min-h-10 sm:min-h-0 sm:px-2 sm:py-0.5 hover:bg-amber-300 transition focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-900"
+          className="flex-shrink-0 inline-flex items-center gap-1 rounded-xl border border-warn/40 bg-warn-bg px-3 min-h-10 font-bold text-warn hover:bg-warn/20 transition focus:outline-none focus-visible:ring-2 focus-visible:ring-warn"
         >
           <RefreshCw className="w-3.5 h-3.5" aria-hidden="true" />
           再試行

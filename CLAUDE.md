@@ -77,5 +77,6 @@ CI は Node 22 で lint → typecheck → test → build を実行する（[docs
 | `/api/analyze` の仕様とエラーコード | [docs/api-analyze.md](./docs/api-analyze.md) |
 | デプロイ・keepalive・CI・トラブルシューティング | [docs/operations.md](./docs/operations.md) |
 | オドメーターモード・部分給油・燃料種別・メモの設計と連鎖計算の規則 | [docs/design-fill-chain.md](./docs/design-fill-chain.md) |
+| UI のトークン・部品（`components/ui`）・ナビゲーション | [docs/design-system.md](./docs/design-system.md) |
 | マイグレーション適用・RLS 監査 | [supabase/README.md](./supabase/README.md) |
 | 今後の候補・既知の制約 | [docs/roadmap.md](./docs/roadmap.md) |

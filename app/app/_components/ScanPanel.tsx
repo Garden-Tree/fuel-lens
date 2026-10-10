@@ -12,6 +12,8 @@ export type ScanPanelHandle = {
    * ユーザー操作なしの呼び出しはブラウザにブロックされうるため、カメラボタンへフォーカスして押しやすくする
    */
   openCamera: () => void;
+  /** ファイル選択（アルバム）を開く（スキャンメニュー「アルバムから選ぶ」）。capture なしの入力を使う */
+  openAlbum: () => void;
 };
 
 export type ScanPanelProps = {
@@ -66,6 +68,7 @@ export default function ScanPanel({
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const galleryInputRef = useRef<HTMLInputElement>(null);
   const cameraButtonRef = useRef<HTMLButtonElement>(null);
+  const albumButtonRef = useRef<HTMLButtonElement>(null);
 
   useImperativeHandle(ref, () => ({
     openCamera: () => {
@@ -75,6 +78,14 @@ export default function ScanPanel({
         button.focus({ preventScroll: true });
       }
       cameraInputRef.current?.click();
+    },
+    openAlbum: () => {
+      const button = albumButtonRef.current;
+      if (button) {
+        button.scrollIntoView({ block: "center" });
+        button.focus({ preventScroll: true });
+      }
+      galleryInputRef.current?.click();
     },
   }), []);
 
@@ -206,6 +217,7 @@ export default function ScanPanel({
                 <div className="flex flex-wrap items-center justify-center gap-x-2 gap-y-1 sm:gap-4">
                   <button
                     type="button"
+                    ref={albumButtonRef}
                     onClick={() => galleryInputRef.current?.click()}
                     disabled={scanning}
                     className="flex items-center gap-2 text-sm text-gray-500 hover:text-blue-400 transition-colors py-2 px-3 sm:px-4 min-h-10 whitespace-nowrap rounded-full hover:bg-gray-800"

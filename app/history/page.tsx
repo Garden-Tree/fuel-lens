@@ -1,13 +1,13 @@
 "use client";
 
 import { useState, useMemo } from "react";
-import { Trash2, MapPin, Calendar, BarChart3, Edit2, Download, Car } from "lucide-react";
+import { Trash2, MapPin, Calendar, Edit2, Download, Car } from "lucide-react";
 
 import type { FuelRecord } from "@/lib/types";
 import EditFuelRecordForm from "@/components/EditFuelRecordForm";
 import { useVehicleScope } from "@/lib/useVehicleScope";
 import VehicleSelector from "@/components/VehicleSelector";
-import { HookErrorLine, PageHeader, ReadOnlyCaption, type HeaderLink } from "@/components/AppShell";
+import { AppFrame, HookErrorLine, PageHeader, ReadOnlyCaption } from "@/components/AppShell";
 import { useToast } from "@/components/Toast";
 import { useRecordForm } from "@/lib/useRecordForm";
 import { useRecordEditing } from "@/lib/useRecordEditing";
@@ -34,11 +34,6 @@ function createdAtMs(createdAt: string | null | undefined): number {
 
 /** 月フィルタの選択肢（"1"〜"12"） */
 const MONTH_OPTIONS: readonly string[] = Array.from({ length: 12 }, (_, i) => String(i + 1));
-
-/** ヘッダーのリンク（グラフを見る） */
-const HISTORY_HEADER_LINKS: readonly HeaderLink[] = [
-  { href: "/stats", label: "グラフを見る", icon: BarChart3, showLabelFrom: "sm", tone: "solid" },
-];
 
 export default function HistoryPage() {
   const { toast, confirm } = useToast();
@@ -229,20 +224,13 @@ export default function HistoryPage() {
   };
 
   return (
-    <main className="min-h-screen bg-black text-white p-4 md:p-8 pb-20 font-sans flex flex-col items-center">
-      <div className="w-full max-w-5xl">
+    <AppFrame>
+      <div className="w-full">
 
-        {/* ヘッダー */}
-        <PageHeader title="給油履歴" backHref="/app" links={HISTORY_HEADER_LINKS} />
-
-        {/* データ取得エラー / 閲覧専用の表示 */}
-        <HookErrorLine error={hookError} />
-        <ReadOnlyCaption show={readOnly} />
-
-        {/* 車両セレクター & CSV出力ボタン（並ばない幅では折り返し、車両タブの幅を確保する） */}
-        <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 mb-4 sm:mb-6 w-full">
-          {/* 左側：車両セレクター（車両の読み込み中はスケルトン） */}
-          <div className="flex-grow min-w-0">
+        {/* ヘッダーと車両チップ（車両の読み込み中はスケルトン） */}
+        <PageHeader
+          title="給油履歴"
+          rightSlot={
             <VehicleSelector
               loading={vehiclesLoading}
               vehicles={vehicles}
@@ -252,12 +240,17 @@ export default function HistoryPage() {
               onDeleteVehicle={vehicleActions.deleteVehicle}
               onUpdateVehicle={vehicleActions.updateVehicle}
               readOnly={readOnly}
-              className="w-full"
             />
-          </div>
+          }
+        />
 
-          {/* 右側：CSV出力ボタン */}
-          <div className="flex-shrink-0 ml-auto pb-2">
+        {/* データ取得エラー / 閲覧専用の表示 */}
+        <HookErrorLine error={hookError} />
+        <ReadOnlyCaption show={readOnly} />
+
+        {/* CSV出力ボタン */}
+        <div className="flex flex-wrap items-center justify-end gap-x-4 gap-y-2 mb-4 sm:mb-6 w-full">
+          <div className="flex-shrink-0 ml-auto">
             {isLoading ? (
               <button
                 disabled
@@ -531,6 +524,6 @@ export default function HistoryPage() {
           </>
         )}
       </div>
-    </main>
+    </AppFrame>
   );
 }

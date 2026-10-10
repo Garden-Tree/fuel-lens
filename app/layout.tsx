@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { JetBrains_Mono, Noto_Sans_JP } from "next/font/google";
 import { ClerkProvider } from '@clerk/nextjs';
 import "./globals.css";
 import UserSync from "@/components/UserSync";
@@ -7,14 +7,20 @@ import ServiceWorkerRegister from "@/components/ServiceWorkerRegister";
 import SupabaseStatusBanner from "@/components/SupabaseStatusBanner";
 import { ToastProvider } from "@/components/Toast";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
+// 本文は Noto Sans JP、数字（`num` ユーティリティ）は JetBrains Mono（docs/design-system.md）。
+// 日本語フォントは unicode-range で分割配信されるため preload しない
+const notoSansJp = Noto_Sans_JP({
+  variable: "--font-noto-sans-jp",
+  weight: ["400", "500", "700"],
+  preload: false,
+  display: "swap",
 });
 
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
+// 可変フォントとして読み込む（weight を列挙すると Turbopack の next/font が URL を解決できないため。500 / 700 を使う）
+const jetBrainsMono = JetBrains_Mono({
+  variable: "--font-jetbrains-mono",
   subsets: ["latin"],
+  display: "swap",
 });
 
 const APP_NAME = "FuelLens";
@@ -70,7 +76,7 @@ export const metadata: Metadata = {
 
 // Next.js 16 では themeColor / viewport は metadata ではなく独立した viewport エクスポートに書く
 export const viewport: Viewport = {
-  themeColor: "#030712",
+  themeColor: "#0B0F14",
   width: "device-width",
   initialScale: 1,
   viewportFit: "cover",
@@ -83,10 +89,9 @@ export default function RootLayout({
 }>) {
   return (
     <ClerkProvider>
-      <html lang="ja">
-        <body
-          className={`${geistSans.variable} ${geistMono.variable} antialiased bg-gray-950 text-white min-h-screen`}
-        >
+      {/* フォントの CSS 変数は html に付ける（:root の --font-sans / --font-mono から参照するため） */}
+      <html lang="ja" className={`${notoSansJp.variable} ${jetBrainsMono.variable}`}>
+        <body className="antialiased bg-ground text-ink min-h-screen">
           <ToastProvider>
             <UserSync />
             <ServiceWorkerRegister />

@@ -226,9 +226,11 @@ useVehicles / useFuelRecords
   このとき `recordsLoading` は `false`、`loading` は車両の読み込みだけを表します（未ログイン時はローカルの記録が読まれるので `records` が空とは限らない）。
 - 純粋関数 `scopeKeyOf` / `composeScopeError` / `combineScopeLoading` も同じファイルから export しています（`tests/useVehicleScope.test.ts`）。
 
-画面の共通部品は `components/AppShell.tsx` にあります: `PageHeader`（ロゴまたは戻るリンク・見出し・ナビゲーションリンク・ログインボタン。
+画面の共通部品は `components/AppShell.tsx` にあります: `AppFrame`（ナビゲーション＝スマホの下部タブバー / PC のサイドバーと本文の器。
+`components/AppNav.tsx`・`components/ScanActionMenu.tsx`）、`PageHeader`（見出しと右側の車両チップ。スマホではログインボタンも。
 ログイン後の戻り先は `usePathname()`）、`HookErrorLine`（`error` の赤い行）、`ReadOnlyCaption`（「閲覧専用（クラウド接続待ち）」）。
-車両セレクターの読み込み中スケルトンは `VehicleSelector` の `loading` プロップで表示します。
+車両の切り替えは `VehicleSelector`（チップ＋メニュー、最後の項目「車両を管理」）で、読み込み中スケルトンは `loading` プロップで表示します。
+見た目の規則と部品は [design-system.md](./design-system.md)。
 
 ### `error` / `outage` / `readOnly`（両フック共通）
 
@@ -272,7 +274,7 @@ useVehicles / useFuelRecords
 | `useScanPipeline({ isSignedIn, toast, confirm })`（`lib/scan/`） | スキャンの状態（`loading` / `loadingStep` / `preview` / `sharedPending` / `scanResult`、同期判定の `isScanning()`）と処理（`processImageFile(file, { confirmBeforeAnalyze })` / `processSharedImage(token)` / `startSharedAnalysis` / `clearPreview` / `discardResult` / `abort`）。圧縮 → `requestAnalyze` → 確認シート。HTTP エラーの文言は `lib/analyze.ts` の `analyzeErrorMessage(status, body, { isSignedIn, retryAfter })`（401 は未ログイン / ログイン中で文言を分ける、422、429 は Retry-After の秒数、504、それ以外は requestId 付き）。アンマウント時は解析リクエストを中断する |
 | `useImageDropPaste({ onImage, isBusy, toast })`（`lib/scan/`） | ドロップ先に付ける `dropZoneProps` と `isDragging`、window 全体のペースト（入力欄にフォーカスがあるときは無視）。最新のハンドラは `useEffectEvent` で参照する |
 | `useRecordEditing` | 手動入力・最新記録の編集。確認シートの保存も `addWithDuplicateCheck` を使う |
-| `ShortcutActionHandler`（`useShortcutActions`） | `?action=scan` / `manual` / `shared` / `share-unavailable` を 1 ページロードにつき 1 回だけ実行し、`router.replace("/app")` で消す。実行条件は `shortcutReadinessOf`、判定は `resolveShortcutAction`。`useSearchParams` を使うので `<Suspense>` の内側に置き、/app の静的プリレンダーを保つ |
+| `ShortcutActionHandler`（`useShortcutActions`） | `?action=scan` / `album` / `manual` / `shared` / `share-unavailable` を `action` が付くたびに 1 回だけ実行し、`router.replace("/app")` で消す（/app を開いたままスキャンメニューから遷移しても実行する。`album` は capture なしのファイル選択）。実行条件は `shortcutReadinessOf`、判定は `resolveShortcutAction`。`useSearchParams` を使うので `<Suspense>` の内側に置き、/app の静的プリレンダーを保つ |
 | `ScanPanel` | 左カラム。カメラボタン・アルバム / 手動入力・ヒント・プレビュー（次を撮る / 読み取る / 手動で入力）・ドロップ先と、非表示のファイル入力。ショートカットのスキャンは `ref` の `openCamera()` |
 | `LatestRecordCard` / `ManualEntryCard` / `RecordCardSkeleton` | 右カラムの最新記録カード（表示・その場で編集・記録なしの案内。明細は `components/RecordStats.tsx`）/ 手動入力カード / 読み込み中 |
 | `HistoryLinkCard` | 履歴画面へのリンク |
