@@ -28,9 +28,9 @@ CI は Node 22 で lint → typecheck → test → build を実行する（[docs
 
 | パス | 役割 |
 |---|---|
-| `app/` | 画面（`page.tsx` ランディング、`app/` メイン、`history/`、`stats/`、`settings/` バックアップと復元）と API（`api/analyze`、`api/keepalive`） |
-| `components/` | 確認シート、入力フォーム、車両管理、`Toast`（`useToast()`）、`UserSync`、`SupabaseStatusBanner` |
-| `lib/` | 型（`types`）・日付（`dates`）・純粋ロジック（`analyze` / `calculations` / `fillChain` / `stats` / `recordFilters` / `vehicleSelection`）、イベント（`events`）、フック、移行、Supabase クライアントと障害検知 |
+| `app/` | 画面（`page.tsx` ランディング、`app/` ホーム、`history/`、`stats/`、`settings/` バックアップと復元）と API（`api/analyze`、`api/keepalive`） |
+| `components/` | 画面の枠とナビ（`AppShell` / `AppNav` / `ScanActionMenu`）、デザインシステムの部品（`ui/`）、確認シート、入力フォーム、車両管理、`Toast`（`useToast()`）、`UserSync`、`SupabaseStatusBanner` |
+| `lib/` | 型（`types`）・日付（`dates`）・純粋ロジック（`analyze` / `calculations` / `fillChain` / `stats` / `recordFilters` / `vehicleSelection`、画面用の `home/` / `history/`）、イベント（`events`）、フック、移行、Supabase クライアントと障害検知 |
 | `lib/data/` | データアダプタ層。`RecordStore` / `VehicleStore`（`types.ts`）を localStorage（`localStore.ts`）と Supabase（`cloudStore.ts`）が実装し、`withOutageHandling` / `withCache`（`withOutage.ts`）が障害・閲覧専用・キャッシュを、`cloudBootstrap.ts` が移行 → 既定車両の確保を受け持つ。フックは `useDataStores()` でストアを選ぶだけ |
 | `lib/fillChain.ts` | 給油の連鎖計算 `applyFillChain`（オドメーター差分・部分給油の合算・記録漏れ）と新しい列の既定値補完。純粋関数 |
 | `lib/backup.ts` | バックアップ JSON の書き出し・検証（`parseBackup`）・復元計画（`planRestore`）。純粋関数 |
@@ -77,5 +77,6 @@ CI は Node 22 で lint → typecheck → test → build を実行する（[docs
 | `/api/analyze` の仕様とエラーコード | [docs/api-analyze.md](./docs/api-analyze.md) |
 | デプロイ・keepalive・CI・トラブルシューティング | [docs/operations.md](./docs/operations.md) |
 | オドメーターモード・部分給油・燃料種別・メモの設計と連鎖計算の規則 | [docs/design-fill-chain.md](./docs/design-fill-chain.md) |
+| UI のトークン・部品（`components/ui`）・ナビゲーション | [docs/design-system.md](./docs/design-system.md) |
 | マイグレーション適用・RLS 監査 | [supabase/README.md](./supabase/README.md) |
 | 今後の候補・既知の制約 | [docs/roadmap.md](./docs/roadmap.md) |

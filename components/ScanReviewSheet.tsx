@@ -7,9 +7,37 @@ import { useRecordForm, visibleScanWarnings, type DraftField } from "@/lib/useRe
 import { distanceModeOf } from "@/lib/fillChain";
 import { todayLocalISO } from "@/lib/dates";
 import type { FuelRecord, RecordInput, Vehicle } from "@/lib/types";
-import { formatPricePerUnit } from "@/lib/calculations";
+import { formatKm } from "@/lib/format";
 import EditFuelRecordForm from "./EditFuelRecordForm";
 import Modal from "./Modal";
+
+/** 読み取った値の 1 項目（大きな等幅数字）。警告があるときは「要確認」バッジを付ける */
+function BigValue({
+  label,
+  value,
+  unit,
+  tone = "default",
+  warn = false,
+}: {
+  label: string;
+  value: string;
+  unit?: string;
+  tone?: "default" | "money";
+  warn?: boolean;
+}) {
+  return (
+    <div className="min-w-0">
+      <p className="flex flex-wrap items-center gap-1 text-xs text-sub">
+        {label}
+        {warn && <span className="rounded bg-warn-bg px-1.5 py-0.5 text-[10px] font-bold text-warn">要確認</span>}
+      </p>
+      <p className="mt-1 truncate">
+        <span className={`num text-xl font-bold ${tone === "money" ? "text-money" : "text-ink"}`}>{value}</span>
+        {unit && <span className="ml-0.5 text-[13px] text-sub">{unit}</span>}
+      </p>
+    </div>
+  );
+}
 
 /** この値未満の確信度は「要確認」として強調する */
 const LOW_CONFIDENCE = 0.6;
@@ -107,7 +135,18 @@ export default function ScanReviewSheet({
     }
   };
 
-  const { metrics } = form;
+  // 警告が指している項目に「要確認」を付ける（燃費が高すぎる = 区間距離か給油量の読み違い）
+  const warnedFields = new Set<"distance" | "fuel">();
+  for (const w of warnings) {
+    if (w.code === "FUEL_TOO_LARGE") warnedFields.add("fuel");
+    else if (w.code === "DISTANCE_TOO_LARGE") warnedFields.add("distance");
+    else {
+      warnedFields.add("distance");
+      warnedFields.add("fuel");
+    }
+  }
+  const { parsed } = form;
+  const distanceValue = mode === "odometer" ? parsed.odometer : parsed.total_distance;
 
   return (
     // フォーカストラップ・Escape・背景クリック・本文スクロールのロックは Modal に任せる（保存中は閉じない）
@@ -120,9 +159,12 @@ export default function ScanReviewSheet({
       lockBodyScroll
       initialFocusRef={firstFieldRef}
       backdropClassName="fixed inset-0 z-[90] flex items-end justify-center bg-black/70 backdrop-blur-sm sm:items-center sm:p-4"
-      panelClassName="w-full max-w-lg max-h-[92dvh] sm:max-h-[92vh] overflow-y-auto rounded-t-3xl sm:rounded-3xl border border-gray-700 bg-gray-900 shadow-2xl"
+      panelClassName="w-full max-w-lg max-h-[92dvh] sm:max-h-[92vh] overflow-y-auto rounded-t-hero sm:rounded-hero border border-line bg-ground shadow-2xl shadow-black/50"
     >
-      <div className="p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] sm:pb-5 space-y-4">
+      <div className="space-y-4 p-4 pb-[max(1rem,env(safe-area-inset-bottom))] sm:p-5">
+        {/* シートのつまみ（スマホ） */}
+        <div className="mx-auto -mt-1 h-1 w-10 rounded-full bg-border sm:hidden" aria-hidden="true" />
+
         {/* ヘッダー */}
         <div className="flex items-start gap-3">
           {imageSrc ? (
@@ -130,45 +172,63 @@ export default function ScanReviewSheet({
             <img
               src={imageSrc}
               alt="解析した画像のサムネイル"
-              className="w-16 h-16 rounded-xl object-cover border border-gray-700 flex-shrink-0"
+              className="h-16 w-16 shrink-0 rounded-xl border border-border object-cover"
               draggable={false}
             />
           ) : (
-            <div className="w-16 h-16 rounded-xl bg-gray-800 flex items-center justify-center flex-shrink-0">
-              <ScanLine className="w-6 h-6 text-gray-500" aria-hidden="true" />
+            <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-xl bg-surface">
+              <ScanLine className="h-6 w-6 text-faint" aria-hidden="true" />
             </div>
           )}
           <div className="min-w-0 flex-1">
-            <h2 id={titleId} className="text-base font-bold text-white">
+            <h2 id={titleId} className="text-xl font-bold text-ink">
               読み取り結果の確認
             </h2>
-            <p className="text-xs text-gray-400 mt-0.5">
+            <p className="mt-0.5 text-xs text-sub">
               内容を確認・修正してから保存してください。
               {Object.keys(highlightFields).length > 0 && (
                 <>
-                  <span className="text-amber-400 font-semibold">「要確認」</span>
+                  <span className="font-semibold text-warn">「要確認」</span>
                   の項目は読み取れなかったか、確信度が低い項目です。
                 </>
               )}
             </p>
             {mode === "trip" && result.odometer != null && (
-              <p className="text-[11px] text-gray-500 mt-1 font-mono">
-                ODO: {result.odometer.toLocaleString()} km（参考）
+              <p className="mt-1 text-[11px] text-sub">
+                ODO: <span className="num">{result.odometer.toLocaleString()}</span> km（参考）
               </p>
             )}
           </div>
         </div>
 
+        {/* 読み取った値（編集すると追従する） */}
+        <div className="grid grid-cols-3 gap-2 rounded-2xl bg-surface p-4" aria-live="polite">
+          <BigValue
+            label={mode === "odometer" ? "オドメーター" : "区間距離"}
+            value={distanceValue != null ? formatKm(distanceValue) : "--"}
+            unit="km"
+            warn={warnedFields.has("distance")}
+          />
+          <BigValue
+            label="給油量"
+            value={parsed.fuel_amount != null ? formatKm(parsed.fuel_amount) : "--"}
+            unit="L"
+            warn={warnedFields.has("fuel")}
+          />
+          <BigValue
+            label="支払総額"
+            value={parsed.total_cost != null ? `¥${parsed.total_cost.toLocaleString("ja-JP")}` : "--"}
+            tone="money"
+          />
+        </div>
+
         {/* 妥当性チェックの注意 */}
         {warnings.length > 0 && (
-          <div
-            role="alert"
-            className="rounded-xl border border-amber-500/50 bg-amber-500/10 p-3 text-xs text-amber-200"
-          >
-            <p className="flex items-center gap-1.5 font-bold text-amber-300 mb-1">
-              <AlertTriangle className="w-4 h-4" aria-hidden="true" /> 確認が必要な項目があります
+          <div role="alert" className="rounded-2xl border border-warn/40 bg-warn-bg p-3 text-xs text-warn">
+            <p className="mb-1 flex items-center gap-1.5 font-bold">
+              <AlertTriangle className="h-4 w-4" aria-hidden="true" /> 確認が必要な項目があります
             </p>
-            <ul className="list-disc pl-5 space-y-1">
+            <ul className="list-disc space-y-1 pl-5">
               {warnings.map((w, i) => (
                 <li key={`${w.code}-${i}`}>{w.message}</li>
               ))}
@@ -176,27 +236,8 @@ export default function ScanReviewSheet({
           </div>
         )}
 
-        {/* ライブ指標 */}
-        <div className="grid grid-cols-2 gap-3 rounded-xl bg-black/30 border border-white/5 p-3" aria-live="polite">
-          <div>
-            <p className="text-[10px] text-gray-500 uppercase">燃費</p>
-            <p className="font-mono text-xl font-bold text-white">
-              {metrics.fuel_efficiency != null ? metrics.fuel_efficiency.toFixed(2) : "--.--"}
-              <span className="ml-1 text-xs text-blue-400">km/L</span>
-            </p>
-            {form.efficiencyNote && <p className="text-[10px] text-amber-300/90">{form.efficiencyNote}</p>}
-          </div>
-          <div>
-            <p className="text-[10px] text-gray-500 uppercase">単価</p>
-            <p className="font-mono text-xl font-bold text-white">
-              {form.pricePerUnitDisplay != null ? `¥${formatPricePerUnit(form.pricePerUnitDisplay)}` : "---"}
-              <span className="ml-1 text-xs text-gray-400">/L</span>
-            </p>
-          </div>
-        </div>
-
         {readOnly && (
-          <p className="text-[11px] text-amber-400" role="status">
+          <p className="text-xs text-warn" role="status">
             閲覧専用（クラウド接続待ち）のため、現在は保存できません。
           </p>
         )}

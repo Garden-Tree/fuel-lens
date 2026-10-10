@@ -1,26 +1,29 @@
 import { describe, expect, it } from "vitest";
-import { resolveShortcutAction, shortcutReadinessOf, type ShortcutReadiness } from "@/lib/scan/shortcuts";
+import { SHORTCUT_ACTIONS, resolveShortcutAction, shortcutReadinessOf, type ShortcutReadiness } from "@/lib/scan/shortcuts";
 
 const ALL_READY: ShortcutReadiness = { scan: true, manual: true, shared: true, notice: true };
 const NONE_READY: ShortcutReadiness = { scan: false, manual: false, shared: false, notice: false };
 
 describe("resolveShortcutAction", () => {
-  it.each(["scan", "manual", "shared", "share-unavailable"] as const)("%s は準備ができていれば実行する", (action) => {
+  it.each(SHORTCUT_ACTIONS)("%s は準備ができていれば実行する", (action) => {
     expect(resolveShortcutAction(action, ALL_READY)).toBe(action);
   });
 
-  it.each(["scan", "manual", "shared", "share-unavailable"] as const)("%s は準備ができるまで待つ", (action) => {
+  it.each(SHORTCUT_ACTIONS)("%s は準備ができるまで待つ", (action) => {
     expect(resolveShortcutAction(action, NONE_READY)).toBe("wait");
   });
 
   it("アクションごとに自分の条件だけを見る", () => {
     expect(resolveShortcutAction("scan", { ...NONE_READY, scan: true })).toBe("scan");
+    // アルバムからの選択は撮影と同じ条件
+    expect(resolveShortcutAction("album", { ...NONE_READY, scan: true })).toBe("album");
+    expect(resolveShortcutAction("album", { ...ALL_READY, scan: false })).toBe("wait");
     expect(resolveShortcutAction("manual", { ...ALL_READY, manual: false })).toBe("wait");
     expect(resolveShortcutAction("shared", { ...ALL_READY, shared: false })).toBe("wait");
     expect(resolveShortcutAction("share-unavailable", { ...NONE_READY, notice: true })).toBe("share-unavailable");
   });
 
-  it.each([null, undefined, "", "unknown", "SCAN"])("対応していない値（%s）は何もしない", (action) => {
+  it.each([null, undefined, "", "unknown", "SCAN", "ALBUM"])("対応していない値（%s）は何もしない", (action) => {
     expect(resolveShortcutAction(action, ALL_READY)).toBeNull();
   });
 });

@@ -1,181 +1,201 @@
 "use client";
 
 import { useState } from "react";
-import {
-  Fuel,
-  Camera,
-  Calculator,
-  BarChart3,
-  History,
-  ChevronRight,
-  Car,
-  Calendar,
-  MapPin,
-  ImageIcon,
-  Plus,
-} from "lucide-react";
+import { Camera, BarChart3, House, History, Settings } from "lucide-react";
+import { BrandMark, GroupedList, ListRow, Section, ValueRow, Chip } from "@/components/ui";
 
 type DemoVehicle = "prius" | "aqua";
 
+type DemoData = {
+  name: string;
+  efficiency: number;
+  average: number;
+  /** 前回比の差（km/L） */
+  diff: number;
+  cost: string;
+  amount: string;
+  unitPrice: string;
+  recent: { station: string; sub: string; efficiency: string };
+};
+
+const DEMO: Record<DemoVehicle, DemoData> = {
+  prius: {
+    name: "プリウス",
+    efficiency: 22.45,
+    average: 20.8,
+    diff: 1.62,
+    cost: "¥5,480",
+    amount: "35.40",
+    unitPrice: "¥154.8",
+    recent: { station: "ENEOS 新宿SS", sub: "5月21日・レギュラー・¥5,480", efficiency: "22.45" },
+  },
+  aqua: {
+    name: "アクア",
+    efficiency: 19.8,
+    average: 18.2,
+    diff: 0.95,
+    cost: "¥4,120",
+    amount: "28.50",
+    unitPrice: "¥144.6",
+    recent: { station: "出光 用賀SS", sub: "5月19日・レギュラー・¥4,120", efficiency: "19.80" },
+  },
+};
+
+/** メーターの目盛り範囲（km/L） */
+const GAUGE_MIN = 10;
+const GAUGE_MAX = 25;
+const CX = 150;
+const CY = 130;
+const R = 110;
+
+/** 値（km/L）を半円上の座標にする。左端が最小、右端が最大 */
+function gaugePoint(value: number, radius: number) {
+  const f = Math.min(1, Math.max(0, (value - GAUGE_MIN) / (GAUGE_MAX - GAUGE_MIN)));
+  return { x: CX - radius * Math.cos(Math.PI * f), y: CY - radius * Math.sin(Math.PI * f) };
+}
+
+/** 燃費メーター（D デザインのホーム画面のヒーローを静的に再現） */
+function EfficiencyGauge({ efficiency, average }: { efficiency: number; average: number }) {
+  const end = gaugePoint(efficiency, R);
+  const tickIn = gaugePoint(average, R - 12);
+  const tickOut = gaugePoint(average, R + 12);
+  const label = gaugePoint(average, R + 26);
+  return (
+    <svg
+      role="img"
+      aria-label={`燃費メーター。${efficiency.toFixed(2)} km/L、平均${average.toFixed(2)}`}
+      viewBox="0 0 300 150"
+      className="h-auto w-full max-w-[280px]"
+    >
+      <path d={`M${CX - R},${CY} A${R},${R} 0 0 1 ${CX + R},${CY}`} fill="none" stroke="var(--color-line)" strokeWidth="14" strokeLinecap="round" />
+      <path
+        d={`M${CX - R},${CY} A${R},${R} 0 0 1 ${end.x.toFixed(1)},${end.y.toFixed(1)}`}
+        fill="none"
+        stroke="var(--color-accent)"
+        strokeWidth="14"
+        strokeLinecap="round"
+      />
+      <line
+        x1={tickIn.x.toFixed(1)}
+        y1={tickIn.y.toFixed(1)}
+        x2={tickOut.x.toFixed(1)}
+        y2={tickOut.y.toFixed(1)}
+        stroke="var(--color-ink)"
+        strokeWidth="2.5"
+        strokeLinecap="round"
+      />
+      <g className="num" fontSize="11" fill="var(--color-sub)">
+        <text x="32" y="148">{GAUGE_MIN}</text>
+        <text x="252" y="148">{GAUGE_MAX}</text>
+      </g>
+      <text x={label.x.toFixed(1)} y={(label.y + 4).toFixed(1)} textAnchor="middle" fontSize="11" fill="var(--color-sub)">
+        平均
+      </text>
+      <text x="150" y="112" textAnchor="middle" className="num" fontSize="52" fontWeight="700" fill="var(--color-ink)">
+        {efficiency.toFixed(2)}
+      </text>
+      <text x="150" y="136" textAnchor="middle" fontSize="13" fill="var(--color-sub)">
+        km/L
+      </text>
+    </svg>
+  );
+}
+
+const TAB_ITEMS = [
+  { label: "ホーム", Icon: House, active: true },
+  { label: "履歴", Icon: History, active: false },
+  null,
+  { label: "統計", Icon: BarChart3, active: false },
+  { label: "設定", Icon: Settings, active: false },
+] as const;
+
 /**
- * ヒーローセクション右側の「スマホ画面モック」。
- * 車両タブの切り替えだけがインタラクティブなので、この部分だけをクライアントコンポーネントにしている。
+ * ヒーローセクション右側の「スマホ画面モック」。実アプリの新しいホーム（燃費メーター・グループリスト・下部タブバー）を静的に再現する。
+ * 車両の切り替えだけがインタラクティブなので、この部分だけをクライアントコンポーネントにしている。
  */
 export default function HeroPhonePreview() {
   const [selectedVehicle, setSelectedVehicle] = useState<DemoVehicle>("prius");
-  const vehicleName = selectedVehicle === "prius" ? "プリウス" : "アクア";
+  const data = DEMO[selectedVehicle];
+  const nextVehicle: DemoVehicle = selectedVehicle === "prius" ? "aqua" : "prius";
 
   return (
-    <div className="w-full max-w-[370px] bg-gray-950 border border-gray-800 rounded-[44px] p-3 shadow-2xl relative ring-8 ring-gray-950/80 overflow-hidden">
+    <div className="relative w-full max-w-[370px] overflow-hidden rounded-[44px] border border-border bg-ground p-3 shadow-2xl shadow-black/50">
       {/* スピーカーとインカメラのノッチ */}
-      <div className="absolute top-3 left-1/2 -translate-x-1/2 w-32 h-4 bg-black rounded-full z-20 flex items-center justify-center">
-        <div className="w-2.5 h-2.5 rounded-full bg-gray-800 ml-auto mr-4" />
+      <div className="absolute left-1/2 top-3 z-20 flex h-4 w-32 -translate-x-1/2 items-center justify-center rounded-full bg-black">
+        <div className="ml-auto mr-4 h-2.5 w-2.5 rounded-full bg-surface-2" />
       </div>
 
-      {/* アプリ画面の実コンポーネント再現UI */}
-      <div className="w-full h-full bg-gradient-to-b from-gray-900 to-black rounded-[36px] p-4 pt-8 flex flex-col justify-between text-xs overflow-hidden select-none font-sans text-white">
-        {/* アプリヘッダーコンポーネント */}
-        <div className="flex justify-between items-center py-2 mb-2 border-b border-white/5">
-          <div className="flex items-center gap-1.5">
-            <div className="w-6 h-6 bg-gradient-to-tr from-blue-600 to-cyan-400 rounded-md flex items-center justify-center shadow-inner">
-              <Fuel className="text-white w-3.5 h-3.5 fill-current" />
-            </div>
-            <span className="font-extrabold text-sm tracking-tight text-white">FuelLens</span>
+      {/* アプリ画面（ホーム）の再現 */}
+      <div className="flex select-none flex-col overflow-hidden rounded-[34px] bg-ground text-ink">
+        <div className="flex flex-col gap-2.5 px-4 pb-4 pt-9">
+          <div className="flex items-center justify-between">
+            <BrandMark className="text-lg" />
+            <Chip showChevron aria-label={`車両を切り替える（デモ）。現在: ${data.name}`} onClick={() => setSelectedVehicle(nextVehicle)} className="rounded-xl">
+              {data.name}
+            </Chip>
           </div>
-          <div className="flex items-center gap-2">
-            <div className="p-1.5 bg-gray-800/50 rounded-full border border-gray-700/50 text-gray-400">
-              <BarChart3 className="w-3.5 h-3.5" />
+
+          {/* ヒーロー: 前回の燃費 */}
+          <section className="flex flex-col items-center gap-1 rounded-hero bg-surface px-4 pb-4 pt-3.5">
+            <div className="flex w-full justify-between text-[13px] text-sub">
+              <span>前回の燃費</span>
+              <span>5/21 {data.recent.station.split(" ")[0]}</span>
             </div>
-            <div className="p-1.5 bg-gray-800/50 rounded-full border border-gray-700/50 text-gray-400">
-              <History className="w-3.5 h-3.5" />
+            <EfficiencyGauge efficiency={data.efficiency} average={data.average} />
+            <div className="flex gap-2 text-[13px]">
+              <span className="rounded-lg bg-up-bg px-2.5 py-1 font-bold text-up">
+                ▲ <span className="num">{data.diff.toFixed(2)}</span> 前回比
+              </span>
+              <span className="rounded-lg bg-surface-2 px-2.5 py-1 text-[#B8C3CF]">
+                平均 <span className="num">{data.average.toFixed(2)}</span>
+              </span>
             </div>
-          </div>
+          </section>
+
+          <Section title="5月">
+            <GroupedList>
+              <ValueRow label="給油代" value={data.cost} tone="money" />
+              <ValueRow label="給油量" value={data.amount} unit=" L・1回" />
+              <ValueRow label="単価" value={data.unitPrice} unit="/L" />
+            </GroupedList>
+          </Section>
+
+          <Section title="最近の記録">
+            <GroupedList>
+              <ListRow
+                title={data.recent.station}
+                subtitle={data.recent.sub}
+                trailing={<span className="num text-lg font-bold">{data.recent.efficiency}</span>}
+                showChevron
+              />
+            </GroupedList>
+          </Section>
         </div>
 
-        {/* 車両セレクターコンポーネント (VehicleSelector.tsx) の再現 */}
-        <div className="w-full mb-4">
-          <div className="flex items-center gap-2">
-            <div className="flex items-center gap-1 p-1 bg-gray-950/40 border border-gray-800/80 rounded-xl w-full">
-              <button
-                type="button"
-                onClick={() => setSelectedVehicle("prius")}
-                className={`flex items-center gap-1 py-1 px-3 rounded-lg font-bold text-[10px] transition-all duration-300 flex-1 justify-center ${
-                  selectedVehicle === "prius"
-                    ? "bg-gradient-to-r from-blue-600 to-cyan-500 text-white shadow-md shadow-blue-950"
-                    : "text-gray-400 hover:text-white"
+        {/* 下部タブバー（中央がスキャンボタン） */}
+        <div
+          aria-hidden="true"
+          className="grid h-[72px] grid-cols-5 items-center border-t border-line bg-ground px-2 pb-3 pt-1.5"
+        >
+          {TAB_ITEMS.map((item) =>
+            item === null ? (
+              <div key="scan" className="flex justify-center">
+                <span className="-mt-6 flex h-14 w-14 items-center justify-center rounded-full border-4 border-ground bg-scan-gradient">
+                  <Camera className="h-6 w-6 text-white" />
+                </span>
+              </div>
+            ) : (
+              <span
+                key={item.label}
+                className={`flex flex-col items-center gap-0.5 text-[11px] ${
+                  item.active ? "font-bold text-accent" : "text-sub"
                 }`}
               >
-                <Car className="w-3 h-3 flex-shrink-0" />
-                <span>プリウス</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setSelectedVehicle("aqua")}
-                className={`flex items-center gap-1 py-1 px-3 rounded-lg font-bold text-[10px] transition-all duration-300 flex-1 justify-center ${
-                  selectedVehicle === "aqua"
-                    ? "bg-gradient-to-r from-blue-600 to-cyan-500 text-white shadow-md shadow-blue-950"
-                    : "text-gray-400 hover:text-white"
-                }`}
-              >
-                <Car className="w-3 h-3 flex-shrink-0" />
-                <span>アクア</span>
-              </button>
-              <button
-                type="button"
-                aria-label="車両を追加（デモ）"
-                className="flex items-center justify-center p-1 rounded-lg text-gray-500 border border-dashed border-gray-800"
-              >
-                <Plus className="w-3 h-3" />
-              </button>
-            </div>
-          </div>
-        </div>
-
-        {/* 2カラムレイアウト（縦積み） */}
-        <div className="space-y-4">
-          {/* アクションエリア (app/app/page.tsx のスキャンカード) */}
-          <div className="relative overflow-hidden bg-gray-800/40 backdrop-blur-xl border border-gray-700/50 rounded-2xl shadow-xl">
-            <div className="p-4 flex flex-col items-center gap-3">
-              <div className="text-center space-y-0.5">
-                <h2 className="text-sm font-semibold text-white">スキャンして記録</h2>
-                <p className="text-[10px] text-blue-400 font-semibold">対象: {vehicleName}</p>
-                <p className="text-[10px] text-gray-400">レシートとトリップメーターを1枚に収めて撮影</p>
-              </div>
-
-              <div className="w-16 h-16 rounded-full bg-gradient-to-b from-blue-500 to-blue-700 shadow-md flex items-center justify-center border-4 border-blue-400/30">
-                <Camera className="w-7 h-7 text-white fill-blue-500" />
-              </div>
-
-              <div className="flex items-center gap-1 text-[10px] text-gray-500">
-                <ImageIcon className="w-3.5 h-3.5" />
-                <span>アルバムから選択</span>
-              </div>
-            </div>
-          </div>
-
-          {/* 最新リザルトカード (app/app/page.tsx のLatest Recordカード) */}
-          <div>
-            <div className="flex items-center justify-between px-1 mb-1">
-              <h3 className="text-[9px] font-bold text-gray-400 uppercase tracking-wider flex items-center gap-1">
-                <Calculator className="w-3 h-3" /> Latest Record
-              </h3>
-            </div>
-
-            <div className="relative overflow-hidden rounded-2xl border bg-gradient-to-br from-gray-800 to-gray-900 border-gray-700 p-4">
-              <div className="flex justify-between items-start mb-3">
-                <div>
-                  <p className="text-[9px] text-gray-500 mb-0.5 flex items-center gap-1">
-                    <Calendar className="w-2.5 h-2.5" /> 2026-05-21
-                  </p>
-                  <div className="flex items-baseline gap-0.5">
-                    <span className="text-2xl font-bold text-white font-mono tracking-tighter">
-                      {selectedVehicle === "prius" ? "22.45" : "19.80"}
-                    </span>
-                    <span className="text-[10px] font-bold text-blue-500">km/L</span>
-                  </div>
-                </div>
-                <div className="text-right">
-                  <p className="text-lg font-bold text-green-400 font-mono">
-                    {selectedVehicle === "prius" ? "¥5,480" : "¥4,120"}
-                  </p>
-                  <p className="text-[9px] text-gray-500">Total Cost</p>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-2 bg-black/20 rounded-lg p-2.5 border border-white/5 text-[10px]">
-                <div>
-                  <p className="text-[8px] text-gray-400 uppercase">給油量</p>
-                  <p className="font-mono font-bold text-blue-200">
-                    {selectedVehicle === "prius" ? "35.40 L" : "28.50 L"}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-[8px] text-gray-400 uppercase">走行距離</p>
-                  <p className="font-mono font-bold text-gray-200">
-                    {selectedVehicle === "prius" ? "795 km" : "564 km"}
-                  </p>
-                </div>
-                <div className="col-span-2 flex items-center gap-1.5 pt-1.5 border-t border-white/5 text-[9px]">
-                  <MapPin className="w-3 h-3 text-gray-500" />
-                  <p className="text-gray-400 truncate">ENEOS 新宿SS</p>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* 履歴へのリンクボタン (app/app/page.tsx の下部リンク) */}
-          <div className="group flex items-center justify-between w-full p-3 rounded-xl bg-gray-900 border border-gray-800 text-[10px]">
-            <div className="flex items-center gap-2">
-              <div className="p-1.5 bg-gray-800 rounded-lg">
-                <History className="w-4 h-4 text-gray-400" />
-              </div>
-              <div className="text-left">
-                <p className="font-bold text-gray-200">過去の記録を見る</p>
-                <p className="text-[9px] text-gray-500">対象: {vehicleName}</p>
-              </div>
-            </div>
-            <ChevronRight className="w-4 h-4 text-gray-500" />
-          </div>
+                <item.Icon className="h-6 w-6" />
+                {item.label}
+              </span>
+            ),
+          )}
         </div>
       </div>
     </div>

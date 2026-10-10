@@ -1,11 +1,13 @@
 "use client";
 
-import { Car, Bike, Edit2, Trash2, Check, Loader2 } from "lucide-react";
+import { Car, Bike, Pencil, Trash2, Check, Loader2 } from "lucide-react";
 import { distanceModeOf, isFuelType } from "@/lib/fillChain";
 import { FUEL_TYPE_LABELS, type Vehicle } from "@/lib/types";
 import type { VehicleDraft } from "@/lib/useVehicleDraft";
+import { IconButton, ListRow } from "@/components/ui";
 import VehicleSettingsFields, {
   DISTANCE_MODE_SHORT_LABELS,
+  VEHICLE_ROW_INPUT,
   VehicleTypeToggle,
   modeSwitchNote,
 } from "./VehicleSettingsFields";
@@ -43,7 +45,7 @@ interface VehicleRowProps {
   onDelete: (vehicle: Vehicle) => void;
 }
 
-/** 車両一覧の 1 行。通常表示と、その場での編集表示を切り替える */
+/** 車両一覧の 1 行（GroupedList の子）。通常表示と、その場での編集表示を切り替える */
 export default function VehicleRow({
   vehicle: v,
   vehicleCount,
@@ -59,115 +61,119 @@ export default function VehicleRow({
   onDelete,
 }: VehicleRowProps) {
   const isLast = vehicleCount <= 1;
-  return (
-    <div
-      className={`p-3 rounded-2xl border transition-all duration-300 ${
-        isEditing
-          ? "bg-gray-950 border-blue-500/50 shadow-md shadow-blue-950/20"
-          : "bg-gray-950/50 border-gray-800/80 hover:border-gray-700/60"
-      } ${deleting ? "opacity-50" : ""}`}
-    >
-      {isEditing ? (
-        /* 編集表示 */
-        <div className="space-y-3">
-          <div className="flex gap-2">
-            <input
-              type="text"
-              value={draft.name}
-              onChange={(e) => draft.setName(e.target.value)}
-              maxLength={20}
-              required
-              aria-label="車両の名前"
-              disabled={saving}
-              className="flex-1 min-w-0 bg-gray-900 border border-gray-800 rounded-xl px-3 py-2 text-base sm:text-sm text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus:border-blue-500 transition"
-              placeholder="車両の名前"
-            />
-            <VehicleTypeToggle variant="edit" value={draft.type} onChange={draft.setType} />
-          </div>
-          <VehicleSettingsFields
-            idPrefix={`manage-vehicles-edit-${v.id}`}
-            mode={draft.mode}
-            fuelType={draft.fuelType}
-            onModeChange={draft.setMode}
-            onFuelTypeChange={draft.setFuelType}
-            disabled={saving}
-            switchNote={modeSwitchNote(distanceModeOf(v), draft.mode)}
-          />
-          <div className="flex justify-end gap-2 text-xs font-bold pt-1">
-            <button
-              type="button"
-              onClick={onCancelEdit}
-              disabled={saving}
-              className="px-3 py-3 sm:py-1.5 bg-gray-800 hover:bg-gray-700 text-gray-400 rounded-lg transition disabled:opacity-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-400"
-            >
-              キャンセル
-            </button>
-            <button
-              type="button"
-              onClick={() => onSave(v)}
-              disabled={saving || !draft.isValid || readOnly}
-              className="px-3 py-3 sm:py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition flex items-center gap-1 disabled:opacity-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-300"
-            >
-              {saving ? (
-                <Loader2 className="w-3.5 h-3.5 animate-spin" aria-hidden="true" />
-              ) : (
-                <Check className="w-3.5 h-3.5" aria-hidden="true" />
-              )}{" "}
-              保存
-            </button>
-          </div>
-        </div>
-      ) : (
-        /* 通常表示 */
-        <div className="flex items-center justify-between gap-2">
-          {/* 長い車両名でも操作ボタンを押し出さないよう、名前側を縮められるようにする */}
-          <div className="flex items-center gap-3 min-w-0 flex-1">
-            <div
-              className={`p-2 shrink-0 rounded-xl bg-gray-900 border border-gray-800/80 ${v.type === "bike" ? "text-amber-500" : "text-blue-500"}`}
-            >
-              {v.type === "bike" ? (
-                <Bike className="w-4 h-4" aria-hidden="true" />
-              ) : (
-                <Car className="w-4 h-4" aria-hidden="true" />
-              )}
-            </div>
-            <div className="min-w-0">
-              <span className="block text-sm font-semibold text-white truncate">{v.name}</span>
-              <span className="block text-[10px] text-gray-500 truncate">
-                {DISTANCE_MODE_SHORT_LABELS[distanceModeOf(v)]}
-                {isFuelType(v.default_fuel_type) ? `・${FUEL_TYPE_LABELS[v.default_fuel_type]}` : ""}
-              </span>
-            </div>
-          </div>
 
-          <div className="flex items-center gap-0.5 sm:gap-1.5 shrink-0">
-            <button
-              type="button"
+  if (!isEditing) {
+    const subtitle = `${DISTANCE_MODE_SHORT_LABELS[distanceModeOf(v)]}${
+      isFuelType(v.default_fuel_type) ? `・${FUEL_TYPE_LABELS[v.default_fuel_type]}` : ""
+    }`;
+    return (
+      <ListRow
+        className={deleting ? "opacity-50" : ""}
+        leading={
+          <span
+            className={`flex h-9 w-9 items-center justify-center rounded-xl bg-surface-2 ${
+              v.type === "bike" ? "text-warn" : "text-accent"
+            }`}
+          >
+            {v.type === "bike" ? (
+              <Bike className="h-[18px] w-[18px]" aria-hidden="true" />
+            ) : (
+              <Car className="h-[18px] w-[18px]" aria-hidden="true" />
+            )}
+          </span>
+        }
+        title={v.name}
+        subtitle={subtitle}
+        trailing={
+          <>
+            <IconButton
+              variant="ghost"
               onClick={() => onStartEdit(v)}
               disabled={readOnly || deleting}
-              className="p-3 sm:p-1.5 rounded-lg text-gray-500 hover:text-blue-400 hover:bg-gray-900 transition disabled:opacity-30 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
               title="車両名・タイプ・設定を編集"
               aria-label={`「${v.name}」を編集`}
             >
-              <Edit2 className="w-4 h-4" aria-hidden="true" />
-            </button>
-            <button
-              type="button"
+              <Pencil className="h-[18px] w-[18px]" aria-hidden="true" />
+            </IconButton>
+            <IconButton
+              variant="ghost"
               onClick={() => onDelete(v)}
               disabled={isLast || readOnly || deleteLocked}
-              className="p-3 sm:p-1.5 rounded-lg text-gray-500 hover:text-red-500 hover:bg-gray-900 transition disabled:opacity-30 disabled:hover:text-gray-500 disabled:hover:bg-transparent focus:outline-none focus-visible:ring-2 focus-visible:ring-red-400"
               title={isLast ? "最低1台の車両は残す必要があります" : "この車両を削除"}
               aria-label={`「${v.name}」を削除`}
+              className="hover:text-red-400"
             >
               {deleting ? (
-                <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" />
+                <Loader2 className="h-[18px] w-[18px] animate-spin" aria-hidden="true" />
               ) : (
-                <Trash2 className="w-4 h-4" aria-hidden="true" />
+                <Trash2 className="h-[18px] w-[18px]" aria-hidden="true" />
               )}
-            </button>
-          </div>
-        </div>
-      )}
+            </IconButton>
+          </>
+        }
+      />
+    );
+  }
+
+  /* 編集表示（その場で入力する行） */
+  const nameId = `manage-vehicles-edit-${v.id}-name`;
+  return (
+    <div className="bg-surface-2/30">
+      <div className="flex min-h-[52px] items-center gap-3 px-4 py-1.5">
+        <label htmlFor={nameId} className="shrink-0 text-[15px] text-ink">
+          名前
+        </label>
+        <input
+          id={nameId}
+          type="text"
+          value={draft.name}
+          onChange={(e) => draft.setName(e.target.value)}
+          maxLength={20}
+          required
+          aria-label="車両の名前"
+          disabled={saving}
+          placeholder="車両の名前"
+          className={VEHICLE_ROW_INPUT}
+        />
+      </div>
+      <div className="flex min-h-[52px] items-center justify-between gap-3 border-t border-line px-4 py-1.5">
+        <span className="shrink-0 text-[15px] text-ink">タイプ</span>
+        <VehicleTypeToggle value={draft.type} onChange={draft.setType} disabled={saving} className="w-48" />
+      </div>
+      <div className="border-t border-line">
+        <VehicleSettingsFields
+          idPrefix={`manage-vehicles-edit-${v.id}`}
+          mode={draft.mode}
+          fuelType={draft.fuelType}
+          onModeChange={draft.setMode}
+          onFuelTypeChange={draft.setFuelType}
+          disabled={saving}
+          switchNote={modeSwitchNote(distanceModeOf(v), draft.mode)}
+        />
+      </div>
+      <div className="flex justify-end gap-2 border-t border-line px-4 py-3 text-sm font-bold">
+        <button
+          type="button"
+          onClick={onCancelEdit}
+          disabled={saving}
+          className="h-10 rounded-xl border border-border bg-surface px-4 text-ink transition-colors hover:bg-surface-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-50"
+        >
+          キャンセル
+        </button>
+        <button
+          type="button"
+          onClick={() => onSave(v)}
+          disabled={saving || !draft.isValid || readOnly}
+          className="inline-flex h-10 items-center gap-1.5 rounded-xl bg-accent px-5 text-ground transition-colors hover:bg-[#5BB2FF] focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-ground disabled:opacity-40 disabled:hover:bg-accent"
+        >
+          {saving ? (
+            <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+          ) : (
+            <Check className="h-4 w-4" aria-hidden="true" />
+          )}{" "}
+          保存
+        </button>
+      </div>
     </div>
   );
 }

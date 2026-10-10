@@ -2,9 +2,14 @@
 
 import { useState } from "react";
 import { Car, Bike, Settings } from "lucide-react";
+import { Menu, MenuItem } from "./ui/Menu";
 import type { Vehicle, VehicleSettings, VehicleType } from "@/lib/types";
 import ManageVehiclesModal from "./ManageVehiclesModal";
 
+/**
+ * 車両の切り替えチップ「<車両名> ▾」（ヘッダー右側。デザイン D のモックどおり角丸 12px）。押すと車両の一覧（選択中にチェック）と「車両を管理」のメニューを開く。
+ * 「車両を管理」は ManageVehiclesModal を開く。長い車両名は省略記号で切る。
+ */
 interface VehicleSelectorProps {
   vehicles: Vehicle[];
   selectedVehicleId: string;
@@ -15,7 +20,7 @@ interface VehicleSelectorProps {
   /** 閲覧専用（クラウド障害中）。車両の追加・編集・削除を無効化する（切り替えは可能） */
   readOnly?: boolean;
   /**
-   * 車両一覧の読み込み中。true の間はタブの代わりにスケルトンを表示する。
+   * 車両一覧の読み込み中。true の間はチップの代わりにスケルトンを表示する。
    * 読み込みが始まったら開いている「車両を管理」モーダルは閉じる（以前の「スケルトンと差し替えて再マウント」と同じ動作）。
    */
   loading?: boolean;
@@ -31,7 +36,7 @@ export default function VehicleSelector({
   onUpdateVehicle,
   readOnly = false,
   loading = false,
-  className = "w-full mb-6"
+  className = "",
 }: VehicleSelectorProps) {
   const [isModalOpen, setIsModalOpen] = useState(false);
   // 読み込み中はモーダルを描画しないので、開いていたら閉じておく（読み込み後に勝手に開き直さない）。
@@ -42,62 +47,38 @@ export default function VehicleSelector({
 
   if (loading) {
     return (
-      <div className={className}>
-        <div className="flex items-center gap-2 overflow-x-auto pb-2 scrollbar-none -mx-4 px-4 md:mx-0 md:px-0">
-          <div className="flex items-center gap-2 p-1.5 bg-gray-950/40 border border-gray-800/80 rounded-2xl shadow-inner">
-            <div className="w-20 h-8 md:h-[36px] bg-gray-850 rounded-xl animate-pulse" />
-            <div className="w-20 h-8 md:h-[36px] bg-gray-850 rounded-xl animate-pulse" />
-            <div className="w-[34px] h-[34px] bg-gray-850 rounded-xl animate-pulse" />
-          </div>
-        </div>
+      <div className={`flex min-w-0 justify-end ${className}`}>
+        <div className="h-10 w-28 rounded-xl border border-border bg-surface animate-pulse" aria-hidden="true" />
       </div>
     );
   }
 
-  return (
-    <div className={className}>
-      <div className="flex items-center gap-2 overflow-x-auto pb-2 scrollbar-none -mx-4 px-4 md:mx-0 md:px-0">
-        {/* 車両タブグループ */}
-        <div
-          role="tablist"
-          aria-label="車両の切り替え"
-          className="flex items-center gap-2 p-1.5 bg-gray-950/40 backdrop-blur-xl border border-gray-800/80 rounded-2xl shadow-inner"
-        >
-          {vehicles.map(v => {
-            const isSelected = v.id === selectedVehicleId;
-            return (
-              <button
-                key={v.id}
-                type="button"
-                role="tab"
-                aria-selected={isSelected}
-                onClick={() => onSelect(v.id)}
-                className={`flex items-center gap-2 py-2 px-4 min-h-10 rounded-xl font-bold text-xs md:text-sm transition-all duration-300 flex-shrink-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 ${
-                  isSelected
-                    ? "bg-gradient-to-r from-blue-600 to-cyan-500 text-white shadow-lg shadow-blue-950 scale-[1.02]"
-                    : "text-gray-400 hover:text-white hover:bg-gray-900/50"
-                }`}
-              >
-                {v.type === "bike" ? <Bike className="w-4 h-4 flex-shrink-0" aria-hidden="true" /> : <Car className="w-4 h-4 flex-shrink-0" aria-hidden="true" />}
-                <span className="truncate max-w-[120px] md:max-w-[180px]">{v.name}</span>
-              </button>
-            );
-          })}
+  const selected = vehicles.find(v => v.id === selectedVehicleId);
+  const selectedName = selected?.name ?? "車両";
 
-          {/* 車両管理ボタン */}
-          <button
-            type="button"
-            onClick={() => setIsModalOpen(true)}
-            className="flex items-center justify-center p-2 min-w-10 min-h-10 rounded-xl text-gray-500 hover:text-blue-400 hover:bg-gray-900/50 transition border border-dashed border-gray-800 hover:border-blue-500/50 flex-shrink-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
-            title="車両を管理"
-            aria-label="車両を管理"
-            aria-haspopup="dialog"
-            aria-expanded={isModalOpen}
+  return (
+    <div className={`flex min-w-0 justify-end ${className}`}>
+      <Menu
+        label="車両の切り替え"
+        trigger={selectedName}
+        triggerAriaLabel={`車両: ${selectedName}`}
+        triggerClassName="max-w-[min(240px,52vw)] rounded-xl"
+        align="end"
+      >
+        {vehicles.map(v => (
+          <MenuItem
+            key={v.id}
+            checked={v.id === selectedVehicleId}
+            onSelect={() => onSelect(v.id)}
+            icon={v.type === "bike" ? <Bike className="h-4 w-4" aria-hidden="true" /> : <Car className="h-4 w-4" aria-hidden="true" />}
           >
-            <Settings className="w-4 h-4" aria-hidden="true" />
-          </button>
-        </div>
-      </div>
+            {v.name}
+          </MenuItem>
+        ))}
+        <MenuItem separated onSelect={() => setIsModalOpen(true)} icon={<Settings className="h-4 w-4" aria-hidden="true" />}>
+          車両を管理
+        </MenuItem>
+      </Menu>
 
       {/* 車両管理モーダル */}
       <ManageVehiclesModal

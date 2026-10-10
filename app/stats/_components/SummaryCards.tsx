@@ -1,50 +1,87 @@
-import { formatPricePerUnit } from "@/lib/calculations";
-import type { StatsSummary } from "@/lib/stats";
+import type { ReactNode } from "react";
 
-/** サマリーカード（平均燃費・累計給油額・平均単価・走行コスト）。記録が1件以上あるときだけ表示する */
-export default function SummaryCards({ summary }: { summary: StatsSummary }) {
-  if (summary.count === 0) return null;
+import { formatPricePerUnit } from "@/lib/calculations";
+import type { EfficiencyPoint, StatsSummary } from "@/lib/stats";
+import { GroupedList, Num, Section, ValueRow } from "@/components/ui";
+
+/** 期間内の燃費（正の値）の最高・最低。燃費の記録が無ければ null */
+function efficiencyRange(series: ReadonlyArray<Pick<EfficiencyPoint, "efficiency">>): { max: number; min: number } | null {
+  if (series.length === 0) return null;
+  let max = -Infinity;
+  let min = Infinity;
+  for (const p of series) {
+    if (p.efficiency > max) max = p.efficiency;
+    if (p.efficiency < min) min = p.efficiency;
+  }
+  return { max, min };
+}
+
+interface EfficiencyHeroProps {
+  summary: StatsSummary;
+  /** 燃費の推移の系列（最高・最低の算出に使う） */
+  series: ReadonlyArray<Pick<EfficiencyPoint, "efficiency">>;
+  /** カードの下半分に置くもの（燃費の推移グラフ） */
+  children?: ReactNode;
+  className?: string;
+}
+
+/**
+ * ヒーローカード: 平均燃費（大きな数値）と最高・最低、その下に燃費の推移グラフ（children）。
+ * 平均燃費は満タン法の Σkm/ΣL（summary.avgEfficiency）。各給油の単純平均は小さな補足として添える。
+ */
+export function EfficiencyHero({ summary, series, children, className = "" }: EfficiencyHeroProps) {
+  const range = efficiencyRange(series);
   return (
-    <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4 mb-8">
-      <div
-        className="bg-gray-900/50 border border-gray-800 rounded-2xl p-4 md:p-5"
-        title={
-          summary.meanEfficiency != null
-            ? `総走行距離 ÷ 総給油量（満タン法）。各給油の単純平均: ${summary.meanEfficiency.toFixed(2)} km/L`
-            : "総走行距離 ÷ 総給油量（満タン法）"
-        }
-      >
-        <p className="text-xs text-gray-500 uppercase tracking-wider mb-1">平均燃費</p>
-        <p className="text-xl md:text-2xl font-bold font-mono text-blue-400">
-          {summary.avgEfficiency != null ? summary.avgEfficiency.toFixed(2) : "--"}
-          <span className="text-xs text-gray-500 ml-1">km/L</span>
-        </p>
-        {summary.meanEfficiency != null && summary.avgEfficiency != null && (
-          <p className="text-[10px] text-gray-600 mt-1 font-mono">
-            単純平均 {summary.meanEfficiency.toFixed(2)}
+    <section
+      aria-labelledby="stats-hero-title"
+      className={`rounded-hero bg-surface px-4 pb-3 pt-3.5 lg:px-6 lg:pb-4 lg:pt-5 ${className}`}
+      title={
+        summary.meanEfficiency != null
+          ? `総走行距離 ÷ 総給油量（満タン法）。各給油の単純平均: ${summary.meanEfficiency.toFixed(2)} km/L`
+          : "総走行距離 ÷ 総給油量（満タン法）"
+      }
+    >
+      <h2 id="stats-hero-title" className="text-[13px] text-sub">
+        平均燃費
+      </h2>
+      <div className="mt-0.5 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+        <div>
+          <Num className="text-[34px] font-bold leading-tight">
+            {summary.avgEfficiency != null ? summary.avgEfficiency.toFixed(2) : "--"}
+          </Num>
+          <span className="text-[13px] text-sub"> km/L</span>
+        </div>
+        {range && (
+          <p className="text-xs text-sub">
+            最高 <Num className="text-ink">{range.max.toFixed(2)}</Num>・最低 <Num className="text-ink">{range.min.toFixed(2)}</Num>
           </p>
         )}
       </div>
-      <div className="bg-gray-900/50 border border-gray-800 rounded-2xl p-4 md:p-5">
-        <p className="text-xs text-gray-500 uppercase tracking-wider mb-1">累計給油額</p>
-        <p className="text-xl md:text-2xl font-bold font-mono text-green-400">
-          ¥{summary.totalCost.toLocaleString()}
+      {summary.meanEfficiency != null && summary.avgEfficiency != null && (
+        <p className="text-[11px] text-sub">
+          単純平均 <Num>{summary.meanEfficiency.toFixed(2)}</Num>
         </p>
-      </div>
-      <div className="bg-gray-900/50 border border-gray-800 rounded-2xl p-4 md:p-5">
-        <p className="text-xs text-gray-500 uppercase tracking-wider mb-1">平均単価</p>
-        <p className="text-xl md:text-2xl font-bold font-mono text-gray-200">
-          {summary.avgPricePerUnit != null ? `¥${formatPricePerUnit(summary.avgPricePerUnit)}` : "--"}
-          <span className="text-xs text-gray-500 ml-1">/L</span>
-        </p>
-      </div>
-      <div className="bg-gray-900/50 border border-gray-800 rounded-2xl p-4 md:p-5">
-        <p className="text-xs text-gray-500 uppercase tracking-wider mb-1">走行コスト</p>
-        <p className="text-xl md:text-2xl font-bold font-mono text-gray-200">
-          {summary.costPerKm != null ? `¥${summary.costPerKm.toFixed(1)}` : "--"}
-          <span className="text-xs text-gray-500 ml-1">/km</span>
-        </p>
-      </div>
-    </div>
+      )}
+      {children && <div className="mt-3">{children}</div>}
+    </section>
+  );
+}
+
+/** 「費用」グループリスト（給油代の合計・1kmあたり・平均単価・給油回数）。記録が1件以上あるときだけ表示する */
+export function CostSummary({ summary, className = "" }: { summary: StatsSummary; className?: string }) {
+  if (summary.count === 0) return null;
+  return (
+    <Section title="費用" className={className}>
+      <GroupedList>
+        <ValueRow label="給油代の合計" value={`¥${summary.totalCost.toLocaleString()}`} tone="money" />
+        <ValueRow label="1kmあたり" value={summary.costPerKm != null ? `¥${summary.costPerKm.toFixed(1)}` : "--"} />
+        <ValueRow
+          label="平均単価"
+          value={summary.avgPricePerUnit != null ? `¥${formatPricePerUnit(summary.avgPricePerUnit)}` : "--"}
+          unit={summary.avgPricePerUnit != null ? " /L" : undefined}
+        />
+        <ValueRow label="給油回数" value={summary.count} unit=" 回" />
+      </GroupedList>
+    </Section>
   );
 }

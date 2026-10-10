@@ -1,41 +1,16 @@
 "use client";
 
-import type { ReactNode } from "react";
-import { Calculator, Calendar, Edit2, Fuel } from "lucide-react";
+import { useId, useMemo } from "react";
+import { Pencil } from "lucide-react";
 import EditFuelRecordForm from "@/components/EditFuelRecordForm";
-import RecordBadges from "@/components/RecordBadges";
-import RecordStats from "@/components/RecordStats";
+import { heroDisplayOf, heroModelOf, type EfficiencyDelta } from "@/lib/home/hero";
 import { efficiencyNullReason } from "@/lib/format";
+import { formatShortDate } from "@/lib/home/recent";
 import type { UseRecordFormReturn } from "@/lib/useRecordForm";
-import type { DistanceMode, FuelRecord } from "@/lib/types";
+import type { FuelRecord } from "@/lib/types";
+import EfficiencyGauge from "./EfficiencyGauge";
 
-/** 右カラムのカードの見出し行（「Latest Record」など + 右側の操作）と外枠 */
-export function RecordCardFrame({ label, action, children }: { label: string; action?: ReactNode; children: ReactNode }) {
-  return (
-    <div className="md:mb-8 w-full">
-      <div className="flex items-center justify-between px-2 mb-2">
-        <h3 className="text-sm font-bold text-gray-400 uppercase tracking-wider flex items-center gap-2">
-          <Calculator className="w-4 h-4" /> {label}
-        </h3>
-        {action}
-      </div>
-      {children}
-    </div>
-  );
-}
-
-/** カード本体。フォームを開いている間は青枠で強調する */
-export function RecordCardBody({ editing, children }: { editing: boolean; children: ReactNode }) {
-  return (
-    <div
-      className={`relative overflow-hidden rounded-3xl border transition-colors duration-300 w-full ${editing ? "bg-gray-800 border-blue-500 ring-1 ring-blue-500" : "bg-gradient-to-br from-gray-800 to-gray-900 border-gray-700"}`}
-    >
-      {children}
-    </div>
-  );
-}
-
-export type RecordFormPanelProps = {
+export type RecordFormCardProps = {
   title: string;
   form: UseRecordFormReturn;
   saving: boolean;
@@ -45,11 +20,17 @@ export type RecordFormPanelProps = {
   onSave: () => void;
 };
 
-/** カード内の入力フォーム（手動入力・最新記録の編集） */
-export function RecordFormPanel({ title, form, saving, readOnly, canSave, onCancel, onSave }: RecordFormPanelProps) {
+/**
+ * 入力フォームのカード（手動入力・最新記録の編集）。ヒーローと同じ角丸 20px・アクセント色の枠。
+ * 中のグループリスト（`bg-surface`）が面として見えるように、カード自体は地の色（`bg-ground`）にする。
+ */
+export function RecordFormCard({ title, form, saving, readOnly, canSave, onCancel, onSave }: RecordFormCardProps) {
+  const headingId = useId();
   return (
-    <div className="p-5">
-      <h3 className="text-sm font-bold text-gray-300 mb-4">{title}</h3>
+    <section aria-labelledby={headingId} className="w-full rounded-hero border border-accent/40 bg-ground p-3 sm:p-5">
+      <h2 id={headingId} className="mb-3 px-1 text-[15px] font-bold text-ink">
+        {title}
+      </h2>
       <EditFuelRecordForm
         form={form}
         onCancel={onCancel}
@@ -59,16 +40,35 @@ export function RecordFormPanel({ title, form, saving, readOnly, canSave, onCanc
         canSave={canSave}
         saveHint="保存するには給油量または支払総額を入力してください"
       />
-    </div>
+    </section>
+  );
+}
+
+/** 前回比のチップ（向上は ▲ と緑、悪化は ▼ と橙。色だけに頼らず記号と読み上げ文で示す） */
+function DeltaChip({ delta }: { delta: EfficiencyDelta }) {
+  const style =
+    delta.direction === "up"
+      ? { cls: "bg-up-bg text-up", mark: "▲", sr: "前回より向上" }
+      : delta.direction === "down"
+        ? { cls: "bg-surface-2 text-cost-up", mark: "▼", sr: "前回より悪化" }
+        : { cls: "bg-surface-2 text-sub", mark: "±", sr: "前回と同じ" };
+  return (
+    <span className={`inline-flex items-center gap-1 rounded-lg px-2.5 py-1 font-bold ${style.cls}`}>
+      <span aria-hidden="true">{style.mark}</span>
+      <span className="num">{delta.text}</span>
+      <span>前回比</span>
+      <span className="sr-only">（{style.sr}）</span>
+    </span>
   );
 }
 
 export type LatestRecordCardProps = {
-  /** 表示する記録（スキャン・手動入力の直後はその記録、それ以外は最新の記録）。無ければ空の案内 */
-  record: FuelRecord | null | undefined;
-  /** record がスキャンで保存した直後の記録か（見出しを「Scanned Result」にする） */
+  /** 表示する記録（スキャン・手動入力の直後はその記録、それ以外は最新の記録） */
+  record: FuelRecord;
+  /** 選択中の車両の記録（連鎖計算済み・日付の降順）。前回比・平均・目盛りに使う */
+  records: ReadonlyArray<FuelRecord>;
+  /** record がスキャンで保存した直後の記録か（見出しを「スキャンした記録」にする） */
   scanned: boolean;
-  distanceMode: DistanceMode;
   readOnly: boolean;
   /** 編集フォームを開いているか */
   isEditing: boolean;
@@ -79,11 +79,14 @@ export type LatestRecordCardProps = {
   onSave: () => void;
 };
 
-/** メイン画面右カラムの最新記録カード（表示 / その場で編集 / 記録なしの案内） */
+/**
+ * ホームのヒーローカード: 前回の燃費の半円メーター（平均の目盛り・下限 / 上限）と、前回比・平均のチップ。
+ * 編集中はその場で編集フォームのカードに切り替わる。部分給油など燃費が無い記録は数値の代わりに理由を出す。
+ */
 export default function LatestRecordCard({
   record,
+  records,
   scanned,
-  distanceMode,
   readOnly,
   isEditing,
   form,
@@ -92,72 +95,69 @@ export default function LatestRecordCard({
   onCancel,
   onSave,
 }: LatestRecordCardProps) {
-  const label = record && scanned ? "Scanned Result" : "Latest Record";
-  const action = record && !isEditing && (
-    <button
-      type="button"
-      onClick={() => onEdit(record)}
-      disabled={readOnly}
-      className="text-xs text-blue-400 flex items-center gap-1 px-2 py-3 -my-3 -mr-2 hover:text-blue-300 transition disabled:opacity-50 disabled:cursor-not-allowed"
-    >
-      <Edit2 className="w-3 h-3" aria-hidden="true" /> 編集
-    </button>
-  );
+  const headingId = useId();
+  // 最新の記録の燃費が出ていなければ、燃費の出ている最も新しい記録をメーターに出す（最新の記録は注記で知らせる）
+  const { display, skipped } = useMemo(() => heroDisplayOf(records, record, scanned), [records, record, scanned]);
+  const model = useMemo(() => heroModelOf(records, display), [records, display]);
+
+  if (isEditing) {
+    return (
+      <RecordFormCard
+        title="給油記録の編集"
+        form={form}
+        saving={saving}
+        readOnly={readOnly}
+        canSave
+        onCancel={onCancel}
+        onSave={onSave}
+      />
+    );
+  }
+
+  const date = formatShortDate(display.date) ?? "日付不明";
+  const station = display.gas_station?.trim();
+  const skippedNote = skipped
+    ? `最新の${formatShortDate(skipped.date) ?? "記録"}は${efficiencyNullReason(skipped) ?? "燃費を計算できない記録"}`
+    : null;
 
   return (
-    <RecordCardFrame label={label} action={action}>
-      {record ? (
-        <RecordCardBody editing={isEditing}>
-          {isEditing ? (
-            <RecordFormPanel
-              title="給油記録の編集"
-              form={form}
-              saving={saving}
-              readOnly={readOnly}
-              canSave
-              onCancel={onCancel}
-              onSave={onSave}
-            />
-          ) : (
-            /* 表示モード */
-            <div className="p-5 sm:p-6">
-              <div className="flex justify-between items-start gap-3 mb-6">
-                <div>
-                  <p className="text-xs text-gray-500 mb-1 flex items-center gap-1">
-                    <Calendar className="w-3 h-3" /> {record.date || "日付不明"}
-                  </p>
-                  <div className="flex items-baseline gap-1">
-                    <span className="text-4xl font-bold text-white font-mono tracking-tighter">
-                      {record.fuel_efficiency ? record.fuel_efficiency.toFixed(2) : "--.--"}
-                    </span>
-                    <span className="text-sm font-bold text-blue-500">km/L</span>
-                  </div>
-                  {efficiencyNullReason(record) && (
-                    <p className="text-[11px] text-gray-500 mt-0.5">燃費: {efficiencyNullReason(record)}</p>
-                  )}
-                  <RecordBadges record={record} className="mt-2" />
-                </div>
-                <div className="text-right">
-                  <p className="text-2xl font-bold text-green-400 font-mono">¥{record.total_cost?.toLocaleString() || "---"}</p>
-                  <p className="text-xs text-gray-500">Total Cost</p>
-                </div>
-              </div>
+    <section
+      aria-labelledby={headingId}
+      className="flex w-full flex-col items-center gap-1 rounded-hero bg-surface px-4 pb-4 pt-3 lg:px-5 lg:pb-5"
+    >
+      <div className="flex w-full min-w-0 items-center gap-2 text-[13px] text-sub">
+        <h2 id={headingId} className="shrink-0 font-medium">
+          {scanned ? "スキャンした記録" : "前回の燃費"}
+        </h2>
+        <p className="min-w-0 flex-1 truncate text-right">
+          <span className="num">{date}</span>
+          {station && <span> {station}</span>}
+        </p>
+        <button
+          type="button"
+          onClick={() => onEdit(display)}
+          disabled={readOnly}
+          className="-my-2 -mr-2 inline-flex h-10 shrink-0 items-center gap-1 rounded-xl px-2 font-medium text-accent transition-colors hover:bg-surface-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          <Pencil className="h-3.5 w-3.5" aria-hidden="true" />
+          編集
+        </button>
+      </div>
 
-              <RecordStats record={record} distanceMode={distanceMode} variant="card" />
-            </div>
+      <EfficiencyGauge value={model.efficiency} reason={model.nullReason} average={model.average} scale={model.scale} />
+
+      {skippedNote && <p className="text-center text-xs text-warn">{skippedNote}</p>}
+
+      {(model.delta || model.average !== null) && (
+        <div className="flex flex-wrap justify-center gap-2 text-[13px]">
+          {model.delta && <DeltaChip delta={model.delta} />}
+          {model.average !== null && (
+            <span className="inline-flex items-center gap-1 rounded-lg bg-surface-2 px-2.5 py-1 text-ink/80">
+              平均 <span className="num">{model.average.toFixed(2)}</span>
+            </span>
           )}
-        </RecordCardBody>
-      ) : (
-        <div className="bg-gray-900/30 border border-gray-800/80 rounded-3xl p-8 text-center flex flex-col items-center justify-center min-h-[220px] w-full">
-          <div className="w-12 h-12 rounded-full bg-gray-800/50 flex items-center justify-center mb-3">
-            <Fuel className="w-6 h-6 text-gray-500" />
-          </div>
-          <p className="text-sm font-bold text-gray-300 mb-1">給油記録がまだありません</p>
-          <p className="text-xs text-gray-500 max-w-[280px] leading-relaxed">
-            レシートやメーターの写真をスキャンするか、過去の記録を入力して最初の記録を作成しましょう！
-          </p>
         </div>
       )}
-    </RecordCardFrame>
+    </section>
   );
 }

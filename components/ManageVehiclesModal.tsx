@@ -6,6 +6,7 @@ import type { Vehicle, VehicleSettings, VehicleType } from "@/lib/types";
 import { useVehicleDraft } from "@/lib/useVehicleDraft";
 import Modal from "./Modal";
 import { useToast } from "./Toast";
+import { GroupedList, Section } from "@/components/ui";
 import AddVehicleForm from "./vehicles/AddVehicleForm";
 import VehicleRow, { deleteConfirmMessage } from "./vehicles/VehicleRow";
 
@@ -147,51 +148,44 @@ export default function ManageVehiclesModal({
       disableClose={busy}
       title="車両の管理"
       labelledBy="manage-vehicles-title"
-      // スマホ幅では下から出るシートにし、パネル全体をスクロールさせる（本文だけのスクロールだと編集中の行が狭くなるため）
-      backdropClassName="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-200"
-      panelClassName="relative w-full max-w-md bg-gray-900 border border-gray-800 rounded-t-3xl sm:rounded-3xl shadow-2xl p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] sm:p-6 overflow-hidden max-sm:overflow-y-auto flex flex-col max-h-[92dvh] sm:max-h-[90vh]"
+      // スマホ幅では下から出るシート、PC では中央のダイアログ。パネル全体をスクロールさせる（編集中の行が狭くならないように）
+      backdropClassName="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:p-4 bg-black/70 backdrop-blur-sm animate-in fade-in duration-200"
+      panelClassName="relative w-full max-w-md bg-ground border border-line rounded-t-hero sm:rounded-hero shadow-2xl shadow-black/50 p-4 pb-[max(1rem,env(safe-area-inset-bottom))] sm:p-5 overflow-y-auto max-h-[92dvh] sm:max-h-[90vh]"
     >
-      {/* 背景の装飾光 */}
-      <div className="absolute top-0 right-0 w-32 h-32 bg-blue-600/10 rounded-full blur-3xl pointer-events-none" />
-      <div className="absolute bottom-0 left-0 w-32 h-32 bg-cyan-600/5 rounded-full blur-3xl pointer-events-none" />
-
-      <Modal.Header icon={<Sliders className="w-5 h-5 text-blue-500" aria-hidden="true" />} />
+      <Modal.Header icon={<Sliders className="h-5 w-5 text-accent" aria-hidden="true" />} className="mb-4" />
 
       {readOnly && (
-        <p role="status" className="text-[11px] text-amber-400 mb-3 flex-shrink-0">
+        <p role="status" className="mb-3 text-xs text-warn">
           閲覧専用（クラウド接続待ち）のため、車両の追加・編集・削除はできません。
         </p>
       )}
 
-      {/* スクロール可能な車両リスト */}
-      <Modal.Body className="space-y-4 pr-1 min-h-[150px] max-sm:flex-none max-sm:overflow-y-visible scrollbar-thin scrollbar-thumb-gray-800 scrollbar-track-transparent">
-        <p className="block text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1">
-          登録済みの車両 ({vehicles.length})
-        </p>
-        {vehicles.map((v) => (
-          <VehicleRow
-            key={v.id}
-            vehicle={v}
-            vehicleCount={vehicles.length}
-            isEditing={editingId === v.id}
-            draft={editDraft}
-            readOnly={readOnly}
-            saving={updateLoading}
-            deleting={deletingId === v.id}
-            deleteLocked={deletingId !== null}
-            onStartEdit={handleStartEdit}
-            onCancelEdit={handleCancelEdit}
-            onSave={handleSaveUpdate}
-            onDelete={handleDeleteClick}
-          />
-        ))}
-      </Modal.Body>
+      <div className="space-y-6">
+        <Section title={`登録済みの車両 (${vehicles.length})`}>
+          <GroupedList>
+            {vehicles.map((v) => (
+              <VehicleRow
+                key={v.id}
+                vehicle={v}
+                vehicleCount={vehicles.length}
+                isEditing={editingId === v.id}
+                draft={editDraft}
+                readOnly={readOnly}
+                saving={updateLoading}
+                deleting={deletingId === v.id}
+                deleteLocked={deletingId !== null}
+                onStartEdit={handleStartEdit}
+                onCancelEdit={handleCancelEdit}
+                onSave={handleSaveUpdate}
+                onDelete={handleDeleteClick}
+              />
+            ))}
+          </GroupedList>
+        </Section>
 
-      {/* 境界線 */}
-      <div className="h-px bg-gray-800/60 my-5 flex-shrink-0" />
-
-      {/* 新規登録セクション */}
-      <AddVehicleForm draft={addDraft} adding={addLoading} readOnly={readOnly} onSubmit={handleAddSubmit} />
+        {/* 新規登録セクション */}
+        <AddVehicleForm draft={addDraft} adding={addLoading} readOnly={readOnly} onSubmit={handleAddSubmit} />
+      </div>
     </Modal>
   );
 }

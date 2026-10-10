@@ -6,6 +6,7 @@ import {
   useEffect,
   useId,
   useRef,
+  type CSSProperties,
   type ReactNode,
   type RefObject,
 } from "react";
@@ -47,8 +48,8 @@ function useModalContext(part: string): ModalContextValue {
 }
 
 const DEFAULT_BACKDROP_CLASS =
-  "fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-200";
-const DEFAULT_PANEL_CLASS = "relative w-full max-w-md bg-gray-900 border border-gray-800 rounded-3xl shadow-2xl";
+  "fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-in fade-in duration-200";
+const DEFAULT_PANEL_CLASS = "relative w-full max-w-md bg-surface border border-line text-ink rounded-hero shadow-2xl shadow-black/50";
 
 export interface ModalProps {
   open: boolean;
@@ -74,6 +75,8 @@ export interface ModalProps {
   backdropClassName?: string;
   /** パネルの className。既定は最大幅 md の角丸パネル */
   panelClassName?: string;
+  /** パネルの style（アンカー位置に出すポップオーバーの top / left など） */
+  panelStyle?: CSSProperties;
   children: ReactNode;
 }
 
@@ -90,6 +93,7 @@ function ModalRoot({
   lockBodyScroll = false,
   backdropClassName = DEFAULT_BACKDROP_CLASS,
   panelClassName = DEFAULT_PANEL_CLASS,
+  panelStyle,
   children,
 }: ModalProps) {
   const generatedId = useId();
@@ -129,7 +133,7 @@ function ModalRoot({
   return (
     <ModalContext.Provider value={{ titleId, title, closeButtonRef, disableClose, requestClose: onClose }}>
       <div className={backdropClassName} {...backdropHandlers}>
-        <div ref={panelRef} role="dialog" aria-modal="true" aria-labelledby={titleId} className={panelClassName}>
+        <div ref={panelRef} role="dialog" aria-modal="true" aria-labelledby={titleId} className={panelClassName} style={panelStyle}>
           {children}
         </div>
       </div>
@@ -142,7 +146,7 @@ function ModalHeader({ icon, className = "mb-6" }: { icon?: ReactNode; className
   const { titleId, title, closeButtonRef, disableClose, requestClose } = useModalContext("Modal.Header");
   return (
     <div className={`flex items-center justify-between flex-shrink-0 ${className}`}>
-      <h3 id={titleId} className="text-lg font-bold text-white flex items-center gap-2">
+      <h3 id={titleId} className="text-lg font-bold text-ink flex items-center gap-2 min-w-0">
         {icon} {title}
       </h3>
       <button
@@ -151,7 +155,7 @@ function ModalHeader({ icon, className = "mb-6" }: { icon?: ReactNode; className
         onClick={requestClose}
         disabled={disableClose}
         aria-label="閉じる"
-        className="p-2.5 -m-1 sm:m-0 sm:p-1.5 rounded-full text-gray-500 hover:text-white hover:bg-gray-800 transition disabled:opacity-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-400"
+        className="-m-2 p-2.5 shrink-0 rounded-full text-sub hover:text-ink hover:bg-surface-2 transition disabled:opacity-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
       >
         <X className="w-5 h-5" aria-hidden="true" />
       </button>

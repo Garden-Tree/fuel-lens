@@ -1,16 +1,45 @@
 @import "tailwindcss";
 
 /*
- * アプリはダークテーマ固定（layout.tsx の body に bg-gray-950 text-white を指定）。
- * ライトテーマ用の --background / --foreground は使っていないため定義しない。
+ * アプリはダークテーマ固定。デザイントークンは docs/design-system.md を参照。
+ * 色は `bg-surface` / `text-sub` / `border-line` / `text-accent` / `text-money` のようにクラスで使う。
  */
 @theme inline {
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  /* フォント（layout.tsx の next/font が --font-noto-sans-jp / --font-jetbrains-mono を定義する） */
+  --font-sans: var(--font-noto-sans-jp), "Hiragino Sans", "Hiragino Kaku Gothic ProN", system-ui, sans-serif;
+  --font-mono: var(--font-jetbrains-mono), var(--font-noto-sans-jp), ui-monospace, monospace;
+}
+
+@theme {
+  /* 面 */
+  --color-ground: #0b0f14; /* 画面の地（body） */
+  --color-surface: #131a22; /* カード・グループリスト */
+  --color-surface-2: #1a232e; /* チップ・押下中の行・選択中のナビ */
+  --color-line: #1f2934; /* 行の区切り線 */
+  --color-border: #253140; /* 操作部品の枠線 */
+
+  /* 文字 */
+  --color-ink: #e8edf3; /* 主要な文字 */
+  --color-sub: #8c99a8; /* 補足の文字 */
+  --color-faint: #4c5968; /* シェブロン・無効 */
+
+  /* 意味色 */
+  --color-accent: #3aa0ff; /* 選択中のタブ・リンク・メーター */
+  --color-accent-strong: #23426b; /* 選択中のセグメントの背景 */
+  --color-money: #34d399; /* 金額 */
+  --color-money-dim: #2b9c74;
+  --color-up: #5ee0ae; /* 良い変化（燃費の向上など） */
+  --color-up-bg: rgba(52, 211, 153, 0.12);
+  --color-cost-up: #ff9f7a; /* 単価の上昇・平均の破線 */
+  --color-warn: #ffc56e; /* 部分給油バッジ・注意 */
+  --color-warn-bg: rgba(255, 181, 71, 0.14);
 
   /* Tailwind 既定のグレースケールの中間色（gray-800 #1f2937 と gray-900 #111827 の間など） */
   --color-gray-550: #5b6472;
   --color-gray-850: #172033;
+
+  /* 角丸（グループリスト 16px = rounded-2xl、操作部品 12px = rounded-xl） */
+  --radius-hero: 20px; /* ヒーローカード・シート */
 }
 
 html {
@@ -18,9 +47,20 @@ html {
 }
 
 body {
-  background: #030712; /* gray-950 */
-  color: #ffffff;
-  font-family: var(--font-geist-sans), system-ui, sans-serif;
+  background: var(--color-ground);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+}
+
+/* 数字（等幅・桁揃え）。金額・燃費・距離などの数値に使う */
+@utility num {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+/* スキャン（撮影）ボタン専用のグラデーション。ほかの場所では使わない */
+@utility bg-scan-gradient {
+  background-image: linear-gradient(135deg, #2f7bff, #19c3e6);
 }
 
 /* スクロールバーを非表示にする（横スクロールのタブ列など） */

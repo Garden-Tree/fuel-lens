@@ -92,13 +92,13 @@ describe("EditFuelRecordForm", () => {
 
   it("満タンを外すと部分給油の説明（次の満タン給油でまとめて計算）が出る", async () => {
     const { user } = setup();
-    const toggle = screen.getByRole("button", { name: "満タン給油" });
-    expect(toggle).toHaveAttribute("aria-pressed", "true");
+    const toggle = screen.getByRole("switch", { name: "満タン給油" });
+    expect(toggle).toHaveAttribute("aria-checked", "true");
     expect(screen.getByText("満タンまで給油した")).toBeInTheDocument();
 
     await user.click(toggle);
 
-    expect(toggle).toHaveAttribute("aria-pressed", "false");
+    expect(toggle).toHaveAttribute("aria-checked", "false");
     // トグルの説明文と、燃費欄の注記の 2 か所に出る
     expect(screen.getAllByText(new RegExp(PARTIAL_FILL_EFFICIENCY_NOTE))).toHaveLength(2);
     expect(screen.getByText(`（${PARTIAL_FILL_EFFICIENCY_NOTE}）`)).toBeInTheDocument();

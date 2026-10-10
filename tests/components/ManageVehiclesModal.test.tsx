@@ -43,7 +43,7 @@ describe("ManageVehiclesModal", () => {
     expect(screen.getByText("登録済みの車両 (2)")).toBeInTheDocument();
     expect(screen.getByText("プリウス")).toBeInTheDocument();
     expect(screen.getByText("カブ")).toBeInTheDocument();
-    expect(screen.getByText("トリップメーター", { selector: "span.block" })).toBeInTheDocument();
+    expect(screen.getByText("トリップメーター", { selector: "span.truncate" })).toBeInTheDocument();
     expect(screen.getByText("オドメーター・レギュラー")).toBeInTheDocument();
   });
 
@@ -62,24 +62,24 @@ describe("ManageVehiclesModal", () => {
 
     it("名前・タイプ・方式・燃料種別を onAdd に渡し、成功したらフォームを空に戻す", async () => {
       const { user, onAdd } = setup();
-      const nameInput = screen.getByLabelText("新しい車両・バイクの追加");
+      const nameInput = screen.getByLabelText("新しい車両・バイクの名前");
       await user.type(nameInput, "  サブカー ");
-      await user.click(screen.getByRole("radio", { name: "バイク" }));
-      await user.click(screen.getByRole("radio", { name: /オドメーター/ }));
+      await user.click(screen.getByRole("button", { name: "バイク" }));
+      await user.click(screen.getByRole("button", { name: /オドメーター/ }));
       await user.selectOptions(screen.getByLabelText("既定の燃料種別"), "diesel");
       await user.click(screen.getByRole("button", { name: "追加" }));
 
       expect(onAdd).toHaveBeenCalledWith("サブカー", "bike", { distance_mode: "odometer", default_fuel_type: "diesel" });
       expect(await screen.findByText("車両を追加しました")).toBeInTheDocument();
       expect(nameInput).toHaveValue("");
-      expect(screen.getByRole("radio", { name: "自動車" })).toHaveAttribute("aria-checked", "true");
+      expect(screen.getByRole("button", { name: "自動車" })).toHaveAttribute("aria-pressed", "true");
       expect(screen.getByLabelText("既定の燃料種別")).toHaveValue("");
     });
 
     it("onAdd が失敗したらエラーを表示し、入力を残す", async () => {
       const spy = vi.spyOn(console, "error").mockImplementation(() => {});
       const { user } = setup({ onAdd: vi.fn().mockRejectedValue(new Error("登録に失敗しました")) });
-      const nameInput = screen.getByLabelText("新しい車両・バイクの追加");
+      const nameInput = screen.getByLabelText("新しい車両・バイクの名前");
       await user.type(nameInput, "サブ");
       await user.click(screen.getByRole("button", { name: "追加" }));
 
@@ -121,8 +121,8 @@ describe("ManageVehiclesModal", () => {
 
       // 編集行の方式ボタンは一覧側が先（追加フォームより前）
       const [editOdometer, editTrip] = [
-        screen.getAllByRole("radio", { name: /オドメーター/ })[0],
-        screen.getAllByRole("radio", { name: /トリップメーター/ })[0],
+        screen.getAllByRole("button", { name: /オドメーター/ })[0],
+        screen.getAllByRole("button", { name: /トリップメーター/ })[0],
       ];
       await user.click(editOdometer);
       expect(screen.getByText(/区間距離と燃費が「不明」になります/)).toBeInTheDocument();
@@ -133,7 +133,7 @@ describe("ManageVehiclesModal", () => {
     it("オドメーター → トリップへ切り替える注意文を出す", async () => {
       const { user } = setup();
       await user.click(screen.getByRole("button", { name: "「カブ」を編集" }));
-      await user.click(screen.getAllByRole("radio", { name: /トリップメーター/ })[0]);
+      await user.click(screen.getAllByRole("button", { name: /トリップメーター/ })[0]);
       expect(screen.getByText(/切り替え時点の値で走行距離として保存/)).toBeInTheDocument();
     });
 
@@ -230,7 +230,7 @@ describe("ManageVehiclesModal", () => {
     it("案内を出し、追加・編集・削除を無効にする", () => {
       setup({ readOnly: true });
       expect(screen.getByText(/閲覧専用（クラウド接続待ち）/)).toBeInTheDocument();
-      expect(screen.getByLabelText("新しい車両・バイクの追加")).toBeDisabled();
+      expect(screen.getByLabelText("新しい車両・バイクの名前")).toBeDisabled();
       expect(screen.getByRole("button", { name: "追加" })).toBeDisabled();
       expect(screen.getByRole("button", { name: "「プリウス」を編集" })).toBeDisabled();
       expect(screen.getByRole("button", { name: "「プリウス」を削除" })).toBeDisabled();

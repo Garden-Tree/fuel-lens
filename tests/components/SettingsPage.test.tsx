@@ -28,12 +28,15 @@ describe("SettingsPage", () => {
     scopeMock.useVehicleScope.mockReset();
   });
 
-  it("一覧を読まない設定でフックを呼び、見出しと戻るリンクを表示する", () => {
+  it("一覧を読まない設定でフックを呼び、見出しとホームへのナビゲーションを表示する", () => {
     scopeMock.useVehicleScope.mockReturnValue(scope());
     renderWithProviders(<SettingsPage />);
     expect(scopeMock.useVehicleScope).toHaveBeenCalledWith({ list: false });
     expect(screen.getByRole("heading", { level: 1, name: "設定" })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "ホームに戻る" })).toHaveAttribute("href", "/app");
+    // 戻るリンクの代わりにタブバー / サイドバーの「ホーム」
+    for (const link of screen.getAllByRole("link", { name: "ホーム" })) {
+      expect(link).toHaveAttribute("href", "/app");
+    }
   });
 
   it("データ概要の記録数は fetchAllRecords の件数、車両数は vehicles の数になる", async () => {

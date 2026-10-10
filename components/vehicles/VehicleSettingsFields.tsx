@@ -3,11 +3,18 @@
 import { Car, Bike } from "lucide-react";
 import { isFuelType } from "@/lib/fillChain";
 import { FUEL_TYPES, FUEL_TYPE_LABELS, type DistanceMode, type FuelType, type VehicleType } from "@/lib/types";
+import { SegmentedControl, type SegmentedOption } from "@/components/ui";
 
-const DISTANCE_MODE_OPTIONS: readonly { value: DistanceMode; label: string; detail: string }[] = [
-  { value: "trip", label: "トリップメーター", detail: "区間距離" },
-  { value: "odometer", label: "オドメーター", detail: "積算距離" },
+const DISTANCE_MODE_OPTIONS: readonly SegmentedOption<DistanceMode>[] = [
+  { value: "trip", label: "トリップメーター" },
+  { value: "odometer", label: "オドメーター" },
 ];
+
+/** 方式ごとの入力の説明（選択中のものを表示する） */
+const DISTANCE_MODE_DETAILS: Readonly<Record<DistanceMode, string>> = {
+  trip: "前回給油からの区間距離（トリップメーター）を入力します",
+  odometer: "積算距離（オドメーター）を入力し、区間距離は自動で計算します",
+};
 
 /** 一覧の行に出す距離の入力方式の短い名前 */
 export const DISTANCE_MODE_SHORT_LABELS: Readonly<Record<DistanceMode, string>> = {
@@ -32,7 +39,11 @@ export function modeSwitchNote(from: DistanceMode, to: DistanceMode): string | n
   return to === "odometer" ? ODOMETER_SWITCH_NOTE : TRIP_SWITCH_NOTE;
 }
 
-/** 距離の入力方式・既定の燃料種別の入力欄（編集行と追加フォームで共通） */
+/** 設定行の入力欄（右寄せ・透明背景・16px 以上・高さ 40px） */
+export const VEHICLE_ROW_INPUT =
+  "h-10 min-w-0 flex-1 rounded-lg bg-transparent px-2 text-right text-base text-ink placeholder:text-faint transition focus:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-60";
+
+/** 距離の入力方式・既定の燃料種別の入力行（編集行と追加フォームで共通。GroupedList の中に置く） */
 export default function VehicleSettingsFields({
   idPrefix,
   mode,
@@ -51,47 +62,28 @@ export default function VehicleSettingsFields({
   /** 方式を切り替えるときの注意（modeSwitchNote）。null・省略なら出さない */
   switchNote?: string | null;
 }) {
-  const modeLabelId = `${idPrefix}-mode-label`;
   const fuelId = `${idPrefix}-fuel-type`;
   return (
-    <div className="space-y-2">
-      <div>
-        <p id={modeLabelId} className="text-[11px] text-gray-400 mb-1">
-          距離の入力方式
-        </p>
-        <div
-          className="grid grid-cols-2 gap-1 bg-gray-900 p-0.5 rounded-xl border border-gray-800"
-          role="radiogroup"
-          aria-labelledby={modeLabelId}
-        >
-          {DISTANCE_MODE_OPTIONS.map((opt) => {
-            const selected = mode === opt.value;
-            return (
-              <button
-                key={opt.value}
-                type="button"
-                role="radio"
-                aria-checked={selected}
-                onClick={() => onModeChange(opt.value)}
-                disabled={disabled}
-                className={`px-2 py-1.5 rounded-lg text-xs font-semibold transition focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 disabled:opacity-60 ${
-                  selected ? "bg-blue-600 text-white shadow" : "text-gray-500 hover:text-gray-300"
-                }`}
-              >
-                {opt.label}
-                <span className="block text-[10px] font-normal opacity-80">（{opt.detail}）</span>
-              </button>
-            );
-          })}
-        </div>
+    <div className="divide-y divide-line">
+      <div className="space-y-2 px-4 py-3">
+        <p className="text-[15px] text-ink">距離の入力方式</p>
+        <SegmentedControl
+          aria-label="距離の入力方式"
+          options={DISTANCE_MODE_OPTIONS}
+          value={mode}
+          onChange={onModeChange}
+          disabled={disabled}
+          className="bg-ground!"
+        />
+        <p className="text-xs text-sub">{DISTANCE_MODE_DETAILS[mode]}</p>
         {switchNote && (
-          <p role="status" className="mt-1 text-[11px] text-amber-400">
+          <p role="status" className="text-xs text-warn">
             {switchNote}
           </p>
         )}
       </div>
-      <div className="flex items-center gap-2">
-        <label htmlFor={fuelId} className="text-[11px] text-gray-400 flex-shrink-0">
+      <div className="flex min-h-[52px] items-center gap-3 px-4 py-1.5">
+        <label htmlFor={fuelId} className="shrink-0 text-[15px] text-ink">
           既定の燃料種別
         </label>
         <select
@@ -99,7 +91,7 @@ export default function VehicleSettingsFields({
           value={fuelType ?? ""}
           onChange={(e) => onFuelTypeChange(isFuelType(e.target.value) ? e.target.value : null)}
           disabled={disabled}
-          className="flex-1 min-w-0 bg-gray-900 border border-gray-800 rounded-lg px-2 py-2 sm:py-1.5 text-base sm:text-xs text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus:border-blue-500 transition disabled:opacity-60"
+          className={`${VEHICLE_ROW_INPUT} cursor-pointer [color-scheme:dark]`}
         >
           <option value="">未指定</option>
           {FUEL_TYPES.map((t) => (
@@ -113,59 +105,49 @@ export default function VehicleSettingsFields({
   );
 }
 
-const TYPE_OPTIONS: readonly { value: VehicleType; label: string; Icon: typeof Car }[] = [
-  { value: "car", label: "自動車", Icon: Car },
-  { value: "bike", label: "バイク", Icon: Bike },
+const TYPE_OPTIONS: readonly SegmentedOption<VehicleType>[] = [
+  {
+    value: "car",
+    label: (
+      <span className="inline-flex items-center justify-center gap-1.5">
+        <Car className="h-4 w-4" aria-hidden="true" />
+        自動車
+      </span>
+    ),
+    ariaLabel: "自動車",
+  },
+  {
+    value: "bike",
+    label: (
+      <span className="inline-flex items-center justify-center gap-1.5">
+        <Bike className="h-4 w-4" aria-hidden="true" />
+        バイク
+      </span>
+    ),
+    ariaLabel: "バイク",
+  },
 ];
 
-/** 車両タイプ（自動車 / バイク）の切り替え。編集行（edit）と追加フォーム（add）で見た目だけ異なる */
+/** 車両タイプ（自動車 / バイク）の切り替え */
 export function VehicleTypeToggle({
-  variant,
   value,
   onChange,
   disabled,
+  className = "",
 }: {
-  variant: "edit" | "add";
   value: VehicleType;
   onChange: (type: VehicleType) => void;
   disabled?: boolean;
+  className?: string;
 }) {
-  const isAdd = variant === "add";
   return (
-    <div
-      className={
-        isAdd
-          ? "flex bg-gray-950 p-0.5 rounded-xl border border-gray-800 flex-shrink-0"
-          : "flex bg-gray-900 p-0.5 rounded-xl border border-gray-800"
-      }
-      role="radiogroup"
+    <SegmentedControl
       aria-label="車両タイプ"
-    >
-      {TYPE_OPTIONS.map(({ value: optValue, label, Icon }) => {
-        const selected = value === optValue;
-        const selectedClass = isAdd
-          ? "bg-blue-600/20 border border-blue-500/30 text-blue-400"
-          : "bg-blue-600 text-white shadow";
-        return (
-          <button
-            key={optValue}
-            type="button"
-            role="radio"
-            aria-checked={selected}
-            onClick={() => onChange(optValue)}
-            disabled={disabled}
-            className={`${
-              isAdd ? "px-3 rounded-lg font-semibold text-xs" : "p-3 sm:p-2 rounded-lg"
-            } transition focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 ${
-              selected ? selectedClass : "text-gray-500 hover:text-gray-300"
-            }`}
-            title={label}
-            aria-label={label}
-          >
-            <Icon className="w-4 h-4" aria-hidden="true" />
-          </button>
-        );
-      })}
-    </div>
+      options={TYPE_OPTIONS}
+      value={value}
+      onChange={onChange}
+      disabled={disabled}
+      className={`bg-ground! ${className}`}
+    />
   );
 }

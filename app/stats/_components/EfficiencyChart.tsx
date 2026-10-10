@@ -1,8 +1,10 @@
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from "recharts";
+import type { ReactElement } from "react";
+import { Area, AreaChart, CartesianGrid, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 
 import type { Period, StatsModel } from "@/lib/stats";
 import ChartEmpty from "./ChartEmpty";
-import { averageTickRenderer } from "./AverageTick";
+import { AverageLegend, averageTickRenderer, visibleAxisTicks } from "./AverageTick";
+import { CHART_COLORS, CHART_TICK, CHART_TOOLTIP_CLASS } from "./chartTheme";
 
 interface TooltipProps {
   active?: boolean;
@@ -23,15 +25,18 @@ function CustomEfficiencyTooltip({ active, payload }: TooltipProps) {
   if (active && payload && payload.length > 0) {
     const data = payload[0].payload;
     let formattedDate = data.name;
-    const parts = data.name.split('-');
+    const parts = data.name.split("-");
     if (parts.length === 3) {
       formattedDate = `${parts[0]}/${parseInt(parts[1])}/${parseInt(parts[2])}`;
     }
     return (
-      <div className="bg-gray-800 p-3 rounded-lg border border-gray-700 shadow-xl opacity-95">
-        <p className="text-gray-400 text-xs mb-1">{formattedDate}</p>
-        <p className="font-mono text-xl text-blue-400 font-bold">{payload[0].value.toFixed(2)} km/L</p>
-        <p className="text-xs text-gray-500 mt-1 truncate max-w-[150px]">{data.gasStation}</p>
+      <div className={CHART_TOOLTIP_CLASS}>
+        <p className="num text-xs text-sub">{formattedDate}</p>
+        <p className="mt-0.5">
+          <span className="num text-xl font-bold text-ink">{payload[0].value.toFixed(2)}</span>
+          <span className="text-[13px] text-sub"> km/L</span>
+        </p>
+        <p className="mt-1 max-w-[150px] truncate text-xs text-sub">{data.gasStation}</p>
       </div>
     );
   }
@@ -45,16 +50,25 @@ interface EfficiencyChartProps {
   averageEfficiency: number | null;
 }
 
-/** 燃費の推移グラフ */
+/** 燃費の推移グラフ（ヒーローカードの中に置く。面は親が持つ）。面グラデーション＋折れ線＋平均の破線＋最終点の強調 */
 export default function EfficiencyChart({ period, efficiency, averageEfficiency }: EfficiencyChartProps) {
   const { series: chartData, axis: efficiencyAxis, timeDomain } = efficiency;
+  const lastIndex = chartData.length - 1;
+  const averageTick = efficiencyAxis.averageTick;
+  const showAverage = averageTick != null && averageEfficiency != null;
+
+  // 最終点だけ丸を描く（他の点は線だけで表す）
+  const renderDot = (props: unknown): ReactElement => {
+    const { cx, cy, index } = props as { cx?: number; cy?: number; index: number };
+    if (index !== lastIndex || cx == null || cy == null) return <g key={`dot-${index}`} />;
+    return (
+      <circle key={`dot-${index}`} cx={cx} cy={cy} r={5} fill={CHART_COLORS.accent} stroke={CHART_COLORS.surface} strokeWidth={2} />
+    );
+  };
+
   return (
-    <div className="bg-gray-900/50 border border-gray-800 rounded-3xl p-4 sm:p-5 md:p-8">
-      <h2 className="text-lg font-bold text-gray-300 mb-6 flex items-center gap-2">
-        <span className="w-3 h-3 rounded-full bg-blue-500 shadow-[0_0_10px_#3b82f6]"></span>
-        燃費の推移 (km/L)
-      </h2>
-      <div className="h-64 md:h-80 w-full relative">
+    <div>
+      <div className="relative h-44 w-full lg:h-64">
         {chartData.length < 2 ? (
           <ChartEmpty
             message={
@@ -66,57 +80,60 @@ export default function EfficiencyChart({ period, efficiency, averageEfficiency 
         ) : (
           <ResponsiveContainer width="100%" height="100%">
             {/* key={period}: 期間切替時にデータ点数が大きく変わると線が不自然に変形するため、再マウントして新規描画させる */}
-            <LineChart key={period} data={chartData} margin={{ top: 10, right: 10, left: 8, bottom: 0 }}>
+            <AreaChart key={period} data={chartData} margin={{ top: 10, right: 8, left: 0, bottom: 0 }}>
               <defs>
-                <linearGradient id="colorEfficiency" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.4}/>
-                  <stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/>
+                <linearGradient id="statsEfficiencyArea" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0" stopColor={CHART_COLORS.accent} stopOpacity={0.28} />
+                  <stop offset="1" stopColor={CHART_COLORS.accent} stopOpacity={0} />
                 </linearGradient>
               </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="#2d3748" vertical={false} />
+              <CartesianGrid stroke={CHART_COLORS.grid} vertical={false} />
               <XAxis
                 type="number"
                 scale="time"
                 dataKey="timestamp"
-                stroke="#4a5568"
-                fontSize={11}
-                tickMargin={10}
-                domain={timeDomain ?? ['auto', 'auto']}
-                tickFormatter={(val) => {
+                tick={CHART_TICK}
+                axisLine={false}
+                tickLine={false}
+                tickMargin={8}
+                minTickGap={20}
+                domain={timeDomain ?? ["auto", "auto"]}
+                tickFormatter={val => {
                   const date = new Date(val);
                   return `${date.getMonth() + 1}/${date.getDate()}`;
                 }}
               />
               <YAxis
-                stroke="#4a5568"
-                fontSize={10}
-                tickMargin={6}
-                domain={efficiencyAxis.domain ?? ['auto', 'auto']}
-                ticks={efficiencyAxis.ticks}
-                tick={averageTickRenderer(efficiencyAxis.averageTick, 2)}
+                width={38}
+                axisLine={false}
+                tickLine={false}
+                tickMargin={4}
+                domain={efficiencyAxis.domain ?? ["auto", "auto"]}
+                ticks={visibleAxisTicks(efficiencyAxis)}
+                interval={0}
+                tick={averageTickRenderer(averageTick, 2)}
               />
-              <Tooltip content={<CustomEfficiencyTooltip />} cursor={{ stroke: '#4a5568', strokeWidth: 1, strokeDasharray: '3 3' }} />
-              {efficiencyAxis.averageTick != null && averageEfficiency != null && (
-                <ReferenceLine
-                  y={efficiencyAxis.averageTick}
-                  stroke="#f87171"
-                  strokeDasharray="4 3"
-                  strokeWidth={1.5}
-                />
+              <Tooltip content={<CustomEfficiencyTooltip />} cursor={{ stroke: CHART_COLORS.cursor, strokeWidth: 1 }} />
+              {showAverage && (
+                <ReferenceLine y={averageTick} stroke={CHART_COLORS.average} strokeDasharray="4 4" strokeWidth={1.5} />
               )}
-              <Line
+              <Area
                 type="monotone"
                 dataKey="efficiency"
-                stroke="#3b82f6"
-                strokeWidth={4}
-                dot={{ r: 5, fill: '#1e3a8a', stroke: '#3b82f6', strokeWidth: 2 }}
-                activeDot={{ r: 7, fill: '#60a5fa', stroke: '#fff', strokeWidth: 2 }}
+                stroke={CHART_COLORS.accent}
+                strokeWidth={2.5}
+                strokeLinejoin="round"
+                strokeLinecap="round"
+                fill="url(#statsEfficiencyArea)"
+                dot={renderDot}
+                activeDot={{ r: 5, fill: CHART_COLORS.accent, stroke: CHART_COLORS.surface, strokeWidth: 2 }}
                 animationDuration={500}
               />
-            </LineChart>
+            </AreaChart>
           </ResponsiveContainer>
         )}
       </div>
+      {chartData.length >= 2 && showAverage && <AverageLegend />}
     </div>
   );
 }
