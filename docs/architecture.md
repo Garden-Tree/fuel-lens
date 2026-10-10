@@ -60,7 +60,8 @@ FuelLens の構成、データの流れ、主要なモジュールの役割を�
 | `components/ServiceWorkerRegister.tsx` | `public/sw.js` を登録する（本番ビルドのみ。開発中は `NEXT_PUBLIC_ENABLE_SW=1` で有効化）。`app/layout.tsx` にマウント |
 | `public/icons/` / `public/apple-touch-icon.png` | PWA アイコン（`icon-192.png` / `icon-512.png` / `icon-maskable-512.png` と 180x180 の apple-touch-icon）。`scripts/generate-icons.mjs` が生成 |
 | `scripts/generate-icons.mjs` | `app/icon.svg` から PWA アイコンを生成するスクリプト（`node scripts/generate-icons.mjs`） |
-| `tests/*.test.ts`、`tests/data/*.test.ts` | Vitest の単体テスト（`environment: "node"`。対象は `lib/` の関数。`tests/data/` はデータアダプタ層で、偽の Supabase クライアントと Map の Storage は `tests/data/fakeSupabase.ts`） |
+| `tests/*.test.ts`、`tests/data/*.test.ts` | Vitest の単体テスト（`node` プロジェクト、`environment: "node"`。対象は `lib/` の関数。`tests/data/` はデータアダプタ層で、偽の Supabase クライアントと Map の Storage は `tests/data/fakeSupabase.ts`） |
+| `tests/components/*.test.tsx`、`tests/setup/` | Vitest のコンポーネントテスト（`dom` プロジェクト、jsdom + Testing Library。セットアップは `tests/setup/dom.ts`） |
 | `supabase/migrations/*.sql` | スキーマ・RLS・keepalive・給油の連鎖計算用の列（`0004_fill_chain.sql`）（冪等）。手順は [supabase/README.md](../supabase/README.md) |
 | `docs/` | このドキュメント群。連鎖計算の仕様は [design-fill-chain.md](./design-fill-chain.md) |
 | `.github/workflows/` | `ci.yml`（CI）と `supabase-keepalive.yml`（keepalive の予備経路） |
@@ -173,7 +174,7 @@ useVehicles / useFuelRecords
   一覧は `VehicleStore.list()`（1 台も無ければ既定車両を作成）です。初期化の結果が取得済みの車両一覧を運ぶので、その直後の最初の `list()` は再取得せず使い回します（`lib/data/primedVehicles.ts`）。
 - 読み込みに失敗したときはローカルの既定車両へフォールバックせず、最後に同期した一覧（キャッシュ）を表示します。
 - `settings` は `VehicleSettings`（`{ distance_mode?, default_fuel_type? }`）。省略したキーは、追加ではトリップ / 未指定、更新では変更なしです。
-  不明な値は `sanitizeVehicleSettings` が捨てます。更新は名前・種別・設定を 1 回の update で保存し、方式を切り替えても既存の記録は変更しません（表示は読み取り時に再計算される）。
+  不明な値は `sanitizeVehicleSettings` が捨てます。更新は名前・種別・設定を 1 回の update で保存します。方式の切り替えでは、オドメーター → トリップのときだけ、先にその車両の記録の `total_distance` へ連鎖計算の区間距離を書き戻します（`planDistanceWriteBack`。[design-fill-chain.md 4 章](./design-fill-chain.md#車両管理モーダル)）。それ以外の切り替えでは記録を変更せず、表示は読み取り時に再計算されます。
 - 読み込んだ車両（ローカル・クラウド・キャッシュ）は `normalizeVehicle` で新しい列を補います（`0004` 適用前の DB でも動く）。
 - `addVehicles(items: ({ name, type } & VehicleSettings)[])`（復元用）は車両をまとめて追加し、作成した `Vehicle[]` を返します。
   未ログインでは `local-vehicle-<時刻>-<連番>` の ID でローカルに追加し、ログイン中は 1 台ずつ入力順に insert します（閲覧専用中は日本語エラー。途中で失敗しても作成済みの車両は一覧に反映）。
