@@ -1,10 +1,18 @@
 "use client";
 
 import { useEffect, useRef, useState, type ChangeEvent } from "react";
-import { Database, Download, FileJson, FileSpreadsheet, Loader2, Upload } from "lucide-react";
+import { FileJson, FileSpreadsheet, Loader2, Upload } from "lucide-react";
 
 import RestoreCounts from "@/components/RestoreCounts";
-import { buttonClass, sectionClass, type SettingsBusy } from "@/components/settingsUi";
+import {
+  captionClass,
+  noticeClass,
+  panelClass,
+  primaryButtonClass,
+  secondaryButtonClass,
+  type SettingsBusy,
+} from "@/components/settingsUi";
+import { GroupedList, ListRow, Section, ValueRow } from "@/components/ui";
 import { useToast } from "@/components/Toast";
 import type { Vehicle } from "@/lib/types";
 import { todayLocalISO } from "@/lib/dates";
@@ -205,105 +213,73 @@ export default function BackupPanel({
   const counts = pending?.plan.counts;
   const nothingToRestore = !!counts && counts.vehiclesNew === 0 && counts.recordsNew === 0;
 
+  const spinner = <Loader2 className="h-4 w-4 animate-spin text-sub" aria-hidden="true" />;
+
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-5">
       {/* データ概要 */}
-      <section aria-labelledby="settings-summary-title" className={sectionClass}>
-        <h2 id="settings-summary-title" className="flex items-center gap-2 text-base font-bold mb-4">
-          <Database className="w-5 h-5 text-blue-400" aria-hidden="true" />
-          データ概要
-        </h2>
-        <dl className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          <div className="bg-black/30 rounded-xl p-4">
-            <dt className="text-xs text-gray-500">車両数</dt>
-            <dd className="text-2xl font-bold font-mono mt-1">
-              {loading ? <span className="inline-block w-10 h-7 bg-gray-800 rounded animate-pulse" /> : `${vehicles.length}`}
-              <span className="text-xs text-gray-500 font-sans ml-1">台</span>
-            </dd>
-          </div>
-          <div className="bg-black/30 rounded-xl p-4">
-            <dt className="text-xs text-gray-500">記録数（全車両）</dt>
-            <dd className="text-2xl font-bold font-mono mt-1">
-              {recordCount === null ? (
+      <Section title="データ">
+        <GroupedList>
+          <ValueRow
+            label="車両数"
+            value={loading ? <span className="inline-block h-5 w-8 animate-pulse rounded bg-surface-2 align-middle" /> : `${vehicles.length}`}
+            unit={loading ? undefined : " 台"}
+          />
+          <ValueRow
+            label="記録数（全車両）"
+            value={
+              recordCount === null ? (
                 countError ? (
-                  <span className="text-sm text-red-400 font-sans">取得できませんでした</span>
+                  <span className="font-sans text-sm font-normal text-red-400">取得できませんでした</span>
                 ) : (
-                  <span className="inline-block w-14 h-7 bg-gray-800 rounded animate-pulse" />
+                  <span className="inline-block h-5 w-10 animate-pulse rounded bg-surface-2 align-middle" />
                 )
               ) : (
                 recordCount.toLocaleString("ja-JP")
-              )}
-              {recordCount !== null && <span className="text-xs text-gray-500 font-sans ml-1">件</span>}
-            </dd>
-          </div>
-          <div className="bg-black/30 rounded-xl p-4">
-            <dt className="text-xs text-gray-500">保存先</dt>
-            <dd className="text-base font-bold mt-2">{isSignedIn ? "クラウド（ログイン中）" : "このブラウザ"}</dd>
-          </div>
-        </dl>
+              )
+            }
+            unit={recordCount !== null ? " 件" : undefined}
+          />
+          <ValueRow label="保存先" value={isSignedIn ? "クラウド（ログイン中）" : "このブラウザ"} className="[&_.num]:font-sans [&_.num]:text-[15px]" />
+        </GroupedList>
         {countError && (
-          <p role="alert" className="text-xs text-red-400 mt-3 break-words">{countError}</p>
+          <p role="alert" className="break-words px-4 text-xs text-red-400">
+            {countError}
+          </p>
         )}
         {!isSignedIn && (
-          <p className="text-xs text-gray-500 mt-3">
+          <p className={captionClass}>
             未ログインのデータはこのブラウザにだけ保存されています。ブラウザのデータを消すと失われるため、定期的にバックアップしてください。
           </p>
         )}
-      </section>
+      </Section>
 
       {/* バックアップ */}
-      <section aria-labelledby="settings-backup-title" className={sectionClass}>
-        <h2 id="settings-backup-title" className="flex items-center gap-2 text-base font-bold mb-2">
-          <Download className="w-5 h-5 text-green-400" aria-hidden="true" />
-          バックアップ
-        </h2>
-        <p className="text-xs text-gray-400 mb-4">
-          全車両と全記録を書き出します。JSON はこの画面の「復元」で読み込めます。CSV は表計算ソフトでの閲覧用です。
-        </p>
-        <div className="flex flex-col sm:flex-row gap-3">
-          <button
-            type="button"
+      <Section title="バックアップ">
+        <GroupedList>
+          <ListRow
+            leading={<FileJson className="h-5 w-5 text-accent" aria-hidden="true" />}
+            title="JSONで書き出す"
+            subtitle="全車両と全記録。下の「復元」で読み込めます"
+            trailing={busy === "json" ? spinner : undefined}
+            showChevron={busy !== "json"}
             onClick={handleExportJson}
             disabled={actionsDisabled}
-            className={`${buttonClass} bg-blue-600 hover:bg-blue-500 border-blue-500 text-white`}
-          >
-            {busy === "json" ? (
-              <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" />
-            ) : (
-              <FileJson className="w-4 h-4" aria-hidden="true" />
-            )}
-            JSON でバックアップ
-          </button>
-          <button
-            type="button"
+          />
+          <ListRow
+            leading={<FileSpreadsheet className="h-5 w-5 text-money" aria-hidden="true" />}
+            title="全車両のCSVを書き出す"
+            subtitle="表計算ソフトで見る用"
+            trailing={busy === "csv" ? spinner : undefined}
+            showChevron={busy !== "csv"}
             onClick={handleExportCsv}
             disabled={actionsDisabled}
-            className={`${buttonClass} bg-gray-900 hover:bg-gray-800 border-gray-700 text-gray-200`}
-          >
-            {busy === "csv" ? (
-              <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" />
-            ) : (
-              <FileSpreadsheet className="w-4 h-4 text-green-500" aria-hidden="true" />
-            )}
-            全車両を CSV で書き出し
-          </button>
-        </div>
-      </section>
+          />
+        </GroupedList>
+      </Section>
 
       {/* 復元 */}
-      <section aria-labelledby="settings-restore-title" className={sectionClass}>
-        <h2 id="settings-restore-title" className="flex items-center gap-2 text-base font-bold mb-2">
-          <Upload className="w-5 h-5 text-amber-400" aria-hidden="true" />
-          復元
-        </h2>
-        <p className="text-xs text-gray-400 mb-1">
-          FuelLens の JSON バックアップを読み込み、{isSignedIn ? "クラウド" : "このブラウザ"}のデータへ追加します。
-        </p>
-        <p className="text-xs text-amber-300/90 mb-4">復元は追記のみで既存の記録は削除しません。同じ記録はスキップします。</p>
-        {readOnly && (
-          <p role="status" className="text-[11px] text-amber-400/90 mb-3">閲覧専用（クラウド接続待ち）のため復元できません</p>
-        )}
-
+      <Section title="復元">
         <input
           ref={fileInputRef}
           type="file"
@@ -312,61 +288,62 @@ export default function BackupPanel({
           onChange={handleFileChange}
           aria-label="バックアップファイルを選択"
         />
-        <button
-          type="button"
-          onClick={() => fileInputRef.current?.click()}
-          disabled={restoreDisabled}
-          className={`${buttonClass} bg-gray-900 hover:bg-gray-800 border-gray-700 text-gray-200 w-full sm:w-auto`}
-        >
-          {busy === "restore-prepare" ? (
-            <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" />
-          ) : (
-            <Upload className="w-4 h-4" aria-hidden="true" />
-          )}
-          バックアップファイルを選択
-        </button>
+        <GroupedList>
+          <ListRow
+            leading={<Upload className="h-5 w-5 text-warn" aria-hidden="true" />}
+            title="バックアップファイルを選ぶ"
+            subtitle={`FuelLens の JSON を読み込み、${isSignedIn ? "クラウド" : "このブラウザ"}のデータへ追加します`}
+            trailing={busy === "restore-prepare" ? spinner : undefined}
+            showChevron={busy !== "restore-prepare"}
+            onClick={() => fileInputRef.current?.click()}
+            disabled={restoreDisabled}
+          />
 
-        {pending && counts && (
-          <div className="mt-4 bg-black/30 border border-gray-800 rounded-xl p-4">
-            <p className="text-xs text-gray-400 mb-3 break-all">
-              {pending.fileName}（{new Date(pending.backup.exportedAt).toLocaleString("ja-JP")} 書き出し・車両{" "}
-              {pending.backup.vehicles.length} 台・記録 {pending.backup.records.length} 件）
-            </p>
-            <RestoreCounts counts={counts} />
+          {pending && counts && (
+            <div className={panelClass}>
+              <p className="mb-3 break-all text-xs text-sub">
+                {pending.fileName}（{new Date(pending.backup.exportedAt).toLocaleString("ja-JP")} 書き出し・車両{" "}
+                {pending.backup.vehicles.length} 台・記録 {pending.backup.records.length} 件）
+              </p>
+              <RestoreCounts counts={counts} />
 
-            {nothingToRestore && (
-              <p className="text-xs text-gray-400 mt-3">追加される車両・記録はありません。</p>
-            )}
+              {nothingToRestore && <p className="mt-3 text-xs text-sub">追加される車両・記録はありません。</p>}
 
-            <div className="flex flex-col sm:flex-row gap-3 mt-4">
-              <button
-                type="button"
-                onClick={handleRestore}
-                disabled={restoreDisabled || nothingToRestore}
-                className={`${buttonClass} bg-amber-600 hover:bg-amber-500 border-amber-500 text-white`}
-              >
-                {busy === "restore" && <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" />}
-                復元する
-              </button>
-              <button
-                type="button"
-                onClick={() => setPending(null)}
-                disabled={busy !== null}
-                className={`${buttonClass} bg-gray-900 hover:bg-gray-800 border-gray-700 text-gray-300`}
-              >
-                キャンセル
-              </button>
+              <div className="mt-4 grid grid-cols-2 gap-3">
+                <button
+                  type="button"
+                  onClick={handleRestore}
+                  disabled={restoreDisabled || nothingToRestore}
+                  className={primaryButtonClass}
+                >
+                  {busy === "restore" && <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />}
+                  復元する
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPending(null)}
+                  disabled={busy !== null}
+                  className={secondaryButtonClass}
+                >
+                  キャンセル
+                </button>
+              </div>
             </div>
-          </div>
+          )}
+        </GroupedList>
+        <p className={noticeClass}>復元は追記のみで既存の記録は削除しません。同じ記録はスキップします。</p>
+        {readOnly && (
+          <p role="status" className="px-4 text-[11px] text-warn">
+            閲覧専用（クラウド接続待ち）のため復元できません
+          </p>
         )}
-
         {progress && (
-          <p role="status" aria-live="polite" className="text-xs text-gray-300 mt-3 flex items-center gap-2">
-            <Loader2 className="w-3 h-3 animate-spin" aria-hidden="true" />
+          <p role="status" aria-live="polite" className="flex items-center gap-2 px-4 text-xs text-ink">
+            <Loader2 className="h-3 w-3 animate-spin" aria-hidden="true" />
             {progress}
           </p>
         )}
-      </section>
+      </Section>
     </div>
   );
 }

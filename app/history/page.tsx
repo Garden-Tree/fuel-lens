@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useMemo } from "react";
-import { Trash2, MapPin, Calendar, Edit2, Download, Car } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { ClipboardList, SearchX } from "lucide-react";
 
 import type { FuelRecord } from "@/lib/types";
 import EditFuelRecordForm from "@/components/EditFuelRecordForm";
@@ -11,10 +11,19 @@ import { AppFrame, HookErrorLine, PageHeader, ReadOnlyCaption } from "@/componen
 import { useToast } from "@/components/Toast";
 import { useRecordForm } from "@/lib/useRecordForm";
 import { useRecordEditing } from "@/lib/useRecordEditing";
-import RecordStats from "@/components/RecordStats";
-import { efficiencyNullReason } from "@/lib/format";
-import { normalizeDateString } from "@/lib/dates";
 import { distanceModeOf } from "@/lib/fillChain";
+import { groupByMonth, sumTotalCost, type MonthGroup } from "@/lib/history/groupByMonth";
+import {
+  ALL,
+  MONTH_OPTIONS,
+  SORT_LABELS,
+  availableYears as listAvailableYears,
+  filterByYearMonth,
+  recordElementId,
+  recordIdFromHash,
+  sortRecords,
+  type HistorySort,
+} from "@/lib/history/recordList";
 import {
   RECORD_CSV_EXTRA_HEADERS,
   buildCsv,
@@ -24,16 +33,72 @@ import {
   formatRecordExtraCsvFields,
   toSafeFilenamePart,
 } from "@/lib/csv";
+import HistoryToolbar, { HistoryToolbarSkeleton } from "./_components/HistoryToolbar";
+import RecordRow, { RecordColumnsHeader } from "./_components/RecordRow";
+import RecordDetail from "./_components/RecordDetail";
 
-/** created_at（ISO 日時）をミリ秒に変換する。欠落・解析不能なら 0（最も古い扱い） */
-function createdAtMs(createdAt: string | null | undefined): number {
-  if (!createdAt) return 0;
-  const t = new Date(createdAt).getTime();
-  return Number.isFinite(t) ? t : 0;
+/** 月ごとのまとまりの見出し（左に「2026年9月」、右に「n回・¥合計」） */
+function GroupHeader({ group }: { group: Pick<MonthGroup<FuelRecord>, "label" | "count" | "totalCost"> }) {
+  return (
+    <div className="flex items-baseline justify-between gap-3 px-4 pt-1.5 text-[13px] text-sub">
+      <h2 className="font-bold text-ink/80">{group.label}</h2>
+      <span>
+        <span className="num">{group.count}</span>回・<span className="num">¥{group.totalCost.toLocaleString("ja-JP")}</span>
+      </span>
+    </div>
+  );
 }
 
-/** 月フィルタの選択肢（"1"〜"12"） */
-const MONTH_OPTIONS: readonly string[] = Array.from({ length: 12 }, (_, i) => String(i + 1));
+/** 読み込み中の一覧（月の見出しと行の形だけ） */
+function ListSkeleton() {
+  return (
+    <div className="flex flex-col gap-3" aria-hidden="true">
+      {[3, 2].map((rows, g) => (
+        <div key={g} className="flex flex-col gap-1.5">
+          <div className="mx-4 mt-1.5 h-4 w-20 animate-pulse rounded bg-surface" />
+          <div className="divide-y divide-line rounded-2xl bg-surface">
+            {Array.from({ length: rows }, (_, i) => (
+              <div key={i} className="flex min-h-[60px] items-center gap-3 px-4 py-2.5">
+                <div className="h-9 w-8 animate-pulse rounded bg-surface-2" />
+                <div className="flex flex-1 flex-col gap-1.5">
+                  <div className="h-4 w-2/3 max-w-56 animate-pulse rounded bg-surface-2" />
+                  <div className="h-3 w-1/2 max-w-40 animate-pulse rounded bg-surface-2" />
+                </div>
+                <div className="flex flex-col items-end gap-1.5">
+                  <div className="h-5 w-12 animate-pulse rounded bg-surface-2" />
+                  <div className="h-3 w-14 animate-pulse rounded bg-surface-2" />
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      ))}
+      <span className="sr-only">読み込み中…</span>
+    </div>
+  );
+}
+
+/** 記録が無いときの表示 */
+function EmptyState({ filtered, onClear }: { filtered: boolean; onClear: () => void }) {
+  const Icon = filtered ? SearchX : ClipboardList;
+  return (
+    <div className="flex flex-col items-center gap-3 rounded-2xl bg-surface px-6 py-14 text-center">
+      <Icon className="h-8 w-8 text-faint" aria-hidden="true" />
+      <p className="text-[15px] text-ink">{filtered ? "条件に一致する記録がありません" : "この車両の履歴はありません"}</p>
+      {filtered ? (
+        <button
+          type="button"
+          onClick={onClear}
+          className="h-10 rounded-xl px-3 text-sm font-bold text-accent transition-colors hover:bg-surface-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+        >
+          絞り込みを解除
+        </button>
+      ) : (
+        <p className="text-[13px] text-sub">レシートとメーターを撮影すると、ここに給油の記録が並びます</p>
+      )}
+    </div>
+  );
+}
 
 export default function HistoryPage() {
   const { toast, confirm } = useToast();
@@ -58,84 +123,87 @@ export default function HistoryPage() {
   const form = useRecordForm();
   const editing = useRecordEditing({ scope, form, toast, confirm, updatedMessage: "記録を更新しました" });
 
-  const [movingId, setMovingId] = useState<string | null>(null);
+  // 開いている行（明細と操作を出している記録）
+  const [expandedId, setExpandedId] = useState<string | null>(null);
   // 進行中の操作（削除・移動）の対象レコードID。二重クリック防止用
   const [busyId, setBusyId] = useState<string | null>(null);
 
-  const [sortType, setSortType] = useState<"date" | "created_at">("date");
+  const [sortType, setSortType] = useState<HistorySort>("date");
 
   // 年・月フィルタ
-  const [filterYear, setFilterYear] = useState<string>("all");
-  const [filterMonth, setFilterMonth] = useState<string>("all");
+  const [filterYear, setFilterYear] = useState<string>(ALL);
+  const [filterMonth, setFilterMonth] = useState<string>(ALL);
 
-  // 車両を切り替えたら「移動先の選択」も閉じ、年・月フィルタも解除する（方式の切り替えでは解除しない）
+  // 車両を切り替えたら開いている行を閉じ、年・月フィルタも解除する（方式の切り替えでは解除しない）
   // （エフェクトではなく「前回の値を state に保持してレンダー中に調整する」React 推奨パターン）
   const [filterVehicleId, setFilterVehicleId] = useState(selectedVehicleId);
   if (filterVehicleId !== selectedVehicleId) {
     setFilterVehicleId(selectedVehicleId);
-    setMovingId(null);
-    setFilterYear("all");
-    setFilterMonth("all");
+    setExpandedId(null);
+    setFilterYear(ALL);
+    setFilterMonth(ALL);
   }
 
-  const availableYears = useMemo(() => {
-    const years = new Set<string>();
-    records.forEach(r => {
-      if (r.date) years.add(String(r.date).slice(0, 4));
-    });
-    return Array.from(years).sort((a, b) => b.localeCompare(a));
-  }, [records]);
+  const availableYears = useMemo(() => listAvailableYears(records), [records]);
 
-  // 選択中の年が記録から消えた（最後の1件を削除した等）場合は「全ての年」として扱う。
-  // そのままだと select は「全ての年」と表示されるのに絞り込みが残り、解除できなくなるため。
-  const effectiveYear = availableYears.includes(filterYear) ? filterYear : "all";
-  const effectiveMonth = MONTH_OPTIONS.includes(filterMonth) ? filterMonth : "all";
+  // 選択中の年が記録から消えた（最後の1件を削除した等）場合は「すべての年」として扱う。
+  // そのままだとチップは「すべての年」と表示されるのに絞り込みが残り、解除できなくなるため。
+  const effectiveYear = availableYears.includes(filterYear) ? filterYear : ALL;
+  const effectiveMonth = MONTH_OPTIONS.includes(filterMonth) ? filterMonth : ALL;
+  const filtered = effectiveYear !== ALL || effectiveMonth !== ALL;
 
-  const filteredRecords = useMemo(() => {
-    if (effectiveYear === "all" && effectiveMonth === "all") return records;
-    return records.filter(r => {
-      if (!r.date) return false;
-      const y = String(r.date).slice(0, 4);
-      const m = String(parseInt(String(r.date).slice(5, 7), 10));
-      if (effectiveYear !== "all" && y !== effectiveYear) return false;
-      if (effectiveMonth !== "all" && m !== effectiveMonth) return false;
-      return true;
-    });
-  }, [records, effectiveYear, effectiveMonth]);
+  const sortedRecords = useMemo(
+    () => sortRecords(filterByYearMonth(records, effectiveYear, effectiveMonth), sortType),
+    [records, effectiveYear, effectiveMonth, sortType]
+  );
 
-  const sortedRecords = useMemo(() => {
+  // 給油日順は月ごとにまとめる（年を 1 つに絞り込んでいれば見出しは「9月」）。
+  // 登録順は月が前後するので、まとめずに 1 つの一覧にする（日付の欄に月も出す）
+  const groups = useMemo<MonthGroup<FuelRecord>[]>(() => {
     if (sortType === "created_at") {
-      // 登録（作成）順の新しい順。クラウドは created_at、ローカルの旧データは
-      // created_at を持たないため id（Date.now 由来）でフォールバックする。
-      // 年・月フィルタ適用済みの filteredRecords を対象にする。
-      return [...filteredRecords].sort((a, b) => {
-        const createdA = createdAtMs(a.created_at);
-        const createdB = createdAtMs(b.created_at);
-        if (createdB !== createdA) return createdB - createdA;
-        return b.id > a.id ? 1 : b.id < a.id ? -1 : 0;
-      });
+      return sortedRecords.length === 0
+        ? []
+        : [
+            {
+              key: "created_at",
+              label: SORT_LABELS.created_at,
+              count: sortedRecords.length,
+              totalCost: sumTotalCost(sortedRecords),
+              records: sortedRecords,
+            },
+          ];
     }
-    // 給油日の新しい順。日付が欠落・不正な記録は最も古い扱い（末尾）にする。
-    // "YYYY-MM-DD" 同士の辞書順比較なので NaN が出ず、比較関数の契約を満たす。
-    // 同じ給油日なら登録（作成）の新しい順 → id の順で安定化する。
-    return [...filteredRecords].sort((a, b) => {
-      const dateA = normalizeDateString(a.date);
-      const dateB = normalizeDateString(b.date);
-      if (dateA !== dateB) {
-        if (dateA === null) return 1;
-        if (dateB === null) return -1;
-        return dateA < dateB ? 1 : -1;
-      }
-      const createdA = createdAtMs(a.created_at);
-      const createdB = createdAtMs(b.created_at);
-      if (createdB !== createdA) return createdB - createdA;
-      return b.id > a.id ? 1 : b.id < a.id ? -1 : 0;
-    });
-  }, [filteredRecords, sortType]);
+    return groupByMonth(sortedRecords, { shortLabel: effectiveYear !== ALL });
+  }, [sortedRecords, sortType, effectiveYear]);
+
+  // ホームなどから `/history#record-<id>` で開かれたら、その行を開いて画面内へスクロールする（読み込み後に 1 回 + hashchange）
+  const hashHandledRef = useRef(false);
+  const sortedRecordsRef = useRef(sortedRecords);
+  useEffect(() => {
+    sortedRecordsRef.current = sortedRecords;
+  }, [sortedRecords]);
+  useEffect(() => {
+    const openFromHash = () => {
+      const id = recordIdFromHash(window.location.hash);
+      if (!id || !sortedRecordsRef.current.some(r => r.id === id)) return;
+      setExpandedId(id);
+      requestAnimationFrame(() => {
+        const el = document.getElementById(recordElementId(id));
+        el?.scrollIntoView({ block: "center" });
+        el?.querySelector<HTMLElement>("button[aria-expanded]")?.focus({ preventScroll: true });
+      });
+    };
+    if (!isLoading && !hashHandledRef.current && sortedRecords.length > 0) {
+      hashHandledRef.current = true;
+      requestAnimationFrame(openFromHash);
+    }
+    window.addEventListener("hashchange", openFromHash);
+    return () => window.removeEventListener("hashchange", openFromHash);
+  }, [isLoading, sortedRecords.length]);
 
   const handleDelete = async (id: string) => {
     if (busyId || readOnly) return;
-    // 確認ダイアログ表示中も busy 扱いにして、同じカードの編集・移動を無効化する
+    // 確認ダイアログ表示中も busy 扱いにして、同じ行の編集・移動を無効化する
     setBusyId(id);
     try {
       const ok = await confirm("この記録を削除しますか？", { danger: true, confirmLabel: "削除する" });
@@ -153,15 +221,11 @@ export default function HistoryPage() {
   const handleMoveVehicle = async (recordId: string, targetVehicleId: string) => {
     if (busyId || readOnly) return;
     const targetName = vehicles.find(v => v.id === targetVehicleId)?.name ?? "別の車両";
-    // 確認ダイアログ表示中も busy 扱いにして、同じカードの編集・移動を無効化する
+    // 確認ダイアログ表示中も busy 扱いにして、同じ行の編集・移動を無効化する
     setBusyId(recordId);
     try {
       const ok = await confirm(`この記録を「${targetName}」へ移動しますか？`, { confirmLabel: "移動する" });
-      if (!ok) {
-        // キャンセルしたら「どの車両に移動しますか？」の選択も閉じる
-        setMovingId(null);
-        return;
-      }
+      if (!ok) return;
       // オドメーター → トリップメーターの車両へ移すときは、表示中の区間距離（連鎖計算の値）も保存する。
       // 保存値は保存時点の導出値で古いことがあり、トリップモードは保存値をそのまま使うため（docs/design-fill-chain.md 4 章）。
       // 区間が出ない記録（null）は保存値を残す。移動先もオドメーターなら移動先の連鎖で再計算されるので vehicle_id だけ
@@ -172,7 +236,7 @@ export default function HistoryPage() {
         recordId,
         writeBack ? { vehicle_id: targetVehicleId, total_distance: chainedDistance } : { vehicle_id: targetVehicleId }
       );
-      setMovingId(null);
+      setExpandedId(null);
       toast(`「${targetName}」へ移動しました`, { type: "success" });
     } catch (e) {
       console.error(e);
@@ -185,7 +249,18 @@ export default function HistoryPage() {
   const startEditing = (record: FuelRecord) => {
     if (readOnly) return;
     editing.startEditing(record);
-    setMovingId(null);
+    setExpandedId(record.id);
+  };
+
+  const toggleRow = (id: string) => {
+    // 編集中の行は、フォームのキャンセル / 保存で閉じる（見出しを押しても畳まない）
+    if (editing.editingRecordId === id) return;
+    setExpandedId(current => (current === id ? null : id));
+  };
+
+  const clearFilters = () => {
+    setFilterYear(ALL);
+    setFilterMonth(ALL);
   };
 
   const exportToCsv = () => {
@@ -219,311 +294,108 @@ export default function HistoryPage() {
     ]);
 
     const currentVehicleName = vehicles.find(v => v.id === selectedVehicleId)?.name || "vehicle";
-    const filename = `fuellens_${toSafeFilenamePart(currentVehicleName)}_${new Date().toISOString().slice(0,10)}.csv`;
+    const filename = `fuellens_${toSafeFilenamePart(currentVehicleName)}_${new Date().toISOString().slice(0, 10)}.csv`;
     downloadTextFile(filename, buildCsv(headers, rows), "text/csv;charset=utf-8;");
   };
 
+  const moveTargets = vehicles.filter(v => v.id !== selectedVehicleId);
+
   return (
     <AppFrame>
-      <div className="w-full">
+      {/* ヘッダーと車両チップ（車両の読み込み中はスケルトン） */}
+      <PageHeader
+        title="給油履歴"
+        rightSlot={
+          <VehicleSelector
+            loading={vehiclesLoading}
+            vehicles={vehicles}
+            selectedVehicleId={selectedVehicleId}
+            onSelect={setSelectedVehicleId}
+            onAddVehicle={vehicleActions.addVehicle}
+            onDeleteVehicle={vehicleActions.deleteVehicle}
+            onUpdateVehicle={vehicleActions.updateVehicle}
+            readOnly={readOnly}
+          />
+        }
+      />
 
-        {/* ヘッダーと車両チップ（車両の読み込み中はスケルトン） */}
-        <PageHeader
-          title="給油履歴"
-          rightSlot={
-            <VehicleSelector
-              loading={vehiclesLoading}
-              vehicles={vehicles}
-              selectedVehicleId={selectedVehicleId}
-              onSelect={setSelectedVehicleId}
-              onAddVehicle={vehicleActions.addVehicle}
-              onDeleteVehicle={vehicleActions.deleteVehicle}
-              onUpdateVehicle={vehicleActions.updateVehicle}
-              readOnly={readOnly}
-            />
-          }
-        />
+      {/* データ取得エラー / 閲覧専用の表示 */}
+      <HookErrorLine error={hookError} />
+      <ReadOnlyCaption show={readOnly} />
 
-        {/* データ取得エラー / 閲覧専用の表示 */}
-        <HookErrorLine error={hookError} />
-        <ReadOnlyCaption show={readOnly} />
+      {isLoading ? (
+        <>
+          <HistoryToolbarSkeleton />
+          <ListSkeleton />
+        </>
+      ) : (
+        <>
+          <HistoryToolbar
+            years={availableYears}
+            year={effectiveYear}
+            month={effectiveMonth}
+            sort={sortType}
+            onYearChange={setFilterYear}
+            onMonthChange={setFilterMonth}
+            onSortChange={setSortType}
+            count={sortedRecords.length}
+            onExport={exportToCsv}
+            disabled={records.length === 0}
+          />
 
-        {/* CSV出力ボタン */}
-        <div className="flex flex-wrap items-center justify-end gap-x-4 gap-y-2 mb-4 sm:mb-6 w-full">
-          <div className="flex-shrink-0 ml-auto">
-            {isLoading ? (
-              <button
-                disabled
-                className="flex items-center gap-2 px-3 py-2 min-h-10 bg-gray-900/50 text-gray-500 text-xs font-bold rounded-xl border border-gray-800/80 cursor-not-allowed"
-              >
-                <Download className="w-4 h-4 text-green-700/50" />
-                <span>CSV出力</span>
-              </button>
-            ) : (
-              <button
-                disabled={sortedRecords.length === 0}
-                onClick={exportToCsv}
-                className={`flex items-center gap-2 px-3 py-2 min-h-10 text-xs font-bold rounded-xl border transition ${
-                  sortedRecords.length > 0
-                    ? "bg-gray-900 hover:bg-gray-800 text-gray-300 hover:text-white border-gray-800 hover:border-gray-700"
-                    : "bg-gray-900/50 text-gray-550/40 border-gray-800/50 cursor-not-allowed"
-                }`}
-                title={sortedRecords.length > 0 ? "表示中の記録をCSV形式でダウンロード" : "出力できる記録がありません"}
-              >
-                <Download className={`w-4 h-4 ${sortedRecords.length > 0 ? "text-green-500" : "text-green-700/20"}`} />
-                <span>CSV出力</span>
-              </button>
-            )}
-          </div>
-        </div>
-
-        {/* リスト表示 & ソート操作 */}
-        {isLoading ? (
-          <>
-            {/* 操作パネルスケルトン */}
-            <div className="flex items-center justify-end mb-4 w-full">
-              <div className="flex items-center gap-1 bg-gray-900 border border-gray-800 rounded-lg p-1">
-                <div className="w-[66px] h-7 bg-gray-800/80 rounded-md animate-pulse" />
-                <div className="w-[56px] h-7 bg-gray-800/80 rounded-md animate-pulse" />
-              </div>
-            </div>
-
-            {/* カードリストスケルトン */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6 w-full">
-              {[...Array(6)].map((_, i) => (
-                <div key={i} className="bg-gray-900 border border-gray-800 rounded-2xl p-5 relative overflow-hidden">
-                  <div className="flex justify-between items-start mb-3">
-                    <div>
-                      <div className="flex items-center gap-2 text-xs text-gray-500 mb-1">
-                        <Calendar className="w-3 h-3 text-gray-600" />
-                        <div className="w-16 h-3 bg-gray-800 rounded animate-pulse" />
-                      </div>
-                      <div className="flex items-baseline gap-1">
-                        <div className="w-20 h-8 bg-gray-800 rounded animate-pulse" />
-                        <span className="text-xs font-bold text-blue-500">km/L</span>
-                      </div>
-                    </div>
-                    
-                    <div className="text-right flex flex-col items-end">
-                      <div className="w-16 h-6 bg-gray-800 rounded animate-pulse mb-1" />
-                      <p className="text-[10px] text-gray-500">Total Cost</p>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-2 text-sm bg-black/20 p-3 rounded-lg">
-                    <div className="flex justify-between border-r border-gray-800 pr-2">
-                      <span className="text-gray-500 text-xs">給油量</span>
-                      <div className="w-8 h-4 bg-gray-800 rounded animate-pulse" />
-                    </div>
-                    <div className="flex justify-between pl-2">
-                      <span className="text-gray-500 text-xs">走行</span>
-                      <div className="w-12 h-4 bg-gray-800 rounded animate-pulse" />
-                    </div>
-                  </div>
-
-                  <div className="mt-3 flex items-center gap-2 text-xs text-gray-500 pr-24">
-                    <MapPin className="w-3 h-3 flex-shrink-0 text-gray-600" />
-                    <div className="w-24 h-3 bg-gray-800 rounded animate-pulse" />
-                  </div>
-                </div>
+          {groups.length === 0 ? (
+            <EmptyState filtered={filtered} onClear={clearFilters} />
+          ) : (
+            <div className="flex flex-col gap-3 lg:gap-5">
+              <RecordColumnsHeader distanceMode={distanceMode} />
+              {groups.map(group => (
+                <section key={group.key} className="flex flex-col gap-1.5">
+                  <GroupHeader group={group} />
+                  {/* GroupedList は overflow-hidden で行内のメニューが切れるため、同じ見た目の ul を使う */}
+                  <ul className="rounded-2xl bg-surface divide-y divide-line">
+                    {group.records.map(rec => {
+                      const isEditing = editing.editingRecordId === rec.id;
+                      return (
+                        <RecordRow
+                          key={rec.id}
+                          record={rec}
+                          distanceMode={distanceMode}
+                          showMonth={sortType === "created_at"}
+                          expanded={isEditing || expandedId === rec.id}
+                          onToggle={() => toggleRow(rec.id)}
+                        >
+                          {isEditing ? (
+                            <div className="py-2">
+                              <EditFuelRecordForm
+                                form={form}
+                                onCancel={editing.cancel}
+                                onSave={editing.save}
+                                saving={editing.saving}
+                                disabled={readOnly}
+                              />
+                            </div>
+                          ) : (
+                            <RecordDetail
+                              record={rec}
+                              distanceMode={distanceMode}
+                              moveTargets={moveTargets}
+                              readOnly={readOnly}
+                              busy={busyId === rec.id}
+                              onEdit={() => startEditing(rec)}
+                              onMove={vehicleId => handleMoveVehicle(rec.id, vehicleId)}
+                              onDelete={() => handleDelete(rec.id)}
+                            />
+                          )}
+                        </RecordRow>
+                      );
+                    })}
+                  </ul>
+                </section>
               ))}
             </div>
-          </>
-        ) : (
-          <>
-            {/* 操作パネル */}
-            <div className="flex items-center justify-between gap-3 mb-4 w-full flex-wrap">
-              {records.length > 0 ? (
-                <>
-                  {/* 年・月フィルタ */}
-                  <div className="flex items-center gap-2">
-                    <select
-                      value={effectiveYear}
-                      aria-label="年で絞り込み"
-                      onChange={(e) => setFilterYear(e.target.value)}
-                      className="bg-gray-900 border border-gray-800 rounded-lg px-2 py-1.5 min-h-10 sm:min-h-0 text-base sm:text-xs font-bold text-gray-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus:border-blue-500 transition"
-                    >
-                      <option value="all">全ての年</option>
-                      {availableYears.map(y => (
-                        <option key={y} value={y}>{y}年</option>
-                      ))}
-                    </select>
-                    <select
-                      value={effectiveMonth}
-                      aria-label="月で絞り込み"
-                      onChange={(e) => setFilterMonth(e.target.value)}
-                      className="bg-gray-900 border border-gray-800 rounded-lg px-2 py-1.5 min-h-10 sm:min-h-0 text-base sm:text-xs font-bold text-gray-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus:border-blue-500 transition"
-                    >
-                      <option value="all">全ての月</option>
-                      {MONTH_OPTIONS.map(m => (
-                        <option key={m} value={m}>{m}月</option>
-                      ))}
-                    </select>
-                    <span className="text-xs text-gray-500">{sortedRecords.length}件</span>
-                  </div>
-
-                  <div className="flex items-center gap-1 bg-gray-900 rounded-lg p-1 border border-gray-800">
-                    <button
-                      onClick={() => setSortType("date")}
-                      className={`px-3 py-3 sm:py-1.5 text-xs font-bold rounded-md transition ${sortType === "date" ? "bg-blue-600 text-white shadow-sm" : "text-gray-400 hover:text-white"}`}
-                    >
-                      給油日順
-                    </button>
-                    <button
-                      onClick={() => setSortType("created_at")}
-                      className={`px-3 py-3 sm:py-1.5 text-xs font-bold rounded-md transition ${sortType === "created_at" ? "bg-blue-600 text-white shadow-sm" : "text-gray-400 hover:text-white"}`}
-                    >
-                      登録順
-                    </button>
-                  </div>
-                </>
-              ) : (
-                <div className="flex items-center gap-1 bg-gray-950/20 rounded-lg p-1 border border-gray-900/50 opacity-40">
-                  <button
-                    disabled
-                    className="px-3 py-3 sm:py-1.5 text-xs font-bold rounded-md text-gray-500 cursor-not-allowed"
-                  >
-                    給油日順
-                  </button>
-                  <button
-                    disabled
-                    className="px-3 py-3 sm:py-1.5 text-xs font-bold rounded-md text-gray-500 cursor-not-allowed"
-                  >
-                    登録順
-                  </button>
-                </div>
-              )}
-            </div>
-
-            {/* リスト表示 */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6 w-full">
-              {sortedRecords.length === 0 ? (
-                <div className="text-center py-20 text-gray-600 col-span-full">
-                  <p>
-                    {effectiveYear !== "all" || effectiveMonth !== "all"
-                      ? "条件に一致する記録がありません"
-                      : "この車両の履歴はありません"}
-                  </p>
-                </div>
-              ) : (
-                sortedRecords.map((rec) => (
-                  editing.editingRecordId === rec.id ? (
-                    <div key={`edit-${rec.id}`} className="bg-gray-800 border border-blue-500 ring-1 ring-blue-500 rounded-2xl p-5 relative">
-                      <EditFuelRecordForm
-                        form={form}
-                        onCancel={editing.cancel}
-                        onSave={editing.save}
-                        saving={editing.saving}
-                        disabled={readOnly}
-                      />
-                    </div>
-                  ) : (
-                    <div key={rec.id} className="bg-gray-900 border border-gray-800 rounded-2xl p-5 relative group overflow-hidden">
-                      {movingId === rec.id && (
-                        <div
-                          role="group"
-                          aria-label="移動先の車両を選択"
-                          className="absolute inset-0 bg-black/95 z-10 p-4 flex flex-col justify-center items-center gap-3 animate-in fade-in duration-200"
-                          onKeyDown={(e) => {
-                            if (e.key === "Escape") setMovingId(null);
-                          }}
-                        >
-                          <p className="text-xs text-gray-300 font-bold">どの車両に移動しますか？</p>
-                          <div className="flex flex-wrap gap-2 justify-center w-full max-h-[140px] overflow-y-auto">
-                            {vehicles.filter(v => v.id !== selectedVehicleId).map(v => (
-                              <button
-                                key={v.id}
-                                type="button"
-                                onClick={() => handleMoveVehicle(rec.id, v.id)}
-                                disabled={busyId === rec.id}
-                                className="px-3 py-3 sm:py-1.5 max-w-full truncate bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold rounded-lg transition disabled:opacity-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-300"
-                              >
-                                {v.name}
-                              </button>
-                            ))}
-                            <button
-                              type="button"
-                              autoFocus
-                              onClick={() => setMovingId(null)}
-                              disabled={busyId === rec.id}
-                              className="px-3 py-3 sm:py-1.5 bg-gray-800 hover:bg-gray-700 text-gray-400 hover:text-white text-xs font-bold rounded-lg transition focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-400"
-                            >
-                              キャンセル
-                            </button>
-                          </div>
-                        </div>
-                      )}
-
-                      <div className="flex justify-between items-start mb-3">
-                        <div>
-                          <div className="flex items-center gap-2 text-xs text-gray-500 mb-1">
-                            <Calendar className="w-3 h-3" />
-                            {rec.date || "日付不明"}
-                          </div>
-                          <div className="flex items-baseline gap-1">
-                            <span className={`text-2xl font-bold font-mono ${rec.fuel_efficiency ? 'text-white' : 'text-gray-600'}`}>
-                              {rec.fuel_efficiency ? rec.fuel_efficiency.toFixed(2) : "--.--"}
-                            </span>
-                            <span className="text-xs font-bold text-blue-500">km/L</span>
-                          </div>
-                          {efficiencyNullReason(rec) && (
-                            <p className="text-[10px] text-gray-500">{efficiencyNullReason(rec)}</p>
-                          )}
-                        </div>
-                        
-                        <div className="text-right">
-                          <p className="text-lg font-bold text-green-400 font-mono">
-                            ¥{rec.total_cost?.toLocaleString() || "---"}
-                          </p>
-                          <p className="text-[10px] text-gray-500">Total Cost</p>
-                        </div>
-                      </div>
-
-                      <RecordStats record={rec} distanceMode={distanceMode} variant="compact" />
-
-                      {/* 操作ボタン群 */}
-                      <div className="absolute bottom-2 right-2 sm:bottom-4 sm:right-4 flex items-center opacity-100 sm:opacity-60 sm:group-hover:opacity-100 focus-visible:opacity-100 group-focus-within:opacity-100 transition duration-200">
-                        {vehicles.length > 1 && (
-                          <button
-                            type="button"
-                            onClick={() => setMovingId(rec.id)}
-                            disabled={readOnly || busyId === rec.id}
-                            className="p-3 sm:p-1.5 text-gray-500 hover:text-blue-400 transition disabled:opacity-40 disabled:cursor-not-allowed focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 rounded"
-                            title="他の車両へ移動"
-                            aria-label="他の車両へ移動"
-                          >
-                            <Car className="w-4 h-4" aria-hidden="true" />
-                          </button>
-                        )}
-                        <button
-                          type="button"
-                          onClick={() => startEditing(rec)}
-                          disabled={readOnly || busyId === rec.id}
-                          className="p-3 sm:p-1.5 text-gray-500 hover:text-blue-400 transition disabled:opacity-40 disabled:cursor-not-allowed focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 rounded"
-                          title="編集"
-                          aria-label="この記録を編集"
-                        >
-                          <Edit2 className="w-4 h-4" aria-hidden="true" />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleDelete(rec.id)}
-                          disabled={readOnly || busyId === rec.id}
-                          className="p-3 sm:p-1.5 text-gray-500 hover:text-red-500 transition disabled:opacity-40 disabled:cursor-not-allowed focus:outline-none focus-visible:ring-2 focus-visible:ring-red-400 rounded"
-                          title="削除"
-                          aria-label="この記録を削除"
-                        >
-                          <Trash2 className="w-4 h-4" aria-hidden="true" />
-                        </button>
-                      </div>
-                    </div>
-                  )
-                ))
-              )}
-            </div>
-          </>
-        )}
-      </div>
+          )}
+        </>
+      )}
     </AppFrame>
   );
 }

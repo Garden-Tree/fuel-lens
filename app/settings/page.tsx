@@ -35,7 +35,7 @@ export default function SettingsPage() {
 
   return (
     <AppFrame width="narrow">
-      <div className="w-full">
+      <div className="flex w-full flex-col gap-5">
         <PageHeader title="設定" />
 
         <HookErrorLine error={loadError} />
@@ -56,21 +56,19 @@ export default function SettingsPage() {
           addRecords={addRecords}
         />
 
-        <div className="mt-6">
-          <ImportPanel
-            vehicles={vehicles}
-            loading={vehiclesLoading}
-            isSignedIn={!!isSignedIn}
-            readOnly={readOnly}
-            vehiclesError={loadError}
-            fetchAllRecords={fetchAllRecords}
-            addVehicles={addVehicles}
-            addRecords={addRecords}
-            onDone={handleRestoreDone}
-            busy={busy}
-            setBusy={setBusy}
-          />
-        </div>
+        <ImportPanel
+          vehicles={vehicles}
+          loading={vehiclesLoading}
+          isSignedIn={!!isSignedIn}
+          readOnly={readOnly}
+          vehiclesError={loadError}
+          fetchAllRecords={fetchAllRecords}
+          addVehicles={addVehicles}
+          addRecords={addRecords}
+          onDone={handleRestoreDone}
+          busy={busy}
+          setBusy={setBusy}
+        />
       </div>
     </AppFrame>
   );

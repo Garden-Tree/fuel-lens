@@ -37,10 +37,3 @@ export function formatPriceDiff(diff: number): string {
   return `${rounded > 0 ? "+" : "−"}${Math.abs(rounded).toFixed(1)}`;
 }
 
-/** 値上がりは赤、値下がりは緑、変わらなければ灰色（Tailwind のクラス名） */
-export function priceDiffClass(diff: number): string {
-  const rounded = Math.round(diff * 10) / 10;
-  if (rounded > 0) return "text-red-400";
-  if (rounded < 0) return "text-emerald-400";
-  return "text-gray-400";
-}

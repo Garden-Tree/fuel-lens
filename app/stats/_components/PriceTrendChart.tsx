@@ -1,10 +1,13 @@
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from "recharts";
+import type { ReactElement } from "react";
+import { CartesianGrid, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 
+import { Section } from "@/components/ui";
 import { formatPricePerUnit } from "@/lib/calculations";
-import { formatDateLabel, formatPriceDiff, priceDiffClass } from "@/lib/format";
+import { formatDateLabel, formatPriceDiff } from "@/lib/format";
 import type { Period, PricePoint, StatsModel } from "@/lib/stats";
 import ChartEmpty from "./ChartEmpty";
-import { averageTickRenderer } from "./AverageTick";
+import { AverageLegend, averageTickRenderer } from "./AverageTick";
+import { CHART_COLORS, CHART_TICK, CHART_TOOLTIP_CLASS } from "./chartTheme";
 
 interface PriceTooltipProps {
   active?: boolean;
@@ -19,118 +22,141 @@ function CustomPriceTooltip({ active, payload }: PriceTooltipProps) {
     const data = payload[0].payload;
     const d = new Date(data.timestamp);
     return (
-      <div className="bg-gray-800 p-3 rounded-lg border border-gray-700 shadow-xl opacity-95">
-        <p className="text-gray-400 text-xs mb-1">{`${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()}`}</p>
-        <p className="font-mono text-xl text-amber-400 font-bold">
-          ¥{formatPricePerUnit(data.price)}<span className="text-xs text-gray-400 ml-1">/L</span>
+      <div className={CHART_TOOLTIP_CLASS}>
+        <p className="num text-xs text-sub">{`${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()}`}</p>
+        <p className="mt-0.5">
+          <span className="num text-xl font-bold text-ink">¥{formatPricePerUnit(data.price)}</span>
+          <span className="text-[13px] text-sub"> /L</span>
         </p>
-        <p className="text-xs text-gray-500 mt-1 truncate max-w-[180px]">{data.station ?? "スタンド不明"}</p>
+        <p className="mt-1 max-w-[180px] truncate text-xs text-sub">{data.station ?? "スタンド不明"}</p>
       </div>
     );
   }
   return null;
 }
 
+/** 単価の差の色。値上がりは `cost-up`、値下がりは `up`、変わらなければ `sub`（0.1 円未満は変わらない扱い） */
+function diffToneClass(diff: number): string {
+  const rounded = Math.round(diff * 10) / 10;
+  if (rounded > 0) return "text-cost-up";
+  if (rounded < 0) return "text-up";
+  return "text-sub";
+}
+
+/** 「前回比 +1.0」のような小さなチップ */
+function DiffChip({ label, diff, title }: { label: string; diff: number; title?: string }) {
+  return (
+    <span title={title} className="inline-flex items-center gap-1.5 rounded-full bg-surface-2 px-2.5 py-1 text-xs text-sub">
+      {label}
+      <span className={`num font-bold ${diffToneClass(diff)}`}>{formatPriceDiff(diff)}</span>
+    </span>
+  );
+}
+
 /** 単価の推移グラフと、最新の給油の前回比・30日/90日平均比 */
 export default function PriceTrendChart({ period, price }: { period: Period; price: StatsModel["price"] }) {
   const { series: priceData, axis: priceAxis, timeDomain: priceTimeDomain, delta: latestPriceDelta } = price;
+  const lastIndex = priceData.length - 1;
+
+  // 最終点だけ丸を描く（他の点は線だけで表す）
+  const renderDot = (props: unknown): ReactElement => {
+    const { cx, cy, index } = props as { cx?: number; cy?: number; index: number };
+    if (index !== lastIndex || cx == null || cy == null) return <g key={`dot-${index}`} />;
+    return (
+      <circle key={`dot-${index}`} cx={cx} cy={cy} r={5} fill={CHART_COLORS.accent} stroke={CHART_COLORS.surface} strokeWidth={2} />
+    );
+  };
+
   return (
-    <div className="bg-gray-900/50 border border-gray-800 rounded-3xl p-4 sm:p-5 md:p-8">
-      <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-2 mb-6">
-        <h2 className="text-lg font-bold text-gray-300 flex items-center gap-2">
-          <span className="w-3 h-3 rounded-full bg-amber-500 shadow-[0_0_10px_#f59e0b]"></span>
-          単価の推移 (円/L)
-        </h2>
+    <Section title="単価の推移">
+      <div className="rounded-2xl bg-surface px-4 py-3 lg:px-5">
         {latestPriceDelta.latest && (
-          <p className="text-[11px] text-gray-500 font-mono flex flex-wrap gap-x-3 gap-y-1">
-            <span>
-              最新 <span className="text-gray-300">¥{formatPricePerUnit(latestPriceDelta.latest.price)}</span>
-              （{formatDateLabel(latestPriceDelta.latest.date)}）
-            </span>
-            {latestPriceDelta.diffFromPrevious != null && (
-              <span>
-                前回比{" "}
-                <span className={priceDiffClass(latestPriceDelta.diffFromPrevious)}>
-                  {formatPriceDiff(latestPriceDelta.diffFromPrevious)}
-                </span>
-              </span>
-            )}
-            {latestPriceDelta.diffFromAvg30 != null && (
-              <span title="最新の給油日から遡って30日以内の、ほかの給油の単価の平均との差">
-                30日平均比{" "}
-                <span className={priceDiffClass(latestPriceDelta.diffFromAvg30)}>
-                  {formatPriceDiff(latestPriceDelta.diffFromAvg30)}
-                </span>
-              </span>
-            )}
-            {latestPriceDelta.diffFromAvg90 != null && (
-              <span title="最新の給油日から遡って90日以内の、ほかの給油の単価の平均との差">
-                90日平均比{" "}
-                <span className={priceDiffClass(latestPriceDelta.diffFromAvg90)}>
-                  {formatPriceDiff(latestPriceDelta.diffFromAvg90)}
-                </span>
-              </span>
-            )}
-          </p>
-        )}
-      </div>
-      <div className="h-64 md:h-72 w-full relative">
-        {priceData.length < 2 ? (
-          <ChartEmpty
-            message={
-              period === "all"
-                ? "単価の推移を表示するには、単価が分かる記録が2件以上必要です。"
-                : "この期間の単価の記録が2件未満です。期間を広げてみてください。"
-            }
-          />
-        ) : (
-          <ResponsiveContainer width="100%" height="100%">
-            {/* key={period}: 期間切替時は再マウントして新規描画 (燃費グラフと同じ理由) */}
-            <LineChart key={period} data={priceData} margin={{ top: 10, right: 10, left: 8, bottom: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#2d3748" vertical={false} />
-              <XAxis
-                type="number"
-                scale="time"
-                dataKey="timestamp"
-                stroke="#4a5568"
-                fontSize={11}
-                tickMargin={10}
-                domain={priceTimeDomain ?? ['auto', 'auto']}
-                tickFormatter={(val) => {
-                  const date = new Date(val);
-                  return `${date.getMonth() + 1}/${date.getDate()}`;
-                }}
-              />
-              <YAxis
-                stroke="#4a5568"
-                fontSize={10}
-                tickMargin={6}
-                domain={priceAxis.domain ?? ['auto', 'auto']}
-                ticks={priceAxis.ticks}
-                tick={averageTickRenderer(priceAxis.averageTick, 1)}
-              />
-              <Tooltip content={<CustomPriceTooltip />} cursor={{ stroke: '#4a5568', strokeWidth: 1, strokeDasharray: '3 3' }} />
-              {priceAxis.averageTick != null && (
-                <ReferenceLine
-                  y={priceAxis.averageTick}
-                  stroke="#f87171"
-                  strokeDasharray="4 3"
-                  strokeWidth={1.5}
+          <div className="mb-3 flex flex-col gap-2">
+            <p>
+              <span className="text-xs text-sub">最新 </span>
+              <span className="num text-xl font-bold">¥{formatPricePerUnit(latestPriceDelta.latest.price)}</span>
+              <span className="text-[13px] text-sub"> /L</span>
+              <span className="num text-xs text-sub">（{formatDateLabel(latestPriceDelta.latest.date)}）</span>
+            </p>
+            <p className="flex flex-wrap gap-1.5">
+              {latestPriceDelta.diffFromPrevious != null && (
+                <DiffChip label="前回比" diff={latestPriceDelta.diffFromPrevious} />
+              )}
+              {latestPriceDelta.diffFromAvg30 != null && (
+                <DiffChip
+                  label="30日平均比"
+                  diff={latestPriceDelta.diffFromAvg30}
+                  title="最新の給油日から遡って30日以内の、ほかの給油の単価の平均との差"
                 />
               )}
-              <Line
-                type="monotone"
-                dataKey="price"
-                stroke="#f59e0b"
-                strokeWidth={3}
-                dot={{ r: 4, fill: '#78350f', stroke: '#f59e0b', strokeWidth: 2 }}
-                activeDot={{ r: 6, fill: '#fbbf24', stroke: '#fff', strokeWidth: 2 }}
-                animationDuration={500}
-              />
-            </LineChart>
-          </ResponsiveContainer>
+              {latestPriceDelta.diffFromAvg90 != null && (
+                <DiffChip
+                  label="90日平均比"
+                  diff={latestPriceDelta.diffFromAvg90}
+                  title="最新の給油日から遡って90日以内の、ほかの給油の単価の平均との差"
+                />
+              )}
+            </p>
+          </div>
         )}
+        <div className="relative h-40 w-full lg:h-56">
+          {priceData.length < 2 ? (
+            <ChartEmpty
+              message={
+                period === "all"
+                  ? "単価の推移を表示するには、単価が分かる記録が2件以上必要です。"
+                  : "この期間の単価の記録が2件未満です。期間を広げてみてください。"
+              }
+            />
+          ) : (
+            <ResponsiveContainer width="100%" height="100%">
+              {/* key={period}: 期間切替時は再マウントして新規描画 (燃費グラフと同じ理由) */}
+              <LineChart key={period} data={priceData} margin={{ top: 10, right: 8, left: 0, bottom: 0 }}>
+                <CartesianGrid stroke={CHART_COLORS.grid} vertical={false} />
+                <XAxis
+                  type="number"
+                  scale="time"
+                  dataKey="timestamp"
+                  tick={CHART_TICK}
+                  axisLine={false}
+                  tickLine={false}
+                  tickMargin={8}
+                  domain={priceTimeDomain ?? ["auto", "auto"]}
+                  tickFormatter={val => {
+                    const date = new Date(val);
+                    return `${date.getMonth() + 1}/${date.getDate()}`;
+                  }}
+                />
+                <YAxis
+                  width={38}
+                  axisLine={false}
+                  tickLine={false}
+                  tickMargin={4}
+                  domain={priceAxis.domain ?? ["auto", "auto"]}
+                  ticks={priceAxis.ticks}
+                  tick={averageTickRenderer(priceAxis.averageTick, 1)}
+                />
+                <Tooltip content={<CustomPriceTooltip />} cursor={{ stroke: CHART_COLORS.cursor, strokeWidth: 1 }} />
+                {priceAxis.averageTick != null && (
+                  <ReferenceLine y={priceAxis.averageTick} stroke={CHART_COLORS.average} strokeDasharray="4 4" strokeWidth={1.5} />
+                )}
+                <Line
+                  type="monotone"
+                  dataKey="price"
+                  stroke={CHART_COLORS.accent}
+                  strokeWidth={2.5}
+                  strokeLinejoin="round"
+                  strokeLinecap="round"
+                  dot={renderDot}
+                  activeDot={{ r: 5, fill: CHART_COLORS.accent, stroke: CHART_COLORS.surface, strokeWidth: 2 }}
+                  animationDuration={500}
+                />
+              </LineChart>
+            </ResponsiveContainer>
+          )}
+        </div>
+        {priceData.length >= 2 && priceAxis.averageTick != null && <AverageLegend />}
       </div>
-    </div>
+    </Section>
   );
 }

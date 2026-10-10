@@ -4,7 +4,15 @@ import { useMemo, useRef, useState, type ChangeEvent } from "react";
 import { Bike, Car, FileInput, FileSpreadsheet, Loader2 } from "lucide-react";
 
 import RestoreCounts from "@/components/RestoreCounts";
-import { buttonClass, sectionClass, type SettingsBusy } from "@/components/settingsUi";
+import {
+  inputClass,
+  noticeClass,
+  panelClass,
+  primaryButtonClass,
+  secondaryButtonClass,
+  type SettingsBusy,
+} from "@/components/settingsUi";
+import { GroupedList, ListRow, SegmentedControl, Section } from "@/components/ui";
 import { useToast } from "@/components/Toast";
 import type { FuelRecord, Vehicle, VehicleType } from "@/lib/types";
 import { BACKUP_MAX_TEXT_LENGTH, planRestore, type FuelLensBackup } from "@/lib/backup";
@@ -282,26 +290,13 @@ export default function ImportPanel({
     }
   }
 
-  const typeButtonClass = (active: boolean) =>
-    `px-3 py-2 rounded-lg font-semibold text-xs flex items-center gap-1.5 transition focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 disabled:opacity-50 ${
-      active ? "bg-blue-600/20 border border-blue-500/30 text-blue-400" : "text-gray-500 hover:text-gray-300 border border-transparent"
-    }`;
+  const spinner = <Loader2 className="h-4 w-4 animate-spin text-sub" aria-hidden="true" />;
+  const preparing = busy === "import-prepare";
+  const openPicker = () => fileInputRef.current?.click();
+  const destination = isSignedIn ? "クラウド" : "このブラウザ";
 
   return (
-    <section aria-labelledby="settings-import-title" className={sectionClass}>
-      <h2 id="settings-import-title" className="flex items-center gap-2 text-base font-bold mb-2">
-        <FileInput className="w-5 h-5 text-cyan-400" aria-hidden="true" />
-        インポート
-      </h2>
-      <p className="text-xs text-gray-400 mb-1">
-        Fuelio で書き出した CSV、または FuelLens の CSV（全車両・車両別）を読み込み、
-        {isSignedIn ? "クラウド" : "このブラウザ"}のデータへ追加します。
-      </p>
-      <p className="text-xs text-amber-300/90 mb-4">取り込みは追記のみで既存の記録は削除しません。同じ記録はスキップします。</p>
-      {readOnly && (
-        <p role="status" className="text-[11px] text-amber-400/90 mb-3">閲覧専用（クラウド接続待ち）のため取り込めません</p>
-      )}
-
+    <Section title="インポート">
       <input
         ref={fileInputRef}
         type="file"
@@ -310,129 +305,138 @@ export default function ImportPanel({
         onChange={handleFileChange}
         aria-label="CSV ファイルを選択"
       />
-      <button
-        type="button"
-        onClick={() => fileInputRef.current?.click()}
-        disabled={importDisabled}
-        className={`${buttonClass} bg-gray-900 hover:bg-gray-800 border-gray-700 text-gray-200 w-full sm:w-auto`}
-      >
-        {busy === "import-prepare" ? (
-          <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" />
-        ) : (
-          <FileSpreadsheet className="w-4 h-4 text-cyan-400" aria-hidden="true" />
-        )}
-        CSV ファイルを選択
-      </button>
+      <GroupedList>
+        {/* どちらの行も同じファイル選択を開く。CSV の形式は読み込み時に自動判定する */}
+        <ListRow
+          leading={<FileSpreadsheet className="h-5 w-5 text-accent" aria-hidden="true" />}
+          title="Fuelio の CSV を選ぶ"
+          subtitle={`Fuelio で書き出した CSV を${destination}のデータへ追加します`}
+          trailing={preparing ? spinner : undefined}
+          showChevron={!preparing}
+          onClick={openPicker}
+          disabled={importDisabled}
+        />
+        <ListRow
+          leading={<FileInput className="h-5 w-5 text-money" aria-hidden="true" />}
+          title="FuelLens の CSV を選ぶ"
+          subtitle="全車両・車両別のどちらも読み込めます"
+          trailing={preparing ? spinner : undefined}
+          showChevron={!preparing}
+          onClick={openPicker}
+          disabled={importDisabled}
+        />
 
-      {pending && source && (
-        <div className="mt-4 bg-black/30 border border-gray-800 rounded-xl p-4">
-          <p className="text-xs text-gray-400 mb-3 break-all">
-            {pending.fileName}（{sourceLabel(source)}・記録 {source.parsed.records.length} 件
-            {source.kind === "fuellens" && source.parsed.format === "all"
-              ? `・車両 ${source.parsed.vehicleNames.length} 台`
-              : ""}
-            ）
-          </p>
+        {pending && source && (
+          <div className={panelClass}>
+            <p className="mb-3 break-all text-xs text-sub">
+              {pending.fileName}（{sourceLabel(source)}・記録 {source.parsed.records.length} 件
+              {source.kind === "fuellens" && source.parsed.format === "all"
+                ? `・車両 ${source.parsed.vehicleNames.length} 台`
+                : ""}
+              ）
+            </p>
 
-          {needsVehicleInput(source) ? (
-            <div className="mb-4">
-              <label htmlFor="import-vehicle-name" className="block text-xs text-gray-400 mb-1.5">
-                取り込み先の車両{source.kind === "fuelio" ? "（Fuelio の車両名から推定）" : ""}
-              </label>
-              <div className="flex flex-col sm:flex-row gap-2">
-                <input
-                  id="import-vehicle-name"
-                  type="text"
-                  list="import-vehicle-names"
-                  value={vehicleName}
-                  onChange={e => handleNameChange(e.target.value)}
-                  maxLength={MAX_VEHICLE_NAME_LENGTH}
-                  disabled={busy !== null}
-                  aria-invalid={!!nameError}
-                  aria-describedby="import-vehicle-hint"
-                  className="flex-1 min-w-0 bg-gray-950 border border-gray-800 rounded-xl p-2.5 text-base sm:text-sm text-white placeholder-gray-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus:border-blue-500 transition disabled:opacity-60"
-                />
-                <datalist id="import-vehicle-names">
-                  {vehicles.map(v => (
-                    <option key={v.id} value={v.name} />
-                  ))}
-                </datalist>
-                <div
-                  className="flex bg-gray-950 p-0.5 rounded-xl border border-gray-800 flex-shrink-0 self-start sm:self-auto"
-                  role="radiogroup"
-                  aria-label="車両タイプ"
-                >
-                  <button
-                    type="button"
-                    role="radio"
-                    aria-checked={vehicleType === "car"}
-                    onClick={() => setVehicleType("car")}
+            {needsVehicleInput(source) ? (
+              <div className="mb-4">
+                <label htmlFor="import-vehicle-name" className="mb-1.5 block text-xs text-sub">
+                  取り込み先の車両{source.kind === "fuelio" ? "（Fuelio の車両名から推定）" : ""}
+                </label>
+                <div className="flex flex-col gap-2">
+                  <input
+                    id="import-vehicle-name"
+                    type="text"
+                    list="import-vehicle-names"
+                    value={vehicleName}
+                    onChange={e => handleNameChange(e.target.value)}
+                    maxLength={MAX_VEHICLE_NAME_LENGTH}
                     disabled={busy !== null}
-                    className={typeButtonClass(vehicleType === "car")}
-                  >
-                    <Car className="w-4 h-4" aria-hidden="true" />
-                    自動車
-                  </button>
-                  <button
-                    type="button"
-                    role="radio"
-                    aria-checked={vehicleType === "bike"}
-                    onClick={() => setVehicleType("bike")}
+                    aria-invalid={!!nameError}
+                    aria-describedby="import-vehicle-hint"
+                    className={inputClass}
+                  />
+                  <datalist id="import-vehicle-names">
+                    {vehicles.map(v => (
+                      <option key={v.id} value={v.name} />
+                    ))}
+                  </datalist>
+                  <SegmentedControl
+                    aria-label="車両タイプ"
+                    value={vehicleType}
+                    onChange={setVehicleType}
                     disabled={busy !== null}
-                    className={typeButtonClass(vehicleType === "bike")}
-                  >
-                    <Bike className="w-4 h-4" aria-hidden="true" />
-                    バイク
-                  </button>
+                    options={[
+                      {
+                        value: "car",
+                        label: (
+                          <span className="flex items-center justify-center gap-1.5">
+                            <Car className="h-4 w-4" aria-hidden="true" />
+                            自動車
+                          </span>
+                        ),
+                      },
+                      {
+                        value: "bike",
+                        label: (
+                          <span className="flex items-center justify-center gap-1.5">
+                            <Bike className="h-4 w-4" aria-hidden="true" />
+                            バイク
+                          </span>
+                        ),
+                      },
+                    ]}
+                  />
                 </div>
+                <p id="import-vehicle-hint" className={`mt-1.5 text-[11px] ${nameError ? "text-red-400" : "text-sub"}`}>
+                  {nameError ??
+                    (willMatchExisting
+                      ? `既存の車両「${matchedVehicle?.name}」に追加します。`
+                      : "名前と種別が一致する既存の車両があればそこへ追加し、無ければ新しい車両を作ります。")}
+                </p>
               </div>
-              <p id="import-vehicle-hint" className={`text-[11px] mt-1.5 ${nameError ? "text-red-400" : "text-gray-500"}`}>
-                {nameError ??
-                  (willMatchExisting
-                    ? `既存の車両「${matchedVehicle?.name}」に追加します。`
-                    : "名前と種別が一致する既存の車両があればそこへ追加し、無ければ新しい車両を作ります。")}
-              </p>
+            ) : (
+              source.kind === "fuellens" && (
+                <p className="mb-3 break-words text-xs text-ink">車両: {source.parsed.vehicleNames.join("、")}</p>
+              )
+            )}
+
+            <RestoreCounts counts={counts} notes={notes} />
+
+            {nothingToImport && <p className="mt-3 text-xs text-sub">追加される車両・記録はありません。</p>}
+
+            <div className="mt-4 grid grid-cols-2 gap-3">
+              <button
+                type="button"
+                onClick={handleImport}
+                disabled={importDisabled || !preview || nothingToImport}
+                className={primaryButtonClass}
+              >
+                {busy === "import" && <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />}
+                取り込む
+              </button>
+              <button
+                type="button"
+                onClick={() => setPending(null)}
+                disabled={busy !== null}
+                className={secondaryButtonClass}
+              >
+                キャンセル
+              </button>
             </div>
-          ) : (
-            source.kind === "fuellens" && (
-              <p className="text-xs text-gray-300 mb-3 break-words">
-                車両: {source.parsed.vehicleNames.join("、")}
-              </p>
-            )
-          )}
-
-          <RestoreCounts counts={counts} notes={notes} />
-
-          {nothingToImport && <p className="text-xs text-gray-400 mt-3">追加される車両・記録はありません。</p>}
-
-          <div className="flex flex-col sm:flex-row gap-3 mt-4">
-            <button
-              type="button"
-              onClick={handleImport}
-              disabled={importDisabled || !preview || nothingToImport}
-              className={`${buttonClass} bg-cyan-700 hover:bg-cyan-600 border-cyan-600 text-white`}
-            >
-              {busy === "import" && <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" />}
-              取り込む
-            </button>
-            <button
-              type="button"
-              onClick={() => setPending(null)}
-              disabled={busy !== null}
-              className={`${buttonClass} bg-gray-900 hover:bg-gray-800 border-gray-700 text-gray-300`}
-            >
-              キャンセル
-            </button>
           </div>
-        </div>
+        )}
+      </GroupedList>
+      <p className={noticeClass}>取り込みは追記のみで既存の記録は削除しません。同じ記録はスキップします。</p>
+      {readOnly && (
+        <p role="status" className="px-4 text-[11px] text-warn">
+          閲覧専用（クラウド接続待ち）のため取り込めません
+        </p>
       )}
-
       {progress && (
-        <p role="status" aria-live="polite" className="text-xs text-gray-300 mt-3 flex items-center gap-2">
-          <Loader2 className="w-3 h-3 animate-spin" aria-hidden="true" />
+        <p role="status" aria-live="polite" className="flex items-center gap-2 px-4 text-xs text-ink">
+          <Loader2 className="h-3 w-3 animate-spin" aria-hidden="true" />
           {progress}
         </p>
       )}
-    </section>
+    </Section>
   );
 }

@@ -14,13 +14,13 @@ export default function HeaderAuthButtons() {
     <div className="flex items-center gap-1 sm:gap-3">
       <SignedOut>
         <SignInButton forceRedirectUrl="/app">
-          <button className="text-sm font-semibold text-gray-300 hover:text-white transition px-3 sm:px-4 py-2 min-h-10">
+          <button className="min-h-10 px-3 py-2 text-sm font-semibold text-sub transition hover:text-ink focus:outline-none focus-visible:ring-2 focus-visible:ring-accent sm:px-4">
             ログイン
           </button>
         </SignInButton>
         <Link
           href="/app"
-          className="bg-gradient-to-r from-blue-600 to-cyan-500 hover:from-blue-500 hover:to-cyan-400 text-white text-xs sm:text-sm font-bold py-2 px-4 min-h-10 inline-flex items-center rounded-full transition shadow-lg shadow-blue-600/20 active:scale-95"
+          className="inline-flex min-h-10 items-center rounded-full bg-accent px-4 py-2 text-xs font-bold text-ground transition hover:bg-[#5BB2FF] active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-ground sm:text-sm"
         >
           今すぐ始める
         </Link>
@@ -28,10 +28,10 @@ export default function HeaderAuthButtons() {
       <SignedIn>
         <Link
           href="/app"
-          className="bg-gray-800 hover:bg-gray-700 text-white text-xs sm:text-sm font-semibold py-2 px-4 min-h-10 rounded-full border border-gray-700 transition flex items-center gap-1"
+          className="flex min-h-10 items-center gap-1 rounded-full border border-border bg-surface px-4 py-2 text-xs font-semibold text-ink transition hover:bg-surface-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent sm:text-sm"
         >
           <span>ダッシュボード</span>
-          <ArrowRight className="w-4 h-4" />
+          <ArrowRight className="h-4 w-4" aria-hidden="true" />
         </Link>
       </SignedIn>
     </div>

@@ -8,7 +8,7 @@ import { type Period, buildStatsModel } from "@/lib/stats";
 import VehicleSelector from "@/components/VehicleSelector";
 import { AppFrame, HookErrorLine, PageHeader, ReadOnlyCaption } from "@/components/AppShell";
 import PeriodFilter from "./_components/PeriodFilter";
-import SummaryCards from "./_components/SummaryCards";
+import { CostSummary, EfficiencyHero } from "./_components/SummaryCards";
 import EfficiencyChart from "./_components/EfficiencyChart";
 import MonthlyCostChart from "./_components/MonthlyCostChart";
 import PriceTrendChart from "./_components/PriceTrendChart";
@@ -40,7 +40,6 @@ export default function StatsPage() {
   return (
     <AppFrame>
       <div className="w-full">
-
         <PageHeader
           title="統計"
           rightSlot={
@@ -63,15 +62,12 @@ export default function StatsPage() {
         {loading ? (
           <StatsSkeleton />
         ) : (
-          <>
+          <div className="flex flex-col gap-4 lg:gap-6">
             <PeriodFilter period={period} onChange={setPeriod} unknownDateCount={model.unknownDateCount} />
 
-            {/* サマリーカード (記録が1件以上あれば表示) */}
-            <SummaryCards summary={model.summary} />
-
             {model.validRecordCount === 0 ? (
-              <div className="text-center py-20 text-gray-600">
-                <TrendingUp className="w-12 h-12 text-gray-800 mx-auto mb-4" />
+              <div className="py-20 text-center text-sub">
+                <TrendingUp className="mx-auto mb-4 h-12 w-12 text-faint" aria-hidden="true" />
                 <p>
                   {period === "all"
                     ? "この車両にはまだ統計に使える記録がありません。"
@@ -79,18 +75,22 @@ export default function StatsPage() {
                 </p>
               </div>
             ) : (
-              <div className="space-y-8 animate-in fade-in duration-700">
-                <EfficiencyChart
-                  period={period}
-                  efficiency={model.efficiency}
-                  averageEfficiency={model.summary.avgEfficiency}
-                />
+              // スマホは 1 カラム（ヒーロー → 費用 → 月ごと → 単価）。PC は 2 カラム（左: ヒーロー / 右: 費用、下段: 月ごと・単価）
+              <div className="grid grid-cols-1 items-start gap-4 animate-in fade-in duration-700 lg:grid-cols-2 lg:gap-6">
+                <EfficiencyHero summary={model.summary} series={model.efficiency.series}>
+                  <EfficiencyChart
+                    period={period}
+                    efficiency={model.efficiency}
+                    averageEfficiency={model.summary.avgEfficiency}
+                  />
+                </EfficiencyHero>
+                <CostSummary summary={model.summary} />
                 <MonthlyCostChart period={period} data={model.monthlyCost} />
                 <PriceTrendChart period={period} price={model.price} />
                 {/* スタンド比較（店舗別の平均単価）は表示しない方針。部品 _components/StationComparison と lib/stats の計算は残している */}
               </div>
             )}
-          </>
+          </div>
         )}
       </div>
     </AppFrame>

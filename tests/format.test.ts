@@ -6,7 +6,6 @@ import {
   formatKm,
   formatOdometer,
   formatPriceDiff,
-  priceDiffClass,
 } from "@/lib/format";
 
 describe("efficiencyNullReason", () => {
@@ -78,11 +77,3 @@ describe("formatPriceDiff", () => {
   });
 });
 
-describe("priceDiffClass", () => {
-  it("値上がりは赤、値下がりは緑、変わらなければ灰色", () => {
-    expect(priceDiffClass(0.5)).toBe("text-red-400");
-    expect(priceDiffClass(-0.5)).toBe("text-emerald-400");
-    expect(priceDiffClass(0)).toBe("text-gray-400");
-    expect(priceDiffClass(0.04)).toBe("text-gray-400");
-  });
-});

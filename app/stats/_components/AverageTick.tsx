@@ -1,5 +1,7 @@
 import type { ReactElement } from "react";
 
+import { CHART_COLORS, CHART_TICK } from "./chartTheme";
+
 interface TickProps {
   x: number;
   y: number;
@@ -13,7 +15,7 @@ interface AverageTickProps extends TickProps {
   digits: number;
 }
 
-/** Y 軸の目盛り。平均線の目盛りだけ赤の太字で「平均 n」と表示する */
+/** Y 軸の目盛り。平均線の目盛りだけ平均の破線と同じ色の太字にする */
 export function AverageTick({ x, y, payload, averageTick, digits }: AverageTickProps) {
   // 目盛り値・averageTick とも丸め済みなので、誤差の範囲で一致を判定する
   const isAvg = averageTick != null && Math.abs(payload.value - averageTick) < 1e-6;
@@ -23,11 +25,11 @@ export function AverageTick({ x, y, payload, averageTick, digits }: AverageTickP
       y={y}
       dy={4}
       textAnchor="end"
-      fill={isAvg ? "#f87171" : "#4a5568"}
-      fontSize={isAvg ? 10 : 11}
-      fontWeight={isAvg ? "bold" : "normal"}
+      {...CHART_TICK}
+      fill={isAvg ? CHART_COLORS.average : CHART_TICK.fill}
+      fontWeight={isAvg ? 700 : 400}
     >
-      {isAvg ? `平均 ${averageTick.toFixed(digits)}` : payload.value.toFixed(1)}
+      {isAvg ? averageTick.toFixed(digits) : payload.value.toFixed(1)}
     </text>
   );
 }
@@ -38,4 +40,14 @@ export function averageTickRenderer(averageTick: number | null, digits: number) 
     <AverageTick {...(props as TickProps)} averageTick={averageTick} digits={digits} />
   );
   return renderTick;
+}
+
+/** 平均の破線の凡例（グラフの下に置く小さな注記） */
+export function AverageLegend({ label = "平均" }: { label?: string }) {
+  return (
+    <p className="mt-1 flex items-center justify-end gap-1.5 text-[11px] text-sub">
+      <span aria-hidden="true" className="inline-block w-4 border-t-2 border-dashed border-cost-up" />
+      {label}
+    </p>
+  );
 }

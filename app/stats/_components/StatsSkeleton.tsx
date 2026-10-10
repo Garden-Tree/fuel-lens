@@ -1,25 +1,23 @@
-/** 読み込み中のコンパクトなスケルトン（期間フィルタ・サマリー・グラフ2枚） */
+/** 読み込み中のスケルトン（期間切替・ヒーローカード・費用・グラフ2枚。実際のレイアウトと同じ並び） */
 export default function StatsSkeleton() {
   return (
-    <>
-      <div className="flex justify-end mb-4">
-        <div className="w-56 h-9 bg-gray-900 border border-gray-800 rounded-lg animate-pulse" />
-      </div>
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4 mb-8">
-        {[0, 1, 2, 3].map(i => (
-          <div key={i} className="h-20 md:h-24 bg-gray-900/50 border border-gray-800 rounded-2xl animate-pulse" />
-        ))}
-      </div>
-      <div className="space-y-8">
-        <div className="bg-gray-900/50 border border-gray-800 rounded-3xl p-5 md:p-8">
-          <div className="w-40 h-5 bg-gray-800 rounded mb-6 animate-pulse" />
-          <div className="h-64 md:h-80 w-full bg-gray-950/40 rounded-2xl border border-gray-800/50 animate-pulse" />
+    <div className="flex flex-col gap-4 lg:gap-6" aria-hidden="true">
+      <div className="h-12 animate-pulse rounded-xl bg-surface lg:max-w-md" />
+      <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-2 lg:gap-6">
+        <div className="h-72 animate-pulse rounded-hero bg-surface lg:h-96" />
+        <div className="flex flex-col gap-1.5">
+          <div className="h-6 w-12 animate-pulse rounded bg-surface" />
+          <div className="h-[185px] animate-pulse rounded-2xl bg-surface" />
         </div>
-        <div className="bg-gray-900/50 border border-gray-800 rounded-3xl p-5 md:p-8">
-          <div className="w-40 h-5 bg-gray-800 rounded mb-6 animate-pulse" />
-          <div className="h-64 w-full bg-gray-950/40 rounded-2xl border border-gray-800/50 animate-pulse" />
+        <div className="flex flex-col gap-1.5">
+          <div className="h-6 w-28 animate-pulse rounded bg-surface" />
+          <div className="h-52 animate-pulse rounded-2xl bg-surface lg:h-72" />
+        </div>
+        <div className="flex flex-col gap-1.5">
+          <div className="h-6 w-24 animate-pulse rounded bg-surface" />
+          <div className="h-60 animate-pulse rounded-2xl bg-surface lg:h-72" />
         </div>
       </div>
-    </>
+    </div>
   );
 }
