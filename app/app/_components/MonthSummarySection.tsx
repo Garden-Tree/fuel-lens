@@ -1,10 +1,11 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import { GroupedList, Section, ValueRow } from "@/components/ui";
 import { formatPricePerUnit } from "@/lib/calculations";
 import { formatPriceDiff } from "@/lib/format";
-import { monthSummaryOf } from "@/lib/home/month";
+import { monthStartOf, monthSummaryOf } from "@/lib/home/month";
+import { useCurrentMonthKey } from "@/lib/home/useCurrentMonthKey";
 import { formatYen } from "@/lib/home/recent";
 import type { FuelRecord } from "@/lib/types";
 
@@ -18,9 +19,9 @@ function priceDiffTone(diff: number): string {
 
 /** ホームの「今月」（見出しは「10月」など）: 給油代・給油量（回数）・単価（前回比）。集計は lib/home/month.ts */
 export default function MonthSummarySection({ records }: { records: ReadonlyArray<FuelRecord> }) {
-  // 表示中は日付をまたいでも同じ月を集計する（再読み込みで更新）
-  const [today] = useState(() => new Date());
-  const s = useMemo(() => monthSummaryOf(records, today), [records, today]);
+  // いまの月（描画時の日付から求め、画面に戻ってきたときにも読み直す。開いたまま月をまたいでも切り替わる）
+  const monthKey = useCurrentMonthKey();
+  const s = useMemo(() => monthSummaryOf(records, monthStartOf(monthKey)), [records, monthKey]);
 
   return (
     <Section title={s.label}>

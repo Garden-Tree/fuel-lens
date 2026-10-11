@@ -54,7 +54,7 @@ FuelLens の画面は「計器盤のようなダーク UI ＋ グループリス
 | `SegmentedControl` | 期間などの切り替え（role="group"、aria-pressed、高さ 40px）。`options` / `value` / `onChange` / `aria-label`（必須）/ `disabled` |
 | `Chip` | 絞り込み・メニューを開くチップ（高さ 40px）。`showChevron` / `selected` / `icon` |
 | `IconButton` | 40×40 の丸いアイコンボタン（`aria-label` 必須）。`variant`: `outline`（既定）/ `ghost` |
-| `Menu` / `MenuItem` | チップから開くドロップダウン（キーボード操作・外側クリックで閉じる）。`Menu`: `label` / `trigger` / `triggerAriaLabel` / `align`（`start` / `end`）/ `disabled`。`MenuItem`: `onSelect` / `checked`（単一選択。`menuitemradio`）/ `icon` / `separated`（上に区切り線）/ `disabled` |
+| `Menu` / `MenuItem` | チップから開くドロップダウン（キーボード操作・外側クリックで閉じる。下に入りきらない・スマホの下部タブバーに重なるときは上に開く。重なり順は `z-[45]` でタブバー（z-40）より上・モーダル（z-50）より下）。`Menu`: `label` / `trigger` / `triggerAriaLabel` / `align`（`start` / `end`）/ `disabled`。`MenuItem`: `onSelect` / `checked`（単一選択。`menuitemradio`）/ `icon` / `separated`（上に区切り線）/ `disabled` |
 | `Num` | 数値の span（`num`） |
 | `BrandMark` | ロゴ（給油機アイコン）とワードマーク。`showWordmark` |
 
@@ -87,7 +87,8 @@ recharts の SVG 属性（`stroke`・`fill` など）には Tailwind のクラ�
   選択中はアクセント色・太字。本文の下にはタブバー分の余白を AppFrame が空けます。
 - **PC（≥ lg）**: 左に幅 240px のサイドバー（ロゴ・4 項目・「スキャンして記録」・ログイン / ユーザーボタン）。本文は最大 1040px（`width="narrow"` は 768px）・余白 32px で中央に置きます。
 - スキャンボタンは `ScanActionMenu`（撮影する / アルバムから選ぶ / 手動で入力）を開きます。スマホはボトムシート、PC はボタン直下のポップオーバー。
-  各項目は `/app?action=scan|album|manual` に遷移し、/app の `useShortcutActions` が実行します（未ログインでは AI スキャンを無効にし、手動入力だけ選べます）。
+  /app ではホームが登録した処理（`components/ScanActions.tsx`）を項目のタップの中で直接呼び（ファイル選択がブロックされないように）、解析中・閲覧専用などで押せない項目は無効にして理由を 1 行添えます。
+  他の画面では `/app?action=scan|album|manual` に遷移し、/app の `useShortcutActions` が処理します（撮影・アルバムはホームの上に「撮影の準備ができました」のカードも出す）。未ログインでは AI スキャンを無効にし、手動入力だけ選べます。
 - `PageHeader` は左に見出し、右に車両チップ（`VehicleSelector`）。/app のスマホ表示は見出しの代わりにロゴ（`brand`）。スマホではログイン / ユーザーボタンもヘッダー右端に置きます。
 
 ## 画面ごとの構成
@@ -98,7 +99,7 @@ recharts の SVG 属性（`stroke`・`fill` など）には Tailwind のクラ�
 
 - **スマホ**: 1 カラム。ヘッダーはロゴ → ヒーロー（燃費の半円メーター。前回比・平均のチップ。`rounded-hero`）→「今月」（給油代・給油量・単価の `ValueRow`）→「最近の記録」（3 件、「すべて見る」）。記録の入口（撮影 / アルバム / 手動）はタブバー中央のスキャンボタンから開くメニューで、一覧としては記録が 0 件のときだけ「記録する」を出す。
 - **PC**: 2 カラム。左にヒーローと今月、右に最近の記録・「記録する」（3 項目）・画像のドロップ先の細い行（`DropZoneRow`）。見出しは「ホーム」。
-- 解析中・プレビューの状態カードはヘッダーの下、2 カラムの上に全幅で出す。手動入力・編集はヒーローの位置に入力フォームのカード（アクセント色の薄い枠）として差し替わる。
+- 解析中・プレビューの状態カード、他の画面・ショートカットから撮影で来たときの「撮影の準備ができました」（`ScanReadyPrompt`。アクセント色の薄い枠）はヘッダーの下、2 カラムの上に全幅で出す。手動入力・編集はヒーローの位置に入力フォームのカード（アクセント色の薄い枠）として差し替わる。
 
 ### 履歴（/history）
 

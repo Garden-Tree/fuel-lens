@@ -2,8 +2,9 @@ import { describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
 
 import PeriodFilter from "@/app/stats/_components/PeriodFilter";
-import { CostSummary, EfficiencyHero } from "@/app/stats/_components/SummaryCards";
-import type { StatsSummary } from "@/lib/stats";
+import { CostSummary, EfficiencyHero, efficiencyRange } from "@/app/stats/_components/SummaryCards";
+import { buildStatsModel, type StatsSummary } from "@/lib/stats";
+import type { FuelRecord } from "@/lib/types";
 
 const summary: StatsSummary = {
   count: 13,
@@ -19,7 +20,7 @@ const summary: StatsSummary = {
 describe("EfficiencyHero", () => {
   it("平均燃費と、系列の最高・最低を表示し、子要素（グラフ）を内側に置く", () => {
     render(
-      <EfficiencyHero summary={summary} series={[{ efficiency: 11.2 }, { efficiency: 16.06 }, { efficiency: 12.5 }]}>
+      <EfficiencyHero summary={summary} records={[{ fuel_efficiency: 11.2 }, { fuel_efficiency: 16.06 }, { fuel_efficiency: 12.5 }]}>
         <div data-testid="chart" />
       </EfficiencyHero>
     );
@@ -32,10 +33,35 @@ describe("EfficiencyHero", () => {
   });
 
   it("燃費の系列が空なら最高・最低を出さず、平均が無ければ -- を出す", () => {
-    render(<EfficiencyHero summary={{ ...summary, avgEfficiency: null, meanEfficiency: null }} series={[]} />);
+    render(<EfficiencyHero summary={{ ...summary, avgEfficiency: null, meanEfficiency: null }} records={[]} />);
     expect(screen.getByText("--")).toBeInTheDocument();
     expect(screen.queryByText(/最高/)).not.toBeInTheDocument();
     expect(screen.queryByText(/単純平均/)).not.toBeInTheDocument();
+  });
+});
+
+describe("efficiencyRange", () => {
+  it("日付が不正な記録も含め、正の燃費だけから最高・最低を求める（平均と同じ母集団）", () => {
+    const model = buildStatsModel(
+      [
+        { id: "a", date: "2026-09-01", fuel_efficiency: 12 },
+        { id: "b", date: "2026-09-10", fuel_efficiency: 15 },
+        { id: "c", date: "2026-02-30", fuel_efficiency: 25 },
+        { id: "d", date: "2026-09-12", fuel_efficiency: null },
+        { id: "e", date: "2026-09-13", fuel_efficiency: 0 },
+      ] as unknown as FuelRecord[],
+      "all",
+      new Date(2026, 9, 1)
+    );
+    // グラフの系列は日付不正の c を落とすが、最高・最低は平均（meanEfficiency）と同じく c を含める
+    expect(model.efficiency.series.map(p => p.efficiency)).not.toContain(25);
+    expect(model.summary.meanEfficiency).toBeCloseTo((12 + 15 + 25) / 3, 10);
+    expect(efficiencyRange(model.filteredRecords)).toEqual({ max: 25, min: 12 });
+  });
+
+  it("正の燃費が無ければ null", () => {
+    expect(efficiencyRange([{ fuel_efficiency: null }, { fuel_efficiency: 0 }])).toBeNull();
+    expect(efficiencyRange([])).toBeNull();
   });
 });
 

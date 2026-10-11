@@ -23,7 +23,7 @@ export type RecordDetailProps = {
 };
 
 const ACTION =
-  "inline-flex h-10 items-center gap-1.5 rounded-xl border border-border bg-surface px-3.5 text-sm font-medium transition-colors hover:bg-surface-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-50";
+  "inline-flex h-10 items-center gap-1.5 rounded-xl border border-border bg-surface px-3.5 text-sm font-medium transition-colors hover:bg-surface-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-50 aria-disabled:cursor-not-allowed aria-disabled:opacity-50";
 
 function Item({ label, children, wide = false }: { label: string; children: ReactNode; wide?: boolean }) {
   return (
@@ -56,7 +56,6 @@ export default function RecordDetail({
   const price = formatPricePerUnit(record.price_per_unit);
   const hasDistance = typeof record.total_distance === "number" && Number.isFinite(record.total_distance);
   const showOdometer = distanceMode === "odometer" || typeof record.odometer === "number";
-  const disabled = readOnly || busy;
 
   return (
     <div className="px-4 pb-4 lg:pl-[60px]">
@@ -114,7 +113,7 @@ export default function RecordDetail({
       </dl>
 
       <div className="mt-3 flex flex-wrap items-center gap-2">
-        <button type="button" onClick={onEdit} disabled={disabled} className={`${ACTION} text-ink`}>
+        <button type="button" onClick={onEdit} disabled={readOnly || busy} className={`${ACTION} text-ink`}>
           <Pencil className="h-4 w-4 text-sub" aria-hidden="true" />
           編集
         </button>
@@ -124,16 +123,34 @@ export default function RecordDetail({
             trigger="別の車両へ移動"
             triggerIcon={<Car className="h-4 w-4" />}
             triggerClassName="rounded-xl"
-            disabled={disabled}
+            // 処理中（確認ダイアログの表示中）は無効にしない。選んだ直後にフォーカスがトリガーへ戻るので、
+            // ここを disabled にするとキャンセル後にフォーカスが <body> へ落ちる。二重操作は onMove 側のガードで防ぐ
+            disabled={readOnly}
           >
             {moveTargets.map(v => (
-              <MenuItem key={v.id} onSelect={() => onMove(v.id)}>
+              <MenuItem
+                key={v.id}
+                onSelect={() => {
+                  if (busy) return;
+                  onMove(v.id);
+                }}
+              >
                 {v.name}
               </MenuItem>
             ))}
           </Menu>
         )}
-        <button type="button" onClick={onDelete} disabled={disabled} className={`${ACTION} ml-auto text-red-400`}>
+        {/* 処理中は aria-disabled（disabled にするとキャンセル後にフォーカスが <body> へ落ちる）。押しても何もしない */}
+        <button
+          type="button"
+          onClick={() => {
+            if (busy) return;
+            onDelete();
+          }}
+          disabled={readOnly}
+          aria-disabled={busy || undefined}
+          className={`${ACTION} ml-auto text-red-400`}
+        >
           <Trash2 className="h-4 w-4" aria-hidden="true" />
           削除
         </button>

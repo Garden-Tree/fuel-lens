@@ -64,6 +64,7 @@ function setup(overrides: Partial<HarnessProps> = {}) {
     record: RECORD,
     records: [RECORD, OLDER],
     scanned: false,
+    justSaved: false,
     readOnly: false,
     isEditing: false,
     onEdit: vi.fn(),
@@ -115,8 +116,16 @@ describe("LatestRecordCard", () => {
     expect(screen.queryByText("前回比")).not.toBeInTheDocument();
   });
 
+  it("手動入力で保存した直後の部分給油は、別の記録に差し替えずにそのまま出す", () => {
+    const partial: FuelRecord = { ...RECORD, id: "p", date: "2026-10-01", fuel_efficiency: null, is_full: false, run_distance: undefined, run_fuel: undefined };
+    setup({ record: partial, records: [partial, RECORD, OLDER], justSaved: true });
+    expect(screen.getByRole("heading", { name: "前回の燃費" })).toBeInTheDocument();
+    expect(screen.queryByText(/は部分給油（次の満タンで計算）/)).not.toBeInTheDocument();
+    expect(screen.getByRole("img", { name: "燃費メーター。部分給油（次の満タンで計算）" })).toBeInTheDocument();
+  });
+
   it("スキャン直後の記録は見出しを「スキャンした記録」にする", () => {
-    setup({ scanned: true });
+    setup({ scanned: true, justSaved: true });
     expect(screen.getByRole("heading", { name: "スキャンした記録" })).toBeInTheDocument();
   });
 

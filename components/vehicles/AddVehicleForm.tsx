@@ -25,7 +25,7 @@ export default function AddVehicleForm({ draft, adding, readOnly, onSubmit }: Ad
       }}
       className="space-y-3"
     >
-      <Section title="車両・バイクの追加">
+      <Section title="車両・バイクの追加" headingLevel={4}>
         <GroupedList>
           <div className="flex min-h-[52px] items-center gap-3 px-4 py-1.5">
             <label htmlFor="manage-vehicles-new-name" className="shrink-0 text-[15px] text-ink">

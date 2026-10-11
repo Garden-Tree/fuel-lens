@@ -1,25 +1,31 @@
 import type { ReactNode } from "react";
 
 import { formatPricePerUnit } from "@/lib/calculations";
-import type { EfficiencyPoint, StatsSummary } from "@/lib/stats";
+import type { FuelRecord } from "@/lib/types";
+import { hasPositiveNumber, type StatsSummary } from "@/lib/stats";
 import { GroupedList, Num, Section, ValueRow } from "@/components/ui";
 
-/** 期間内の燃費（正の値）の最高・最低。燃費の記録が無ければ null */
-function efficiencyRange(series: ReadonlyArray<Pick<EfficiencyPoint, "efficiency">>): { max: number; min: number } | null {
-  if (series.length === 0) return null;
+/**
+ * 期間内の燃費（正の値）の最高・最低。燃費の記録が無ければ null。
+ * 単純平均（summary.meanEfficiency）と同じ母集団（期間内の記録のうち fuel_efficiency が正のもの）から求める。
+ * グラフの系列は日付が不正な記録を落とすので使わない
+ */
+export function efficiencyRange(records: ReadonlyArray<Pick<FuelRecord, "fuel_efficiency">>): { max: number; min: number } | null {
   let max = -Infinity;
   let min = Infinity;
-  for (const p of series) {
-    if (p.efficiency > max) max = p.efficiency;
-    if (p.efficiency < min) min = p.efficiency;
+  for (const r of records) {
+    const e = r.fuel_efficiency;
+    if (!hasPositiveNumber(e)) continue;
+    if (e > max) max = e;
+    if (e < min) min = e;
   }
-  return { max, min };
+  return max === -Infinity ? null : { max, min };
 }
 
 interface EfficiencyHeroProps {
   summary: StatsSummary;
-  /** 燃費の推移の系列（最高・最低の算出に使う） */
-  series: ReadonlyArray<Pick<EfficiencyPoint, "efficiency">>;
+  /** 期間内の記録（最高・最低の算出に使う。平均と同じ母集団） */
+  records: ReadonlyArray<Pick<FuelRecord, "fuel_efficiency">>;
   /** カードの下半分に置くもの（燃費の推移グラフ） */
   children?: ReactNode;
   className?: string;
@@ -29,8 +35,8 @@ interface EfficiencyHeroProps {
  * ヒーローカード: 平均燃費（大きな数値）と最高・最低、その下に燃費の推移グラフ（children）。
  * 平均燃費は満タン法の Σkm/ΣL（summary.avgEfficiency）。各給油の単純平均は小さな補足として添える。
  */
-export function EfficiencyHero({ summary, series, children, className = "" }: EfficiencyHeroProps) {
-  const range = efficiencyRange(series);
+export function EfficiencyHero({ summary, records, children, className = "" }: EfficiencyHeroProps) {
+  const range = efficiencyRange(records);
   return (
     <section
       aria-labelledby="stats-hero-title"

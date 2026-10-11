@@ -176,16 +176,40 @@ export default function HistoryPage() {
     return groupByMonth(sortedRecords, { shortLabel: effectiveYear !== ALL });
   }, [sortedRecords, sortType, effectiveYear]);
 
-  // ホームなどから `/history#record-<id>` で開かれたら、その行を開いて画面内へスクロールする（読み込み後に 1 回 + hashchange）
+  // ホームなどから `/history#record-<id>` で開かれたら、その行を開いて画面内へスクロールする（読み込み後に 1 回 + hashchange）。
+  // - 「処理済み」にするのは、対象の行が見つかって開いたときだけ。車両を切り替えたらやり直す
+  // - 現在の車両の記録を読み込み終えても対象が無ければ、トーストで知らせてハッシュを消す（繰り返し発火させない）
+  // - 年・月の絞り込みで隠れているなら、絞り込みを解除して開く
   const hashHandledRef = useRef(false);
-  const sortedRecordsRef = useRef(sortedRecords);
+  // 現在の車両の記録を「読み込み中 → 完了」と観測したか（車両の切り替え直後は古い記録が 1 回描画されるため、これを待つ）
+  const sawLoadingRef = useRef(false);
+  const latestRef = useRef({ records, isLoading, effectiveYear, effectiveMonth, toast });
   useEffect(() => {
-    sortedRecordsRef.current = sortedRecords;
-  }, [sortedRecords]);
+    latestRef.current = { records, isLoading, effectiveYear, effectiveMonth, toast };
+  });
   useEffect(() => {
-    const openFromHash = () => {
+    hashHandledRef.current = false;
+    sawLoadingRef.current = false;
+  }, [selectedVehicleId]);
+  useEffect(() => {
+    const openFromHash = (fromHashChange: boolean) => {
       const id = recordIdFromHash(window.location.hash);
-      if (!id || !sortedRecordsRef.current.some(r => r.id === id)) return;
+      if (!id) return;
+      const latest = latestRef.current;
+      if (latest.isLoading || !sawLoadingRef.current) return;
+      if (!fromHashChange && hashHandledRef.current) return;
+
+      const target = latest.records.find(r => r.id === id);
+      if (!target) {
+        latest.toast("リンクの記録はこの車両の履歴にありません", { type: "info" });
+        window.history.replaceState(null, "", window.location.pathname + window.location.search);
+        return;
+      }
+      hashHandledRef.current = true;
+      if (filterByYearMonth([target], latest.effectiveYear, latest.effectiveMonth).length === 0) {
+        setFilterYear(ALL);
+        setFilterMonth(ALL);
+      }
       setExpandedId(id);
       requestAnimationFrame(() => {
         const el = document.getElementById(recordElementId(id));
@@ -193,13 +217,24 @@ export default function HistoryPage() {
         el?.querySelector<HTMLElement>("button[aria-expanded]")?.focus({ preventScroll: true });
       });
     };
-    if (!isLoading && !hashHandledRef.current && sortedRecords.length > 0) {
-      hashHandledRef.current = true;
-      requestAnimationFrame(openFromHash);
-    }
-    window.addEventListener("hashchange", openFromHash);
-    return () => window.removeEventListener("hashchange", openFromHash);
-  }, [isLoading, sortedRecords.length]);
+    if (isLoading) sawLoadingRef.current = true;
+    const frame = requestAnimationFrame(() => openFromHash(false));
+    const onHashChange = () => openFromHash(true);
+    window.addEventListener("hashchange", onHashChange);
+    return () => {
+      cancelAnimationFrame(frame);
+      window.removeEventListener("hashchange", onHashChange);
+    };
+  }, [isLoading, selectedVehicleId, records]);
+
+  // 確認ダイアログを閉じたあと、フォーカスが <body> に落ちていたら、その行の見出しボタンへ戻す
+  const restoreRowFocus = (recordId: string) => {
+    requestAnimationFrame(() => {
+      const active = document.activeElement;
+      if (active && active !== document.body) return;
+      document.getElementById(recordElementId(recordId))?.querySelector<HTMLElement>("button[aria-expanded]")?.focus({ preventScroll: true });
+    });
+  };
 
   const handleDelete = async (id: string) => {
     if (busyId || readOnly) return;
@@ -215,6 +250,7 @@ export default function HistoryPage() {
       toast(err instanceof Error ? err.message : "削除に失敗しました", { type: "error" });
     } finally {
       setBusyId(null);
+      restoreRowFocus(id);
     }
   };
 
@@ -243,6 +279,7 @@ export default function HistoryPage() {
       toast(e instanceof Error ? e.message : "車両の移動に失敗しました", { type: "error" });
     } finally {
       setBusyId(null);
+      restoreRowFocus(recordId);
     }
   };
 

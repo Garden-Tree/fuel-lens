@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { SignedIn, SignedOut, SignInButton, UserButton } from "@clerk/nextjs";
 import { AppSidebar, AppTabBar } from "./AppNav";
 import ScanActionMenu, { type ScanMenuAnchor } from "./ScanActionMenu";
+import { ScanActionsProvider } from "./ScanActions";
 import { BrandMark } from "./ui/BrandMark";
 
 /**
@@ -23,25 +24,29 @@ export type AppFrameProps = {
 /**
  * 画面の枠。各ページの最上位で `<AppFrame>{ページの中身}</AppFrame>` のように使う（`<main>` は AppFrame が描画する）。
  * スマホでは本文の下にタブバーの高さ＋safe-area 分の余白を空ける。スキャンメニューの開閉もここで持つ。
+ * 本文とスキャンメニューを ScanActionsProvider で包む（/app のホームが撮影・アルバム・手動入力の処理を登録し、
+ * メニューがタップの中で直接呼ぶ。components/ScanActions.tsx）。
  */
 export function AppFrame({ width = "default", children }: AppFrameProps) {
   // null: 閉じている。anchor: null はスマホのボトムシート、値ありは PC のポップオーバー
   const [menu, setMenu] = useState<{ anchor: ScanMenuAnchor | null } | null>(null);
   return (
-    <div className="min-h-dvh bg-ground text-ink lg:flex">
-      <AppSidebar onScan={anchor => setMenu({ anchor })} />
-      <div className="min-w-0 flex-1">
-        <main
-          className={`mx-auto w-full min-w-0 px-4 pb-[calc(env(safe-area-inset-bottom)+56px+32px)] lg:px-8 lg:pt-8 lg:pb-12 ${
-            width === "narrow" ? "max-w-3xl" : "max-w-[1040px]"
-          }`}
-        >
-          {children}
-        </main>
+    <ScanActionsProvider>
+      <div className="min-h-dvh bg-ground text-ink lg:flex">
+        <AppSidebar onScan={anchor => setMenu({ anchor })} />
+        <div className="min-w-0 flex-1">
+          <main
+            className={`mx-auto w-full min-w-0 px-4 pb-[calc(env(safe-area-inset-bottom)+56px+32px)] lg:px-8 lg:pt-8 lg:pb-12 ${
+              width === "narrow" ? "max-w-3xl" : "max-w-[1040px]"
+            }`}
+          >
+            {children}
+          </main>
+        </div>
+        <AppTabBar onScan={() => setMenu({ anchor: null })} />
+        <ScanActionMenu open={menu !== null} anchor={menu?.anchor ?? null} onClose={() => setMenu(null)} />
       </div>
-      <AppTabBar onScan={() => setMenu({ anchor: null })} />
-      <ScanActionMenu open={menu !== null} anchor={menu?.anchor ?? null} onClose={() => setMenu(null)} />
-    </div>
+    </ScanActionsProvider>
   );
 }
 

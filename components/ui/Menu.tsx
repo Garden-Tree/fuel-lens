@@ -11,6 +11,8 @@ import { Chip } from "./Controls";
  * - メニューの外を押す・Tab でフォーカスが外れると閉じる。
  * - 項目を選ぶと閉じる（`MenuItem` の onSelect の後）。
  * - 画面の端からはみ出すときは、左右 16px の余白に収まるように横にずらす（狭い画面でヘッダーの中ほどにあるチップなど）。
+ * - 下に入りきらないとき（スマホの下部タブバー＋safe-area に重なるときを含む）は上に開く。どちらにも入りきらなければ
+ *   広い側に開き、高さを抑えてスクロールさせる（menuVerticalPlacementOf）。重なり順はタブバー（z-40）より上、モーダル（z-50）より下。
  *
  * 使い方:
  *   <Menu label="車両の切り替え" trigger="マイカー" align="end">
@@ -36,6 +38,49 @@ export type MenuProps = {
 
 const ITEM_SELECTOR = '[role^="menuitem"]:not(:disabled)';
 
+/** トリガーとメニューの間隔（mt-2 / mb-2）と、画面の上下に残す余白（px） */
+const MENU_GAP = 8;
+const MENU_EDGE_MARGIN = 8;
+
+export type MenuVerticalPlacement = {
+  /** down: トリガーの下に開く / up: 上に開く */
+  side: "down" | "up";
+  /** 入りきらないときの最大の高さ（px）。入りきるなら null */
+  maxHeight: number | null;
+};
+
+/**
+ * メニューを上下どちらに開くか（純粋関数）。下に入りきれば下、入りきらず上に入りきれば上、
+ * どちらにも入りきらなければ広い側に開いて高さを抑える。
+ * @param bottomLimit 画面の下端のうちメニューを置ける限界の y（下部タブバーがあればその上端。無ければビューポートの高さ）
+ */
+export function menuVerticalPlacementOf({
+  triggerTop,
+  triggerBottom,
+  menuHeight,
+  bottomLimit,
+}: {
+  triggerTop: number;
+  triggerBottom: number;
+  menuHeight: number;
+  bottomLimit: number;
+}): MenuVerticalPlacement {
+  const below = bottomLimit - triggerBottom - MENU_GAP - MENU_EDGE_MARGIN;
+  const above = triggerTop - MENU_GAP - MENU_EDGE_MARGIN;
+  if (menuHeight <= below) return { side: "down", maxHeight: null };
+  if (menuHeight <= above) return { side: "up", maxHeight: null };
+  return below >= above ? { side: "down", maxHeight: Math.max(below, 0) } : { side: "up", maxHeight: Math.max(above, 0) };
+}
+
+/** メニューを置ける下端の y。スマホの下部タブバー（data-app-tabbar。safe-area を含む）が見えていればその上端 */
+function menuBottomLimit(): number {
+  const viewport = window.innerHeight || document.documentElement.clientHeight;
+  const tabBar = document.querySelector<HTMLElement>("[data-app-tabbar]");
+  if (!tabBar || getComputedStyle(tabBar).display === "none") return viewport;
+  const top = tabBar.getBoundingClientRect().top;
+  return top > 0 ? Math.min(viewport, top) : viewport;
+}
+
 function menuItemsOf(menu: HTMLElement | null): HTMLElement[] {
   return Array.from(menu?.querySelectorAll<HTMLElement>(ITEM_SELECTOR) ?? []);
 }
@@ -60,11 +105,25 @@ export function Menu({
   // 無効になったら閉じる（レンダー中に state を調整する React 推奨パターン）
   if (disabled && open) setOpen(false);
 
-  // 画面の左右からはみ出すなら、描画前に横にずらして収める（16px の余白）
+  // 描画前に位置を整える: 下に入りきらなければ上に開き（タブバーと重ねない）、左右にはみ出すなら横にずらす（16px の余白）
   useLayoutEffect(() => {
     const menu = menuRef.current;
+    const triggerEl = triggerRef.current;
     if (!open || !menu) return;
     menu.style.translate = "";
+    menu.style.maxHeight = "";
+    delete menu.dataset.side;
+    if (triggerEl) {
+      const t = triggerEl.getBoundingClientRect();
+      const placement = menuVerticalPlacementOf({
+        triggerTop: t.top,
+        triggerBottom: t.bottom,
+        menuHeight: menu.scrollHeight,
+        bottomLimit: menuBottomLimit(),
+      });
+      if (placement.side === "up") menu.dataset.side = "up";
+      if (placement.maxHeight !== null) menu.style.maxHeight = `${placement.maxHeight}px`;
+    }
     const rect = menu.getBoundingClientRect();
     const margin = 16;
     const viewport = document.documentElement.clientWidth;
@@ -155,7 +214,7 @@ export function Menu({
             // 項目を押したら閉じる（onSelect の後）
             if ((e.target as HTMLElement).closest(ITEM_SELECTOR)) close(true);
           }}
-          className={`absolute top-full z-30 mt-2 w-max min-w-[208px] max-w-[min(320px,calc(100vw-32px))] overflow-hidden rounded-2xl border border-line bg-surface py-1 shadow-2xl shadow-black/50 ${
+          className={`absolute top-full z-[45] mt-2 w-max min-w-[208px] max-w-[min(320px,calc(100vw-32px))] overflow-y-auto overscroll-contain rounded-2xl border border-line bg-surface py-1 shadow-2xl shadow-black/50 data-[side=up]:top-auto data-[side=up]:bottom-full data-[side=up]:mt-0 data-[side=up]:mb-2 ${
             align === "end" ? "right-0" : "left-0"
           }`}
         >

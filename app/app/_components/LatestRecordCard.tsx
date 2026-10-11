@@ -69,6 +69,11 @@ export type LatestRecordCardProps = {
   records: ReadonlyArray<FuelRecord>;
   /** record がスキャンで保存した直後の記録か（見出しを「スキャンした記録」にする） */
   scanned: boolean;
+  /**
+   * record がこの画面で保存した直後の記録か（スキャン・手動入力とも）。true なら燃費が無くても別の記録に差し替えない。
+   * 省略時は scanned と同じ
+   */
+  justSaved?: boolean;
   readOnly: boolean;
   /** 編集フォームを開いているか */
   isEditing: boolean;
@@ -87,6 +92,7 @@ export default function LatestRecordCard({
   record,
   records,
   scanned,
+  justSaved = scanned,
   readOnly,
   isEditing,
   form,
@@ -96,8 +102,9 @@ export default function LatestRecordCard({
   onSave,
 }: LatestRecordCardProps) {
   const headingId = useId();
-  // 最新の記録の燃費が出ていなければ、燃費の出ている最も新しい記録をメーターに出す（最新の記録は注記で知らせる）
-  const { display, skipped } = useMemo(() => heroDisplayOf(records, record, scanned), [records, record, scanned]);
+  // 最新の記録の燃費が出ていなければ、燃費の出ている最も新しい記録をメーターに出す（最新の記録は注記で知らせる）。
+  // 保存した直後の記録はそのまま出す
+  const { display, skipped } = useMemo(() => heroDisplayOf(records, record, justSaved), [records, record, justSaved]);
   const model = useMemo(() => heroModelOf(records, display), [records, display]);
 
   if (isEditing) {
