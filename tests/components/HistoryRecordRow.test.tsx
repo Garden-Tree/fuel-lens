@@ -119,6 +119,26 @@ describe("履歴の行", () => {
     expect(screen.getByText("閲覧専用のため、編集・移動・削除はできません")).toBeInTheDocument();
   });
 
+  it("処理中（確認ダイアログの表示中）は削除・移動のボタンをフォーカスできるまま、押しても何も起きない", async () => {
+    const onDelete = vi.fn();
+    const onMove = vi.fn();
+    const { user, row } = setup({ busy: true, onDelete, onMove });
+    await user.click(row);
+    // disabled にするとキャンセル後にフォーカスが <body> へ落ちるため、aria-disabled で表す
+    const del = screen.getByRole("button", { name: "削除" });
+    expect(del).toBeEnabled();
+    expect(del).toHaveAttribute("aria-disabled", "true");
+    expect(screen.getByRole("button", { name: /別の車両へ移動/ })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "編集" })).toBeDisabled();
+    await user.click(del);
+    expect(onDelete).not.toHaveBeenCalled();
+    del.focus();
+    expect(del).toHaveFocus();
+    await user.click(screen.getByRole("button", { name: /別の車両へ移動/ }));
+    await user.click(screen.getByRole("menuitem", { name: "セカンドカー" }));
+    expect(onMove).not.toHaveBeenCalled();
+  });
+
   it("移動先が無ければ「別の車両へ移動」を出さない", async () => {
     const { user, row } = setup({ moveTargets: [] });
     await user.click(row);

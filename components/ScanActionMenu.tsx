@@ -5,10 +5,14 @@ import Link from "next/link";
 import { useAuth } from "@clerk/nextjs";
 import { Camera, ChevronRight, Edit2, Image as ImageIcon, type LucideIcon } from "lucide-react";
 import Modal from "./Modal";
+import { useScanActions, type ScanActionHandlers } from "./ScanActions";
 
 /**
  * スキャンボタン（タブバー中央 / サイドバー）から開く操作メニュー: 撮影する / アルバムから選ぶ / 手動で入力。
- * 各項目は `/app?action=scan|album|manual` へ遷移し、/app の useShortcutActions が実行する（実行後に URL から消える）。
+ * - /app を表示中（ホームが components/ScanActions.tsx で処理を登録済み）: 項目のクリックハンドラの中で
+ *   openCamera / openAlbum / openManual を同期的に呼ぶ（ファイル選択をタップの中で開くため。遅れるとブラウザに無視される）。
+ *   解析中・確認中・閲覧専用・読み込み中は canScan / canManual に従って項目を無効にし、理由を 1 行で添える
+ * - それ以外の画面: `/app?action=scan|album|manual` へ遷移し、/app の useShortcutActions が処理する（実行後に URL から消える）
  *
  * - `anchor` なし（スマホ）: 画面下からのボトムシート
  * - `anchor` あり（PC）: ボタンの真下に出すポップオーバー（アンカーの左端・幅に合わせる）
@@ -45,14 +49,31 @@ export type ScanActionMenuProps = {
 const ROW_CLASS =
   "flex w-full min-h-14 items-center gap-3 px-4 py-2.5 text-left text-ink transition-colors hover:bg-surface-2/60 active:bg-surface-2 focus:outline-none focus-visible:bg-surface-2 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent";
 
+/** 登録済みの処理のうち、項目に対応するもの */
+function handlerOf(handlers: ScanActionHandlers, action: ScanAction["action"]): () => void {
+  return action === "scan" ? handlers.openCamera : action === "album" ? handlers.openAlbum : handlers.openManual;
+}
+
 export default function ScanActionMenu({ open, onClose, anchor = null }: ScanActionMenuProps) {
   const { isLoaded, isSignedIn } = useAuth();
   const signedOut = isLoaded && !isSignedIn;
+  // /app を表示中ならホームが登録した処理（他の画面では null）
+  const handlers = useScanActions();
   const popover = anchor !== null;
   const popoverTitleId = useId();
   // ポップオーバーは最初の選べる項目にフォーカスする（シートは既定どおり × ボタン）
-  const firstActionRef = useRef<HTMLAnchorElement>(null);
-  const firstEnabled = ACTIONS.find(item => !(item.requiresSignIn && signedOut))?.action;
+  const firstActionRef = useRef<HTMLAnchorElement & HTMLButtonElement>(null);
+
+  const isDisabled = (item: ScanAction) => {
+    if (item.requiresSignIn && signedOut) return true;
+    if (!handlers) return false;
+    return item.action === "manual" ? !handlers.canManual : !handlers.canScan;
+  };
+  const firstEnabled = ACTIONS.find(item => !isDisabled(item))?.action;
+  // 未ログイン以外の理由で押せない項目があるときの説明（/app 表示中のみ）
+  const busyReason = handlers && ACTIONS.some(item => isDisabled(item) && !(item.requiresSignIn && signedOut))
+    ? handlers.disabledReason
+    : null;
 
   return (
     <Modal
@@ -85,7 +106,7 @@ export default function ScanActionMenu({ open, onClose, anchor = null }: ScanAct
       <div className={popover ? "divide-y divide-line" : "overflow-hidden rounded-2xl bg-surface-2/50 divide-y divide-line"}>
         {ACTIONS.map(item => {
           const Icon = item.icon;
-          const disabled = item.requiresSignIn && signedOut;
+          const disabled = isDisabled(item);
           const content = (
             <>
               <span
@@ -102,11 +123,32 @@ export default function ScanActionMenu({ open, onClose, anchor = null }: ScanAct
               {!disabled && <ChevronRight className="h-4 w-4 shrink-0 text-faint" aria-hidden="true" />}
             </>
           );
-          return disabled ? (
-            <button key={item.action} type="button" disabled className={`${ROW_CLASS} cursor-not-allowed opacity-50`}>
-              {content}
-            </button>
-          ) : (
+          if (disabled) {
+            return (
+              <button key={item.action} type="button" disabled className={`${ROW_CLASS} cursor-not-allowed opacity-50`}>
+                {content}
+              </button>
+            );
+          }
+          if (handlers) {
+            const run = handlerOf(handlers, item.action);
+            return (
+              <button
+                key={item.action}
+                ref={item.action === firstEnabled ? firstActionRef : undefined}
+                type="button"
+                onClick={() => {
+                  // ファイル選択はこのタップの中で同期的に開く（閉じる処理と同じイベントで行う）
+                  onClose();
+                  run();
+                }}
+                className={ROW_CLASS}
+              >
+                {content}
+              </button>
+            );
+          }
+          return (
             <Link
               key={item.action}
               ref={item.action === firstEnabled ? firstActionRef : undefined}
@@ -119,10 +161,15 @@ export default function ScanActionMenu({ open, onClose, anchor = null }: ScanAct
           );
         })}
       </div>
-      {signedOut && (
-        <p className={`text-xs text-warn ${popover ? "border-t border-line px-4 py-3" : "mt-3 px-1"}`}>
-          {SIGNED_OUT_SCAN_NOTE}
-        </p>
+      {(signedOut || busyReason) && (
+        <div className={`flex flex-col gap-1 text-xs ${popover ? "border-t border-line px-4 py-3" : "mt-3 px-1"}`}>
+          {busyReason && (
+            <p role="status" className="text-sub">
+              {busyReason}
+            </p>
+          )}
+          {signedOut && <p className="text-warn">{SIGNED_OUT_SCAN_NOTE}</p>}
+        </div>
       )}
     </Modal>
   );

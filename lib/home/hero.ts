@@ -42,20 +42,23 @@ export function efficiencyDeltaOf(current: number, previous: number): Efficiency
 
 /**
  * ヒーローに出す記録を選ぶ。
- * 最新の記録の燃費が出ていない（部分給油・記録漏れなど）ときは、燃費の出ている最も新しい記録を出し、
- * 最新の記録は注記（skipped）で知らせる。スキャン直後の記録はその記録自体を確認するため差し替えない。
+ * 最新の記録（records[0]）の燃費が出ていない（部分給油・記録漏れなど）ときは、燃費の出ている最も新しい記録を出し、
+ * 最新の記録は注記（skipped）で知らせる。
+ * この画面で保存した直後の記録（スキャン・手動入力とも。justSaved）はその記録自体を確認するため差し替えない。
+ * 最新ではない記録（保存直後の古い日付の記録など）も差し替えない。
  * @param records 連鎖計算済み・日付の降順
+ * @param record 表示する記録（直前に保存した記録、または最新の記録）
+ * @param justSaved record がこの画面で保存した直後の記録か
  */
 export function heroDisplayOf(
   records: ReadonlyArray<FuelRecord>,
   record: FuelRecord,
-  scanned: boolean
+  justSaved: boolean
 ): { display: FuelRecord; skipped: FuelRecord | null } {
-  if (scanned || positive(record.fuel_efficiency)) return { display: record, skipped: null };
-  const index = records.findIndex(r => r.id === record.id);
-  const older = index >= 0 ? records.slice(index + 1) : records;
-  const fallback = older.find(r => positive(r.fuel_efficiency));
-  return fallback ? { display: fallback, skipped: record } : { display: record, skipped: null };
+  const unchanged = { display: record, skipped: null };
+  if (justSaved || positive(record.fuel_efficiency) || records[0]?.id !== record.id) return unchanged;
+  const fallback = records.slice(1).find(r => positive(r.fuel_efficiency));
+  return fallback ? { display: fallback, skipped: record } : unchanged;
 }
 
 /**

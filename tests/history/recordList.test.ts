@@ -37,6 +37,20 @@ describe("availableYears / filterByYearMonth", () => {
     expect(ids(filterByYearMonth(records, "all", "9"))).toEqual(["a", "b"]);
     expect(ids(filterByYearMonth(records, "2026", "1"))).toEqual(["c"]);
   });
+
+  it("実在しない日付（2026-02-30 など）は年の候補にも絞り込みの対象にもしない（一覧では日付なし）", () => {
+    const odd: R[] = [
+      { id: "ok", date: "2025-03-04" },
+      { id: "bad1", date: "2030-02-30" },
+      { id: "bad2", date: "2026-13-01" },
+      { id: "bad3", date: "garbage" },
+    ];
+    expect(availableYears(odd)).toEqual(["2025"]);
+    expect(ids(filterByYearMonth(odd, "2030", "all"))).toEqual([]);
+    expect(ids(filterByYearMonth(odd, "2026", "all"))).toEqual([]);
+    expect(ids(filterByYearMonth(odd, "all", "2"))).toEqual([]);
+    expect(ids(filterByYearMonth(odd, "2025", "3"))).toEqual(["ok"]);
+  });
 });
 
 describe("sortRecords", () => {

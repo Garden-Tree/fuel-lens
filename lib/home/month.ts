@@ -25,7 +25,7 @@ export type MonthSummary = {
 
 /** today（ローカル）を含む月の記録を集計する */
 export function monthSummaryOf(records: ReadonlyArray<FuelRecord>, today: Date): MonthSummary {
-  const monthKey = localDateString(today).slice(0, 7);
+  const monthKey = monthKeyOf(today);
   const label = `${today.getMonth() + 1}月`;
 
   let count = 0;
@@ -69,4 +69,15 @@ export function monthSummaryOf(records: ReadonlyArray<FuelRecord>, today: Date):
     latestPrice,
     priceDiff,
   };
+}
+
+/** now（ローカル）の月の "YYYY-MM" */
+export function monthKeyOf(now: Date): string {
+  return localDateString(now).slice(0, 7);
+}
+
+/** "YYYY-MM" の月の 1 日（ローカル）。monthSummaryOf に渡す */
+export function monthStartOf(monthKey: string): Date {
+  const [y, m] = monthKey.split("-").map(Number);
+  return new Date(y, m - 1, 1);
 }

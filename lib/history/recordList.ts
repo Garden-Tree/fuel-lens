@@ -26,22 +26,24 @@ export function createdAtMs(createdAt: string | null | undefined): number {
   return Number.isFinite(t) ? t : 0;
 }
 
-/** 記録のある年（"YYYY"）の新しい順 */
+/** 記録のある年（"YYYY"）の新しい順。日付が欠落・不正な記録（一覧では「日付なし」）は数えない */
 export function availableYears(records: readonly Pick<FuelRecord, "date">[]): string[] {
   const years = new Set<string>();
   records.forEach(r => {
-    if (r.date) years.add(String(r.date).slice(0, 4));
+    const date = normalizeDateString(r.date);
+    if (date) years.add(date.slice(0, 4));
   });
   return Array.from(years).sort((a, b) => b.localeCompare(a));
 }
 
-/** 年・月で絞り込む（"all" は絞り込まない）。日付の無い記録は、どちらかで絞り込んでいれば除く */
+/** 年・月で絞り込む（"all" は絞り込まない）。日付が欠落・不正な記録は、どちらかで絞り込んでいれば除く */
 export function filterByYearMonth<T extends Pick<FuelRecord, "date">>(records: readonly T[], year: string, month: string): readonly T[] {
   if (year === ALL && month === ALL) return records;
   return records.filter(r => {
-    if (!r.date) return false;
-    const y = String(r.date).slice(0, 4);
-    const m = String(parseInt(String(r.date).slice(5, 7), 10));
+    const date = normalizeDateString(r.date);
+    if (!date) return false;
+    const y = date.slice(0, 4);
+    const m = String(parseInt(date.slice(5, 7), 10));
     if (year !== ALL && y !== year) return false;
     if (month !== ALL && m !== month) return false;
     return true;

@@ -13,7 +13,13 @@ import { useRecordForm } from "@/lib/useRecordForm";
 import { useRecordEditing } from "@/lib/useRecordEditing";
 import { useScanPipeline } from "@/lib/scan/useScanPipeline";
 import { useImageDropPaste } from "@/lib/scan/useImageDropPaste";
-import { SHARE_UNAVAILABLE_MESSAGE, shortcutReadinessOf } from "@/lib/scan/shortcuts";
+import {
+  DISCARD_FORM_CONFIRM_MESSAGE,
+  SHARE_UNAVAILABLE_MESSAGE,
+  scanMenuAvailabilityOf,
+  shortcutReadinessOf,
+} from "@/lib/scan/shortcuts";
+import { RegisterScanActions } from "@/components/ScanActions";
 import ScanPanel, { type ScanPanelHandle } from "./_components/ScanPanel";
 import LatestRecordCard from "./_components/LatestRecordCard";
 import ManualEntryCard from "./_components/ManualEntryCard";
@@ -24,6 +30,7 @@ import RecentRecordsSection from "./_components/RecentRecordsSection";
 import ScanEntryList from "./_components/ScanEntryList";
 import WelcomeCard from "./_components/WelcomeCard";
 import DropZoneRow from "./_components/DropZoneRow";
+import ScanReadyPrompt from "./_components/ScanReadyPrompt";
 
 const subscribeNothing = () => () => {};
 
@@ -34,7 +41,9 @@ const subscribeNothing = () => () => {};
  * - useScanPipeline: 圧縮 → /api/analyze → 確認シート（ScanReviewSheet）。保存は確認シートの「保存」のみ
  * - useImageDropPaste: 画像のドロップ（ページ全体）・ペースト
  * - useRecordEditing: 手動入力・最新記録の編集（重複確認付きの保存）
- * - ShortcutActionHandler（Suspense の内側）: `?action=` の PWA ショートカット・スキャンメニュー・共有
+ * - RegisterScanActions: スキャンメニュー（AppFrame）に撮影・アルバム・手動入力の処理を登録する（メニューがタップの中で直接呼ぶ）
+ * - ShortcutActionHandler（Suspense の内側）: `?action=` の PWA ショートカット・他の画面のスキャンメニュー・共有。
+ *   撮影・アルバムで来たときは「撮影の準備ができました」の案内（ScanReadyPrompt）も出す（遷移後はファイル選択が開かないことがあるため）
  *
  * レイアウト: スマホは 1 カラム（ヒーロー → 今月 → 最近の記録）。PC（lg 以上）は 2 カラムで、
  * 左にヒーローと今月、右に最近の記録・記録の入口・ドロップ先。
@@ -49,8 +58,14 @@ export default function Home() {
   const { vehicles, selectedVehicleId, selectedVehicle, distanceMode, records, loading: isLoading, readOnly } = scope;
 
   const scan = useScanPipeline({ isSignedIn, toast, confirm });
+  // 他の画面・ショートカットから撮影 / アルバムで来たときの案内。画像を選んだ・スキャンが始まった・閉じたら消す
+  const [scanPrompt, setScanPrompt] = useState(false);
+  const processFile = (file: File) => {
+    setScanPrompt(false);
+    return scan.processImageFile(file);
+  };
   const { isDragging, dropZoneProps } = useImageDropPaste({
-    onImage: (file) => scan.processImageFile(file),
+    onImage: processFile,
     isBusy: scan.isScanning,
     toast,
   });
@@ -68,17 +83,43 @@ export default function Home() {
     onAdded: (record) => setActive({ id: record.id, fromScan: false }),
   });
 
-  const scanPanelRef = useRef<ScanPanelHandle>(null);
-  const openCamera = () => scanPanelRef.current?.openCamera();
-  const openAlbum = () => scanPanelRef.current?.openAlbum();
-
   // ハイドレーション後に true（ログイン状態などブラウザにしかない値は、それまで出さない）
   const mounted = useSyncExternalStore(subscribeNothing, () => true, () => false);
   const signedOut = mounted && authLoaded && !isSignedIn;
 
+  // 撮影・アルバム・手動入力の可否（スキャンメニュー・`?action=` で共通）
+  const readiness = shortcutReadinessOf({
+    mounted,
+    dataLoading: isLoading,
+    scanning: scan.loading,
+    reviewing: scan.scanResult !== null,
+    readOnly,
+    authLoaded,
+  });
+  const availability = scanMenuAvailabilityOf(readiness);
+
+  // ファイル入力の click はタップの中で同期的に呼ぶこと（遅れるとブラウザに無視される）
+  const scanPanelRef = useRef<ScanPanelHandle>(null);
+  const openCamera = () => {
+    if (availability.canScan) scanPanelRef.current?.openCamera();
+  };
+  const openAlbum = () => {
+    if (availability.canScan) scanPanelRef.current?.openAlbum();
+  };
+
   const startManualEntry = () => {
     editing.startManualEntry();
     setActive(null);
+  };
+
+  // 手動入力を始める。手動入力・編集のフォームを開いていれば、破棄してよいか確認する
+  const requestManualEntry = async () => {
+    if (!availability.canManual) return;
+    if (editing.isEditing) {
+      const ok = await confirm(DISCARD_FORM_CONFIRM_MESSAGE, { confirmLabel: "破棄して入力", danger: true });
+      if (!ok) return;
+    }
+    startManualEntry();
   };
 
   // 確認シートの「保存」（重複確認でキャンセルならシートは開いたまま。失敗は throw してシートを開いたままにする）
@@ -98,24 +139,18 @@ export default function Home() {
 
   // 表示するレコード: 直前に保存した記録（一覧に無ければ最新）、無ければ最新
   const displayRecord = (active && records.find(r => r.id === active.id)) || records[0];
-  const scanned = !!active?.fromScan && active.id === displayRecord?.id;
+  // この画面で保存した直後の記録か（燃費が無くてもヒーローで差し替えない）。scanned はそのうちスキャンで保存したもの
+  const justSaved = !!active && active.id === displayRecord?.id;
+  const scanned = justSaved && !!active?.fromScan;
   const hasRecords = records.length > 0;
-
-  const readiness = shortcutReadinessOf({
-    mounted,
-    dataLoading: isLoading,
-    scanning: scan.loading,
-    reviewing: scan.scanResult !== null,
-    readOnly,
-    authLoaded,
-  });
+  const showScanPrompt = scanPrompt && availability.canScan;
 
   const entrySection = (
     <Section title="記録する">
       <ScanEntryList
         onCamera={openCamera}
         onAlbum={openAlbum}
-        onManual={startManualEntry}
+        onManual={() => void requestManualEntry()}
         signedOut={signedOut}
         scanning={scan.loading}
         readOnly={readOnly}
@@ -126,14 +161,33 @@ export default function Home() {
 
   return (
     <AppFrame>
+      <RegisterScanActions
+        openCamera={openCamera}
+        openAlbum={openAlbum}
+        openManual={() => void requestManualEntry()}
+        canScan={availability.canScan}
+        canManual={availability.canManual}
+        disabledReason={availability.disabledReason}
+      />
       <Suspense fallback={null}>
         <ShortcutActionHandler
           readiness={readiness}
-          onScan={openCamera}
-          onAlbum={openAlbum}
-          onManual={startManualEntry}
-          onShared={(token) => void scan.processSharedImage(token)}
+          onScan={() => {
+            // 遷移してきた場合はタップの扱いが切れていて開かないことがあるので、案内のカードも出す
+            openCamera();
+            setScanPrompt(true);
+          }}
+          onAlbum={() => {
+            openAlbum();
+            setScanPrompt(true);
+          }}
+          onManual={() => void requestManualEntry()}
+          onShared={(token) => {
+            setScanPrompt(false);
+            void scan.processSharedImage(token);
+          }}
           onShareUnavailable={() => toast(SHARE_UNAVAILABLE_MESSAGE, { type: "warning" })}
+          onBlocked={(message) => toast(message, { type: "warning" })}
         />
       </Suspense>
 
@@ -167,6 +221,13 @@ export default function Home() {
         <HookErrorLine error={scope.error} />
         <ReadOnlyCaption show={readOnly} />
 
+        {/* 他の画面・ショートカットから撮影 / アルバムで来たときの案内（ボタンのタップの中でファイル選択を開く） */}
+        {showScanPrompt && (
+          <div className="mb-3 lg:mb-6">
+            <ScanReadyPrompt onCamera={openCamera} onAlbum={openAlbum} onDismiss={() => setScanPrompt(false)} />
+          </div>
+        )}
+
         {/* 解析中・プレビューの状態カード（無ければ何も出さない）と、非表示のファイル入力 */}
         <div className={scan.loading || scan.preview ? "mb-3 lg:mb-6" : undefined}>
           <ScanPanel
@@ -176,10 +237,10 @@ export default function Home() {
             preview={scan.preview}
             sharedPending={scan.sharedPending}
             readOnly={readOnly}
-            onSelectFile={(file) => void scan.processImageFile(file)}
+            onSelectFile={(file) => void processFile(file)}
             onClearPreview={scan.clearPreview}
             onAnalyzeShared={scan.startSharedAnalysis}
-            onManualEntry={startManualEntry}
+            onManualEntry={() => void requestManualEntry()}
             onCancelScan={scan.abort}
           />
         </div>
@@ -204,6 +265,7 @@ export default function Home() {
                     record={displayRecord}
                     records={records}
                     scanned={scanned}
+                    justSaved={justSaved}
                     readOnly={readOnly}
                     isEditing={editing.isEditing}
                     form={form}

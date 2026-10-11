@@ -14,8 +14,8 @@ export type SectionProps = {
   title: ReactNode;
   /** 見出しの右側に置く要素（リンク・件数など） */
   action?: ReactNode;
-  /** 見出し要素のレベル。既定 2。null で見出し要素にしない（div） */
-  headingLevel?: 2 | 3 | null;
+  /** 見出し要素のレベル。既定 2（モーダルなど見出しの下に置くときは 4）。null で見出し要素にしない（div） */
+  headingLevel?: 2 | 3 | 4 | null;
   className?: string;
   children: ReactNode;
 };

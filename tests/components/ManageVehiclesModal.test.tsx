@@ -47,6 +47,14 @@ describe("ManageVehiclesModal", () => {
     expect(screen.getByText("オドメーター・レギュラー")).toBeInTheDocument();
   });
 
+  it("見出しは、ダイアログの題名(h3)の下に各まとまり(h4)が来る", () => {
+    setup();
+    expect(screen.getByRole("heading", { level: 3, name: "車両の管理" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 4, name: "登録済みの車両 (2)" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 4, name: "車両・バイクの追加" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { level: 2 })).not.toBeInTheDocument();
+  });
+
   it("閉じるボタンに初期フォーカスし、× で onClose が呼ばれる", async () => {
     const { user, onClose } = setup();
     expect(screen.getByRole("button", { name: "閉じる" })).toHaveFocus();

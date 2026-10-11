@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { monthSummaryOf } from "@/lib/home/month";
+import { monthKeyOf, monthStartOf, monthSummaryOf } from "@/lib/home/month";
 import type { FuelRecord } from "@/lib/types";
 
 function rec(id: string, date: string, extra: Partial<FuelRecord> = {}): FuelRecord {
@@ -85,5 +85,15 @@ describe("monthSummaryOf", () => {
     expect(s.label).toBe("1月");
     expect(s.count).toBe(1);
     expect(s.totalCost).toBe(2);
+  });
+});
+
+describe("monthKeyOf / monthStartOf", () => {
+  it("ローカル暦の YYYY-MM と、その月の 1 日", () => {
+    expect(monthKeyOf(new Date(2026, 9, 31, 23, 59))).toBe("2026-10");
+    expect(monthKeyOf(new Date(2026, 10, 1, 0, 0))).toBe("2026-11");
+    const start = monthStartOf("2026-01");
+    expect([start.getFullYear(), start.getMonth(), start.getDate()]).toEqual([2026, 0, 1]);
+    expect(monthKeyOf(monthStartOf("2026-12"))).toBe("2026-12");
   });
 });

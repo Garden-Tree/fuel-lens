@@ -161,7 +161,7 @@ export default function ManageVehiclesModal({
       )}
 
       <div className="space-y-6">
-        <Section title={`登録済みの車両 (${vehicles.length})`}>
+        <Section title={`登録済みの車両 (${vehicles.length})`} headingLevel={4}>
           <GroupedList>
             {vehicles.map((v) => (
               <VehicleRow

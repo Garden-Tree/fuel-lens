@@ -77,7 +77,7 @@ export default function StatsPage() {
             ) : (
               // スマホは 1 カラム（ヒーロー → 費用 → 月ごと → 単価）。PC は 2 カラム（左: ヒーロー / 右: 費用、下段: 月ごと・単価）
               <div className="grid grid-cols-1 items-start gap-4 animate-in fade-in duration-700 lg:grid-cols-2 lg:gap-6">
-                <EfficiencyHero summary={model.summary} series={model.efficiency.series}>
+                <EfficiencyHero summary={model.summary} records={model.filteredRecords}>
                   <EfficiencyChart
                     period={period}
                     efficiency={model.efficiency}

@@ -121,9 +121,16 @@ describe("heroDisplayOf", () => {
     expect(heroDisplayOf(list, partial, false)).toEqual({ display: records[0], skipped: partial });
   });
 
-  it("スキャン直後の記録は差し替えない。燃費のある記録が無ければそのまま", () => {
+  it("保存した直後の記録（スキャン・手動入力とも）は差し替えない。燃費のある記録が無ければそのまま", () => {
     const partial: FuelRecord = { ...records[0], id: "p", date: "2026-10-12", is_full: false, fuel_efficiency: null };
     expect(heroDisplayOf([partial, ...records], partial, true)).toEqual({ display: partial, skipped: null });
     expect(heroDisplayOf([partial], partial, false)).toEqual({ display: partial, skipped: null });
+  });
+
+  it("最新ではない記録（保存直後の古い日付の記録など）は差し替えない", () => {
+    const olderPartial: FuelRecord = { ...records[1], id: "op", date: "2026-09-25", is_full: false, fuel_efficiency: null };
+    const list = [records[0], olderPartial, records[1]];
+    expect(heroDisplayOf(list, olderPartial, false)).toEqual({ display: olderPartial, skipped: null });
+    expect(heroDisplayOf(list, olderPartial, true)).toEqual({ display: olderPartial, skipped: null });
   });
 });
