@@ -36,7 +36,7 @@ export function AppFrame({ width = "default", children }: AppFrameProps) {
         <AppSidebar onScan={anchor => setMenu({ anchor })} />
         <div className="min-w-0 flex-1">
           <main
-            className={`mx-auto w-full min-w-0 px-4 pb-[calc(env(safe-area-inset-bottom)+56px+32px)] lg:px-8 lg:pt-8 lg:pb-12 ${
+            className={`mx-auto w-full min-w-0 px-4 pb-[calc(var(--tabbar-safe-bottom)+56px+32px)] lg:px-8 lg:pt-8 lg:pb-12 ${
               width === "narrow" ? "max-w-3xl" : "max-w-[1040px]"
             }`}
           >

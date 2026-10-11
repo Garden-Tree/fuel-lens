@@ -56,7 +56,7 @@ export function AppTabBar({ onScan }: { onScan: () => void }) {
       aria-label="メイン"
       // components/ui/Menu.tsx がこの上端を下限にしてメニューを上下どちらに開くか決める
       data-app-tabbar=""
-      className="fixed inset-x-0 bottom-0 z-40 border-t border-line bg-[rgba(11,15,20,0.96)] pb-[env(safe-area-inset-bottom)] backdrop-blur-md lg:hidden"
+      className="fixed inset-x-0 bottom-0 z-40 border-t border-line bg-[rgba(11,15,20,0.96)] pb-[var(--tabbar-safe-bottom)] backdrop-blur-md lg:hidden"
     >
       <div className="mx-auto grid h-14 max-w-lg grid-cols-5 items-stretch px-2">
         <TabLink item={home} active={isNavItemActive(pathname, home.href)} />

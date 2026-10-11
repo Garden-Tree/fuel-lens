@@ -6,7 +6,7 @@
 import { efficiencyNullReason } from "../format";
 import { summarize } from "../stats";
 import type { FuelRecord } from "../types";
-import { gaugeScaleOf, type GaugeScale } from "./gauge";
+import { gaugeBasisOf, gaugeScaleOf, type GaugeScale } from "./gauge";
 
 export type EfficiencyDelta = {
   /** 符号付きの差（km/L、小数第 2 位で丸め済み） */
@@ -74,8 +74,8 @@ export function heroModelOf(records: ReadonlyArray<FuelRecord>, record: FuelReco
   const delta = efficiency !== null && previous !== null ? efficiencyDeltaOf(efficiency, previous) : null;
 
   const average = summarize(records).avgEfficiency;
-  const values = records.map(r => r.fuel_efficiency);
-  const scale = gaugeScaleOf([...values, efficiency, average]);
+  // 目盛りは直近 10 回から外れ値を除いた燃費で決め、表示中の値と平均は必ず入れる
+  const scale = gaugeScaleOf([...gaugeBasisOf(records.map(r => r.fuel_efficiency)), efficiency, average]);
 
   return {
     efficiency,
