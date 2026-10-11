@@ -10,6 +10,15 @@
   --font-mono: var(--font-jetbrains-mono), var(--font-noto-sans-jp), ui-monospace, monospace;
 }
 
+:root {
+  /*
+   * スマホ下部のタブバーの下の余白。ホームバーの領域（safe-area-inset-bottom、iPhone で約 34px）を丸ごと足すと
+   * 標準のアプリより下が空いて見えるため 14px 詰める（ホームバーとは重ならない）。ホームバーの無い端末は 6px。
+   * タブバー本体・本文の下余白・トーストの位置で共有する。
+   */
+  --tabbar-safe-bottom: max(calc(env(safe-area-inset-bottom) - 14px), 6px);
+}
+
 @theme {
   /* 面 */
   --color-ground: #0b0f14; /* 画面の地（body） */

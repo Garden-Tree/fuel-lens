@@ -5,6 +5,9 @@ import {
   gaugeFraction,
   gaugePoint,
   gaugeScaleOf,
+  gaugeBasisOf,
+  withoutOutliers,
+  GAUGE_RECENT_COUNT,
 } from "@/lib/home/gauge";
 
 describe("gaugeScaleOf", () => {
@@ -63,5 +66,31 @@ describe("gaugePoint / gaugeArcPath", () => {
     expect(gaugeArcPath(0, g)).toBeNull();
     expect(gaugeArcPath(1, g)).toBe("M40,144 A110,110 0 0 1 260,144");
     expect(gaugeArcPath(0.5, g)).toBe("M40,144 A110,110 0 0 1 150,34");
+  });
+});
+
+describe("withoutOutliers", () => {
+  it("四分位範囲の 1.5 倍より外れた値を除き、順序は保つ", () => {
+    expect(withoutOutliers([55, 58, 95, 60, 57, 62, 43])).toEqual([55, 58, 60, 57, 62]);
+  });
+
+  it("4 件未満はそのまま返す", () => {
+    expect(withoutOutliers([10, 50, 90])).toEqual([10, 50, 90]);
+  });
+});
+
+describe("gaugeBasisOf", () => {
+  it("正の値だけを新しい順に直近 GAUGE_RECENT_COUNT 件使う", () => {
+    const values = [null, 15, 0, 14, ...Array.from({ length: 20 }, (_, i) => 13 + (i % 3))];
+    const basis = gaugeBasisOf(values);
+    expect(basis).toHaveLength(GAUGE_RECENT_COUNT);
+    expect(basis.slice(0, 2)).toEqual([15, 14]);
+  });
+
+  it("極端な値を除くので目盛りが広がりすぎない", () => {
+    const values = [62.54, 57.88, 60.49, 95, 55, 58, 43, 59];
+    expect(gaugeBasisOf(values)).not.toContain(95);
+    const scale = gaugeScaleOf([...gaugeBasisOf(values), 62.54, 54.63]);
+    expect(scale.max).toBeLessThan(80);
   });
 });

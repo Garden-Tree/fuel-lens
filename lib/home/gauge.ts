@@ -2,6 +2,7 @@
  * ホーム画面の燃費メーター（半円ゲージ）の目盛りと座標（純粋関数）。
  *
  * - gaugeScaleOf: 燃費の一覧から、ゲージの下限・上限（きりのよい整数）を決める
+ * - gaugeBasisOf: 目盛りの元にする燃費（直近 GAUGE_RECENT_COUNT 回から外れ値を除いたもの）
  * - gaugeFraction: 値がゲージのどの位置か（0 = 左端、1 = 右端）
  * - gaugePoint / gaugeArcPath: SVG 上の座標と、左端から値までの円弧の path
  */
@@ -29,6 +30,45 @@ export function gaugeScaleOf(values: ReadonlyArray<number | null | undefined>): 
   let max = Math.ceil(hi + pad);
   if (max <= min) max = min + 1;
   return { min, max };
+}
+
+/** 目盛りの元にする直近の記録の数 */
+export const GAUGE_RECENT_COUNT = 10;
+
+function isPositive(v: number | null | undefined): v is number {
+  return typeof v === "number" && Number.isFinite(v) && v > 0;
+}
+
+/** 昇順の配列の分位点（線形補間） */
+function quantile(sorted: ReadonlyArray<number>, q: number): number {
+  const pos = (sorted.length - 1) * q;
+  const base = Math.floor(pos);
+  const rest = pos - base;
+  const next = sorted[base + 1];
+  return next === undefined ? sorted[base] : sorted[base] + rest * (next - sorted[base]);
+}
+
+/**
+ * 外れ値を除く（Tukey の方法: 第 1・第 3 四分位から四分位範囲の 1.5 倍より外れた値を除く）。
+ * 4 件未満では判定できないのでそのまま返す。順序は保つ。
+ */
+export function withoutOutliers(values: ReadonlyArray<number>): number[] {
+  if (values.length < 4) return [...values];
+  const sorted = [...values].sort((a, b) => a - b);
+  const q1 = quantile(sorted, 0.25);
+  const q3 = quantile(sorted, 0.75);
+  const fence = (q3 - q1) * 1.5;
+  return values.filter(v => v >= q1 - fence && v <= q3 + fence);
+}
+
+/**
+ * 目盛りの元にする燃費。新しい順の燃費から正の値だけを直近 GAUGE_RECENT_COUNT 件取り、外れ値を除く。
+ * 記録漏れの誤入力などで極端な値があっても、目盛りが広がりすぎないようにする。
+ * （表示中の値と平均は呼び出し側で必ず目盛りに含める）
+ * @param newestFirst 新しい順の燃費（null 可）
+ */
+export function gaugeBasisOf(newestFirst: ReadonlyArray<number | null | undefined>): number[] {
+  return withoutOutliers(newestFirst.filter(isPositive).slice(0, GAUGE_RECENT_COUNT));
 }
 
 /** 値のゲージ上の位置（0〜1 に収める）。値が数値でなければ 0 */
