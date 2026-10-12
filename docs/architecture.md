@@ -12,6 +12,7 @@ FuelLens の構成、データの流れ、主要なモジュールの役割を�
 | `app/history/page.tsx`、`app/history/_components/` | 履歴一覧。年・月・並び順のチップ（`HistoryToolbar`）と CSV 出力、月ごとの見出し付きの一覧（`RecordRow`）、行を開いて明細・編集・別車両への移動・削除（`RecordDetail`）。`/history#record-<id>` でその記録を開く。絞り込み・月ごとのまとめは純粋関数 `lib/history/`（[履歴画面の構成](#履歴画面の構成history)） |
 | `app/stats/page.tsx`、`app/stats/_components/` | 統計の平均燃費ヒーロー（推移グラフ付き）・費用・月ごとの給油代・単価の推移（recharts）。ページは車両・期間の状態と `buildStatsModel` の結果を部品に渡すだけで、部品は `_components/` に分割（recharts 用の色は `chartTheme.ts`）。期間フィルタ（3 ヶ月 / 6 ヶ月 / 1 年 / 全期間）。スタンド比較の部品は残してあるが画面には出さない（[11 章](#11-統計)） |
 | `app/settings/page.tsx` | 設定画面（`/settings`）。見出し付きのグループリストで、データ概要・バックアップ・復元・インポート（[8 章](#8-バックアップと復元)） |
+| `app/privacy/page.tsx`、`app/terms/page.tsx`、`components/LegalPage.tsx` | プライバシーポリシー（`/privacy`）と利用規約（`/terms`）。ログイン不要の静的ページ（Google OAuth 同意画面用）で、共通レイアウトは `LegalPage`（タブバーなし）。ランディングのフッターと設定画面の「このアプリについて」からリンク |
 | `app/manifest.ts` | PWA の Web App Manifest（`/manifest.webmanifest`。[9 章](#9-pwa)） |
 | `app/api/analyze/route.ts` | Gemini で画像を解析する API（[api-analyze.md](./api-analyze.md)） |
 | `app/api/keepalive/route.ts` | Supabase 自動停止対策のエンドポイント（[operations.md](./operations.md#3-supabase-の自動停止と-keepalive)） |

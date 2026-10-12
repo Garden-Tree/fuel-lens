@@ -42,7 +42,7 @@
 |---|---|---|---|
 | オフラインキュー | 電波の悪い場所でも撮影・手動入力を溜めておき、復帰後に解析・同期できる | M | `public/sw.js`（現状は共有の受け取りのみ、キャッシュなし）、`lib/scan/useScanPipeline.ts`、`lib/data/`（書き込みのキュー） |
 | Supabase Realtime / 画面表示時の再取得 | 他の端末やタブでの変更が自動で反映される。表示時の再取得は S、Realtime は M | S / M | `lib/useFuelRecords.ts`、`lib/useVehicles.ts` |
-| アカウント削除 + Clerk webhook + プライバシーポリシー | 利用者が自分のデータを削除できる。Clerk の `user.deleted` を webhook で受けて `users` 行を削除し（外部キーの `ON DELETE CASCADE` で車両・記録も削除）、画像を Gemini に送ることなどをプライバシーポリシーに明記する | S–M | 新規 webhook ルート（service_role キーを使用）、新規プライバシーポリシーページ、ランディングページ |
+| アカウント削除 + Clerk webhook（プライバシーポリシーは 2026-10-12 に `/privacy` として公開済み） | 利用者が自分のデータを削除できる。Clerk の `user.deleted` を webhook で受けて `users` 行を削除し（外部キーの `ON DELETE CASCADE` で車両・記録も削除）、設定画面から削除できるようにする。現状は GitHub Issues での依頼対応 | S–M | 新規 webhook ルート（service_role キーを使用）、設定画面、`app/privacy/page.tsx`（削除の案内を更新） |
 | Clerk 本番インスタンスへの移行（運用） | 本番を開発インスタンスから切り替え、公開に耐える構成にする。手順・自前化との比較・ID 付け替え SQL は [auth-production.md](./auth-production.md)。Supabase 連携は JWT テンプレートではなくネイティブ Third-Party Auth に同時に切り替える | 運用 + S | `lib/supabaseClient.ts`（`NEXT_PUBLIC_CLERK_SUPABASE_JWT_TEMPLATE` で切り替え）、`proxy.ts`（`authorizedParties`）、Clerk / Supabase / Vercel / DNS / Google Cloud のダッシュボード |
 | Clerk ネイティブ Third-Party Auth への移行 | Supabase の JWT Secret を Clerk に共有しなくてよくなる（[architecture.md 7 章](./architecture.md#7-認証)） | S | `lib/supabaseClient.ts`（`getToken()` に変更）、Clerk / Supabase のダッシュボード |
 | E2E テストの追加 | 画面をまたぐ回帰を防ぐ。Playwright で `/api/analyze` をモックし、スキャン → 確認 → 保存 → 履歴の流れを検証する（コンポーネントテストは `tests/components/` にあり、未対応の画面は追加で拡充） | M | `package.json`、新規 `e2e/`、`.github/workflows/ci.yml` |
