@@ -21,6 +21,7 @@ AI（Google Gemini）が給油量・金額・走行距離などを読み取り�
   画像はサーバーに保存せず端末内で受け渡します（Web Share Target。iOS Safari は未対応）。
 - **未ログインでも使える**: 手動入力・履歴・統計はログインなしで使え、記録はブラウザの localStorage に保存されます。
   **写真からの AI 解析のみログインが必要**です。
+- **ページビュー計測**: Vercel Web Analytics（Cookie なし・ページビューのみ。URL のクエリとハッシュは送りません。有効化手順は [docs/operations.md](./docs/operations.md#4-2-web-analyticsページビュー計測)）。
 - **クラウド同期**: Clerk でログインすると記録は Supabase に保存され、複数端末で共有できます。
   ログイン前のローカルの記録はログイン時に自動でクラウドへ移行されます。
 

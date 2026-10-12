@@ -6,6 +6,7 @@ import UserSync from "@/components/UserSync";
 import ServiceWorkerRegister from "@/components/ServiceWorkerRegister";
 import SupabaseStatusBanner from "@/components/SupabaseStatusBanner";
 import { ToastProvider } from "@/components/Toast";
+import WebAnalytics from "@/components/WebAnalytics";
 
 // 本文は Noto Sans JP、数字（`num` ユーティリティ）は JetBrains Mono（docs/design-system.md）。
 // 日本語フォントは unicode-range で分割配信されるため preload しない
@@ -98,6 +99,7 @@ export default function RootLayout({
             <SupabaseStatusBanner />
             {children}
           </ToastProvider>
+          <WebAnalytics />
         </body>
       </html>
     </ClerkProvider>
