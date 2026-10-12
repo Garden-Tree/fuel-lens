@@ -4,7 +4,29 @@ import { clerkMiddleware } from '@clerk/nextjs/server';
 // クライアント側の SignedIn/SignedOut やローカルストレージ保存がこれに依存している）。
 // /api/analyze はルートハンドラ内で auth() を呼び、未ログインなら 401 を返す（route.ts 参照）。
 // 画面単位で保護したくなった場合は createRouteMatcher + auth.protect() をここに追加する。
-export default clerkMiddleware();
+//
+// authorizedParties: セッショントークンの azp（発行元オリジン）を許可リストと照合し、サブドメイン経由の
+// Cookie 漏洩攻撃を防ぐ。azp が無いトークンは検証対象外。値が存在するものだけ追加するので、
+// 環境変数が無い環境（ローカル・Preview）でも壊れない。
+function buildAuthorizedParties(): string[] {
+  const parties = new Set<string>(['https://fuel-lens.gadelog.com']);
+  const add = (origin: string | undefined, fallbackScheme = false) => {
+    const value = origin?.trim();
+    if (!value) return;
+    try {
+      parties.add(new URL(fallbackScheme && !/^https?:\/\//.test(value) ? `https://${value}` : value).origin);
+    } catch {
+      // 不正な値は無視する
+    }
+  };
+  add(process.env.NEXT_PUBLIC_APP_URL);
+  add(process.env.VERCEL_URL, true);
+  add(process.env.VERCEL_BRANCH_URL, true);
+  if (process.env.NODE_ENV !== 'production') parties.add('http://localhost:3000');
+  return [...parties];
+}
+
+export default clerkMiddleware({ authorizedParties: buildAuthorizedParties() });
 
 export const config = {
   matcher: [

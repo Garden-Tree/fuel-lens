@@ -25,7 +25,8 @@ DB の SQL 手順（マイグレーション適用・RLS 監査・バックア�
 
 - [ ] **Supabase**: SQL Editor で `0001` → `0002` → `0003` を実行する（[supabase/README.md 1 章](../supabase/README.md#1-マイグレーションの適用)）
 - [ ] **Supabase**: RLS とポリシーを監査する（[supabase/README.md 2 章](../supabase/README.md#2-rls-が有効か確認する)）
-- [ ] **Clerk**: JWT テンプレート `supabase` を作成する（[supabase/README.md 3 章](../supabase/README.md#3-clerk-jwt-テンプレートの要件)）
+- [ ] **Clerk（開発インスタンス）**: JWT テンプレート `supabase` を作成し、環境変数 `NEXT_PUBLIC_CLERK_SUPABASE_JWT_TEMPLATE=supabase` を設定する（[supabase/README.md 3 章](../supabase/README.md#3-clerk-jwt-テンプレートの要件)）
+- [ ] **Clerk（本番インスタンス）**: Supabase 連携を有効化し、Supabase に Third-Party Auth（Clerk）を追加する。`NEXT_PUBLIC_CLERK_SUPABASE_JWT_TEMPLATE` は **空のまま**にする（[auth-production.md](./auth-production.md)）
 - [ ] **Vercel**: 環境変数を設定し、`CRON_SECRET`（任意で `SUPABASE_SERVICE_ROLE_KEY`）を Production に追加して再デプロイする（[3-3](#3-3-vercel-側の設定)）
 - [ ] **Vercel**: **Settings → Cron Jobs** に `/api/keepalive`（`0 21 * * *`）が表示されることを確認する
 - [ ] **GitHub**: リポジトリ Secrets に `SUPABASE_URL` / `SUPABASE_ANON_KEY` を追加し、ワークフローを手動実行する（[3-4](#3-4-github-側の設定)）
@@ -161,7 +162,7 @@ curl -i -X POST "https://<project-ref>.supabase.co/rest/v1/rpc/keepalive_ping" \
 | 症状 | 原因と対処 |
 |---|---|
 | ログイン中なのに `permission denied for table users` / `vehicles` / `fuel_records`、または画面に「アクセス権限がありません。ログインし直してください。」 | JWT の `role` が `authenticated` でない、または署名鍵が Supabase の JWT Secret と一致せず anon として実行されている。Clerk の JWT テンプレート `supabase` を確認する（[supabase/README.md 3 章](../supabase/README.md#3-clerk-jwt-テンプレートの要件)） |
-| 「認証トークンを取得できませんでした。再ログインしてください。」 | Clerk からトークンを取得できない。Clerk Dashboard に JWT テンプレート `supabase` が存在するか、セッションが有効かを確認する |
+| 「認証トークンを取得できませんでした。再ログインしてください。」 | Clerk からトークンを取得できない。Clerk Dashboard に JWT テンプレート `supabase` が存在するか（`NEXT_PUBLIC_CLERK_SUPABASE_JWT_TEMPLATE` を設定したインスタンスのみ）、本番インスタンスでは Supabase 連携 / Third-Party Auth が有効か、セッションが有効かを確認する |
 | 他のユーザーの行まで見える | 手作業で作った余分なポリシーが残っている。ポリシーを監査して削除する（[supabase/README.md 2 章](../supabase/README.md#2-rls-が有効か確認する)） |
 | 「クラウドDBが一時停止中です。…」のバナー、API が 540 | プロジェクトが停止している（[3-6](#3-6-停止した場合の復旧)） |
 | 「クラウドDBに接続できません。…」のバナー | ネットワーク断、または Supabase が 5xx を返している。復旧後に「再試行」を押す |

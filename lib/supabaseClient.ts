@@ -16,16 +16,25 @@ if (!supabaseUrl || !supabaseAnonKey) {
 export type GetToken = (options?: { template?: string }) => Promise<string | null>;
 
 /**
- * Clerk → Supabase の JWT テンプレート名。
+ * Supabase に渡す Clerk トークンの取得方法を環境変数で切り替える。
  *
- * NOTE: 現在は Clerk ダッシュボードで作成した "supabase" JWT テンプレート
- * （Supabase の JWT secret で署名）を使っている。Clerk の「Supabase ネイティブ連携
- * （サードパーティ認証）」へ切り替えると、テンプレート指定なしの `getToken()` で
- * 取得したセッショントークンをそのまま渡せる。切り替えには Clerk / Supabase 両方の
- * ダッシュボード設定が必要なため、コードだけでは移行できない。移行後は
- * `getToken({ template: SUPABASE_JWT_TEMPLATE })` を `getToken()` に変えるだけでよい。
+ * - `NEXT_PUBLIC_CLERK_SUPABASE_JWT_TEMPLATE` が空でない値 → `getToken({ template: <値> })`
+ *   （旧方式。JWT テンプレート `supabase` を使う Clerk 開発インスタンス向け）
+ * - 未設定または空 → `getToken()`（ネイティブ Third-Party Auth。本番インスタンス向け。
+ *   Clerk のセッショントークンに `role: "authenticated"` が付く）
+ *
+ * NEXT_PUBLIC_ 変数はビルド時にインライン展開されるため、プロパティ参照のまま書く。
  */
-export const SUPABASE_JWT_TEMPLATE = "supabase";
+export function getSupabaseJwtTemplate(): string | undefined {
+  const template = process.env.NEXT_PUBLIC_CLERK_SUPABASE_JWT_TEMPLATE?.trim();
+  return template ? template : undefined;
+}
+
+/** 環境変数に従って Clerk からトークンを取得する（テンプレート指定なしなら引数なしで呼ぶ） */
+export function fetchSupabaseToken(getToken: GetToken): Promise<string | null> {
+  const template = getSupabaseJwtTemplate();
+  return template ? getToken({ template }) : getToken();
+}
 
 /**
  * Clerk からトークンを取得できなかったときに accessToken コールバックから投げるエラー。
@@ -87,7 +96,7 @@ function buildClient(tokenRef: { current: GetToken | null }): SupabaseClient {
       if (!getToken) throw new SupabaseAuthTokenError();
       let token: string | null = null;
       try {
-        token = await getToken({ template: SUPABASE_JWT_TEMPLATE });
+        token = await fetchSupabaseToken(getToken);
       } catch (e) {
         console.error("Clerk トークンの取得に失敗しました:", e);
         // オフライン / ネットワーク障害による失敗は認証エラーではない。元の例外をそのまま投げ、
