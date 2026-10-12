@@ -7,6 +7,7 @@ import { useVehicleScope } from "@/lib/useVehicleScope";
 import { AppFrame, HookErrorLine, PageHeader, ReadOnlyCaption } from "@/components/AppShell";
 import BackupPanel from "@/components/BackupPanel";
 import ImportPanel from "@/components/ImportPanel";
+import { GroupedList, ListRow, Section } from "@/components/ui";
 import type { SettingsBusy } from "@/components/settingsUi";
 
 export default function SettingsPage() {
@@ -69,6 +70,13 @@ export default function SettingsPage() {
           busy={busy}
           setBusy={setBusy}
         />
+
+        <Section title="このアプリについて">
+          <GroupedList>
+            <ListRow href="/privacy" title="プライバシーポリシー" showChevron />
+            <ListRow href="/terms" title="利用規約" showChevron />
+          </GroupedList>
+        </Section>
       </div>
     </AppFrame>
   );
