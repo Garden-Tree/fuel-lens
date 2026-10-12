@@ -43,10 +43,10 @@
 | オフラインキュー | 電波の悪い場所でも撮影・手動入力を溜めておき、復帰後に解析・同期できる | M | `public/sw.js`（現状は共有の受け取りのみ、キャッシュなし）、`lib/scan/useScanPipeline.ts`、`lib/data/`（書き込みのキュー） |
 | Supabase Realtime / 画面表示時の再取得 | 他の端末やタブでの変更が自動で反映される。表示時の再取得は S、Realtime は M | S / M | `lib/useFuelRecords.ts`、`lib/useVehicles.ts` |
 | アカウント削除 + Clerk webhook + プライバシーポリシー | 利用者が自分のデータを削除できる。Clerk の `user.deleted` を webhook で受けて `users` 行を削除し（外部キーの `ON DELETE CASCADE` で車両・記録も削除）、画像を Gemini に送ることなどをプライバシーポリシーに明記する | S–M | 新規 webhook ルート（service_role キーを使用）、新規プライバシーポリシーページ、ランディングページ |
-| Clerk 本番インスタンスへの移行（運用） | 本番を開発インスタンスから切り替え、公開に耐える構成にする。本番インスタンスの作成、ドメインの DNS 設定、JWT テンプレート `supabase` の再作成、Vercel の Production に本番キーを設定。開発インスタンスのユーザーは自動では引き継がれず userId も変わるため、既存データの `user_id` の扱いを決める | 運用 | コード変更なし（Clerk / Vercel のダッシュボード、必要なら `user_id` を付け替える SQL） |
+| Clerk 本番インスタンスへの移行（運用） | 本番を開発インスタンスから切り替え、公開に耐える構成にする。手順・自前化との比較・ID 付け替え SQL は [auth-production.md](./auth-production.md)。Supabase 連携は JWT テンプレートではなくネイティブ Third-Party Auth に同時に切り替える | 運用 + S | `lib/supabaseClient.ts`（`getToken()`）、`proxy.ts`（`authorizedParties`）、Clerk / Supabase / Vercel / DNS / Google Cloud のダッシュボード |
 | Clerk ネイティブ Third-Party Auth への移行 | Supabase の JWT Secret を Clerk に共有しなくてよくなる（[architecture.md 7 章](./architecture.md#7-認証)） | S | `lib/supabaseClient.ts`（`getToken()` に変更）、Clerk / Supabase のダッシュボード |
 | E2E テストの追加 | 画面をまたぐ回帰を防ぐ。Playwright で `/api/analyze` をモックし、スキャン → 確認 → 保存 → 履歴の流れを検証する（コンポーネントテストは `tests/components/` にあり、未対応の画面は追加で拡充） | M | `package.json`、新規 `e2e/`、`.github/workflows/ci.yml` |
-| Sentry / Vercel Analytics | 本番のエラーと利用状況を把握できる（`/api/analyze` の `requestId` と突き合わせられる） | S | `app/layout.tsx`、`app/error.tsx`、`app/global-error.tsx`、`package.json` |
+| Sentry | 本番のエラーを把握できる（`/api/analyze` の `requestId` と突き合わせられる）。Vercel Analytics（ページビュー計測）は 2026-10-12 に導入済み（[operations.md 4-2](./operations.md)） | S | `app/error.tsx`、`app/global-error.tsx`、`package.json` |
 
 ## 既知の制約
 

@@ -7,6 +7,7 @@
 | [api-analyze.md](./api-analyze.md) | AI 解析 API `/api/analyze` の仕様（認証、制限、検証、レスポンスコード） |
 | [operations.md](./operations.md) | デプロイ構成、Supabase 自動停止対策、CI、セットアップチェックリスト、トラブルシューティング |
 | [design-system.md](./design-system.md) | UI のデザインシステム: トークン（色・角丸）、文字、`components/ui` の部品、ナビゲーション（タブバー / サイドバー）、ルール |
+| [auth-production.md](./auth-production.md) | 認証の方針（Clerk 継続 / 自前化の比較）と、Clerk 本番インスタンス・Supabase ネイティブ連携への切り替え手順、ユーザー ID の付け替え SQL |
 | [roadmap.md](./roadmap.md) | 今後の候補と既知の制約 |
 | [tech_stack.md](./tech_stack.md) | 技術スタックと選定理由 |
 | [../supabase/README.md](../supabase/README.md) | DB の runbook（マイグレーション適用、RLS とポリシーの監査、バックアップ） |

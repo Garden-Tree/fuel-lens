@@ -144,6 +144,18 @@ curl -i -X POST "https://<project-ref>.supabase.co/rest/v1/rpc/keepalive_ping" \
   それでもビルドが失敗する場合は、Clerk 開発インスタンスの実キーをリポジトリ Secrets に登録して差し替えます。
 - `next/font/google` がビルド時に Google Fonts を取得するため、ビルドにはインターネット接続が必要です。
 
+## 4-2. Web Analytics（ページビュー計測）
+
+`@vercel/analytics` の `<Analytics />`（`components/WebAnalytics.tsx` で包み、`app/layout.tsx` に 1 つ置いています）。Cookie は使わず、ページビューだけを Vercel に送ります（カスタムイベントは使いません）。
+
+- **有効化**: Vercel ダッシュボードの **Project → Analytics → Enable** を押す必要があります（押すまでデータは溜まりません）。有効化後、次のデプロイから `/_vercel/insights/*` が配信されます。
+- **送信されるのは本番のみ**: パッケージは `NODE_ENV` で本番かどうかを判定し、開発・テストではコンソールに出すだけで送信しません。
+- **除去する情報**: `beforeSend`（`components/WebAnalytics.tsx` の `stripQueryAndHash`）でクエリ文字列とハッシュを落とし、パスだけを送ります。
+  `?action=shared&t=<token>` の共有トークンや `/history#record-<id>` の記録 ID は送られません。
+- **Hobby の上限**: 月 50,000 イベント（ページビュー + カスタムイベント、チーム内の全プロジェクト合計）、レポート期間 1 か月。カスタムイベントは Pro 以上です。
+  上限を超えても課金されず、3 日の猶予後に収集が止まります（出典: https://vercel.com/docs/analytics/limits-and-pricing ）。
+- CSP ヘッダーは設定していないため、追加の許可は不要です。`proxy.ts` の matcher は `_vercel` を除外しています。
+
 ## 5. トラブルシューティング
 
 | 症状 | 原因と対処 |
