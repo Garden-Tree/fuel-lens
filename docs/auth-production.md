@@ -5,7 +5,7 @@
 ## 1. 現状
 
 - 認証は Clerk の **開発インスタンス**（`pk_test`）を本番でも使っている。
-- Supabase へは Clerk の JWT テンプレート `supabase`（HS256、Supabase の JWT Secret で署名）を `lib/supabaseClient.ts` の `getToken({ template: "supabase" })` で渡している。
+- Supabase へは Clerk の JWT テンプレート `supabase`（HS256、Supabase の JWT Secret で署名）を `lib/supabaseClient.ts` の `getToken({ template })` で渡している（テンプレート名は環境変数 `NEXT_PUBLIC_CLERK_SUPABASE_JWT_TEMPLATE`）。
 - RLS は `(select auth.jwt()->>'sub') = user_id`。`users.id` / `vehicles.user_id` / `fuel_records.user_id` は text の Clerk ID。
   `vehicles` / `fuel_records` の `user_id` は `users.id` への FK（`ON DELETE CASCADE`、`ON UPDATE CASCADE` はなし）。
 - ログイン方法は Google OAuth とメール（コード入力）。
@@ -44,11 +44,14 @@ iOS のホーム画面アプリでは、OAuth のリダイレクトで Safari �
 
 1. Clerk ダッシュボードの Supabase 連携ページで、本番インスタンスの連携を有効にし、表示される Clerk のドメインを控える。
 2. Supabase の Authentication → Sign In / Providers → Third-Party Auth で Clerk を追加し、そのドメインを貼る。
-3. コードは `lib/supabaseClient.ts` の `getToken({ template: SUPABASE_JWT_TEMPLATE })` を `getToken()` に変えるだけ。RLS（`sub` 照合）はそのまま使える。
+3. コードは公開環境変数 `NEXT_PUBLIC_CLERK_SUPABASE_JWT_TEMPLATE` で切り替える（実装済み）。
+   - 値あり（`supabase`）: `getToken({ template })`。JWT テンプレートを使う開発インスタンス（ローカル・Vercel Preview）用。
+   - 空 / 未設定: `getToken()`。ネイティブ Third-Party Auth の本番インスタンス用。Vercel **Production では設定しない**。
+   RLS（`sub` 照合）はそのまま使える。
 4. 切り替え後は JWT テンプレートと JWT Secret の共有が不要になる。
 
-注意: コードを `getToken()` に変えた時点で、連携を設定していない Clerk インスタンス（開発インスタンス）では Supabase へのアクセスが失敗する。
-開発インスタンス側にも Supabase 連携を設定するか、本番インスタンスへの切り替えと同時に出す。
+注意: 環境変数を空にした環境では、連携を設定していない Clerk インスタンスから Supabase へのアクセスが失敗する。
+開発インスタンスを使うローカルと Preview では `NEXT_PUBLIC_CLERK_SUPABASE_JWT_TEMPLATE=supabase` を必ず設定する。
 
 ## 4. 本番インスタンスへの切り替え手順
 
@@ -71,7 +74,7 @@ iOS のホーム画面アプリでは、OAuth のリダイレクトで Safari �
    - `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` = `pk_live_...`、`CLERK_SECRET_KEY` = `sk_live_...`。
    - Preview とローカルは開発キーのままにできる。
 7. ダッシュボードのホームに残りのステップがなくなったら **Deploy certificates** を押す。
-8. `clerkMiddleware()` の `authorizedParties` に本番ドメインを設定する（`proxy.ts`）。
+8. `clerkMiddleware()` の `authorizedParties` は `proxy.ts` で設定済み（`https://fuel-lens.gadelog.com`、`NEXT_PUBLIC_APP_URL`、`VERCEL_URL` / `VERCEL_BRANCH_URL`、開発時の localhost:3000）。`azp` を完全一致で照合するため、別ドメインを追加するときは `proxy.ts` に足す。
 
 ### 切り替え前のテスト
 
@@ -110,9 +113,9 @@ commit;  -- 想定と違えば rollback;
 | 2 | Clerk で本番インスタンスを作成し、DNS に CNAME を追加（CAA も確認） | オーナー |
 | 3 | Google Cloud で OAuth クライアントを作成し、同意画面を「本番」に | オーナー |
 | 4 | Clerk の Supabase 連携を有効化し、Supabase に Third-Party Auth（Clerk）を追加 | オーナー |
-| 5 | `lib/supabaseClient.ts` を `getToken()` に、`proxy.ts` に `authorizedParties`、ドキュメント更新 | コード |
+| 5 | `NEXT_PUBLIC_CLERK_SUPABASE_JWT_TEMPLATE` による切り替えと `proxy.ts` の `authorizedParties`、ドキュメント更新（実装済み） | コード |
 | 6 | Preview で全項目を確認 | オーナー + コード |
-| 7 | Vercel Production のキーを `pk_live` / `sk_live` に差し替えて再デプロイ | オーナー |
+| 7 | Vercel Production のキーを `pk_live` / `sk_live` に差し替え、`NEXT_PUBLIC_CLERK_SUPABASE_JWT_TEMPLATE` を削除（空）して再デプロイ。Preview / ローカルは `supabase` のまま | オーナー |
 | 8 | 本番でログインし、新 ID を確認して付け替え SQL を実行 | オーナー |
 | 9 | 動作確認後、JWT テンプレートを削除 | オーナー |
 

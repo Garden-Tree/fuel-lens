@@ -396,17 +396,20 @@ Supabase Free のプロジェクトが一時停止すると、API は HTTP 540 �
 
 - 認証は Clerk（`@clerk/nextjs`）です。`proxy.ts` の `clerkMiddleware()` は全ルートを公開のままにし、
   `/api/analyze` はルートハンドラ内の `auth()` で未ログインを 401 にします。
-- Supabase へは、Clerk の JWT テンプレート **`supabase`** で発行したトークンを supabase-js の `accessToken` として渡します
-  （`lib/supabaseClient.ts` の `SUPABASE_JWT_TEMPLATE`）。トークンには `role: "authenticated"` が必要で、
+- Supabase へは、Clerk のトークンを supabase-js の `accessToken` として渡します。取得方法は公開環境変数
+  `NEXT_PUBLIC_CLERK_SUPABASE_JWT_TEMPLATE` で切り替えます（`lib/supabaseClient.ts` の `fetchSupabaseToken`）。
+  値あり（`supabase`）なら `getToken({ template })`（JWT テンプレート方式。Clerk 開発インスタンス = ローカル / Preview）、
+  空なら `getToken()`（ネイティブ Third-Party Auth。Clerk 本番インスタンス）です。トークンには `role: "authenticated"` が必要で、
   RLS は `sub`（Clerk userId）と各行の `user_id` を照合します。
   テンプレートの設定要件は [supabase/README.md](../supabase/README.md#3-clerk-jwt-テンプレートの要件) を参照してください。
 - Clerk からトークンを取得できないときは anon キーへ黙ってフォールバックせず、`SupabaseAuthTokenError`
   （「認証トークンを取得できませんでした。再ログインしてください。」）を投げます。
   オフラインによる取得失敗は障害（`unreachable`）として扱います。
 - Supabase クライアントは userId ごとにメモ化し、未ログインでは作成しません。
-- **将来の移行先**: Supabase の Third-Party Auth（Clerk ネイティブ連携）に切り替えると、JWT Secret の共有が不要になります。
-  RLS ポリシーはそのまま使え、コードは `getToken({ template: SUPABASE_JWT_TEMPLATE })` を `getToken()` に変えるだけです。
-  Clerk と Supabase の両方でダッシュボード設定が必要なため、[今後の候補](./roadmap.md) に載せています。
+- **Third-Party Auth（本番）**: JWT Secret の共有が不要で、RLS ポリシーはそのまま使えます。
+  Clerk と Supabase の両方でダッシュボード設定が必要です（[auth-production.md](./auth-production.md)）。
+- `proxy.ts` の `clerkMiddleware({ authorizedParties })` には、`https://fuel-lens.gadelog.com`、`NEXT_PUBLIC_APP_URL`、
+  `VERCEL_URL` / `VERCEL_BRANCH_URL`（Preview）、開発時の `http://localhost:3000` を許可オリジンとして渡します。
 
 ## 8. バックアップと復元
 
