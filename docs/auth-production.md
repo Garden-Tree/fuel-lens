@@ -83,6 +83,8 @@ iOS のホーム画面アプリでは、OAuth のリダイレクトで Safari �
 
 ## 5. ユーザー ID の付け替え
 
+実行用の SQL は [supabase/runbooks/remap_clerk_user_ids.sql](../supabase/runbooks/remap_clerk_user_ids.sql)（メールアドレスで旧 ID と新 ID を対応づけ、何度実行しても安全。新 ID で自動作成された空の車両も消す）。以下は 1 ユーザー分の考え方。
+
 同じ Google アカウントでも、本番インスタンスでは別の `user_...` ID になる。
 本番でオーナーが一度ログインして `users` 行を作らせ、新しい ID を確認してから、SQL Editor（postgres ロール。RLS は迂回される）で 1 ユーザーずつ付け替える。
 
