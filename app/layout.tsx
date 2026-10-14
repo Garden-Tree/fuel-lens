@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { JetBrains_Mono, Noto_Sans_JP } from "next/font/google";
 import { ClerkProvider } from '@clerk/nextjs';
+import { clerkLocalization } from "@/lib/clerkLocalization";
 import "./globals.css";
 import UserSync from "@/components/UserSync";
 import ServiceWorkerRegister from "@/components/ServiceWorkerRegister";
@@ -89,7 +90,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <ClerkProvider>
+    <ClerkProvider localization={clerkLocalization}>
       {/* フォントの CSS 変数は html に付ける（:root の --font-sans / --font-mono から参照するため） */}
       <html lang="ja" className={`${notoSansJp.variable} ${jetBrainsMono.variable}`}>
         <body className="antialiased bg-ground text-ink min-h-screen">

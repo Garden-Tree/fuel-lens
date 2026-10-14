@@ -15,6 +15,7 @@
 | 燃料種別とメモ | 2026-10-07 | 記録に燃料種別（レギュラー / ハイオク / 軽油 / その他）と 200 文字までのメモ、車両に既定の燃料種別を追加。マイグレーションは `supabase/migrations/0004_fill_chain.sql` |
 | 単価トレンド（`/stats`） | 2026-10-08 | 単価の推移グラフ（期間の平均線、前回比・30 日 / 90 日平均比）を表示する。スタンド別の平均単価の比較（店舗名のゆれを `lib/stations.ts` で吸収してまとめる。上位 8 件、2 回以上給油したスタンドどうしの「最安」）も作ったが、同日に画面から外した。部品と計算・テストは残してある。詳細は [architecture.md 11 章](./architecture.md#11-統計) |
 | アカウント削除（`/settings` の「アカウント」） | 2026-10-14 | 利用者が設定画面からアカウントとクラウドのデータを削除できる。データは利用者自身の JWT（RLS）で記録 → 車両 → `users` 行の順に削除して 0 件を確認し、Clerk のユーザーは `DELETE /api/account` で削除する。アプリ内で完結するため、当初の案の Clerk webhook（`user.deleted`）と service_role キーは不要になった。未ログインでは「この端末のデータをすべて削除」。Clerk のダッシュボードからユーザーを削除したときは DB の行が残るので、[supabase/README.md 5 章](../supabase/README.md#5-ユーザーのデータを手作業で削除する)の SQL で消す。詳細は [architecture.md](./architecture.md#アカウント削除) |
+| 画面に戻ったときの再取得 | 2026-10-14 | ログイン中、10 秒以上離れていた画面に戻ると（`visibilitychange`、予備に `focus`）車両と記録の一覧を裏で読み直し、他の端末・タブでの変更を反映する。30 秒に 1 回まで、オフライン・障害中は行わない。スケルトンは出さず、失敗しても表示中の一覧を残す。詳細は [architecture.md 4 章](./architecture.md#画面に戻ったときの再取得両フック共通libusereturnrefreshts) |
 | Sentry エラー監視 | 2026-10-14 | 導入済み（[operations.md 4-3](./operations.md)）。本番は Vercel に `NEXT_PUBLIC_SENTRY_DSN` を設定すると有効。`/api/analyze` の 500 は `requestId` タグ付き |
 | Clerk 本番インスタンスへの移行 | 2026-10-13 | 本番を Clerk の本番インスタンス + Supabase Third-Party Auth に切り替え（Preview / ローカルは開発インスタンス + JWT テンプレートのまま）。詳細は [auth-production.md](./auth-production.md) |
 | Web Share Target（Android の共有メニューから写真をスキャンへ） | 2026-10-08 | `public/sw.js` が POST /share を端末内で受け取り IndexedDB 経由で `/app?action=shared` に渡す。サーバーには送らない |
@@ -44,7 +45,7 @@
 | 候補 | 利用者にとっての価値 | 規模 | 主な変更ファイル |
 |---|---|---|---|
 | オフラインキュー | 電波の悪い場所でも撮影・手動入力を溜めておき、復帰後に解析・同期できる | M | `public/sw.js`（現状は共有の受け取りのみ、キャッシュなし）、`lib/scan/useScanPipeline.ts`、`lib/data/`（書き込みのキュー） |
-| Supabase Realtime / 画面表示時の再取得 | 他の端末やタブでの変更が自動で反映される。表示時の再取得は S、Realtime は M | S / M | `lib/useFuelRecords.ts`、`lib/useVehicles.ts` |
+| Supabase Realtime | 他の端末やタブでの変更が、画面を開いたままでも即座に反映される（画面に戻ったときの再取得は実装済み） | M | `lib/useFuelRecords.ts`、`lib/useVehicles.ts` |
 | Clerk ネイティブ Third-Party Auth への移行 | Supabase の JWT Secret を Clerk に共有しなくてよくなる（[architecture.md 7 章](./architecture.md#7-認証)） | S | `lib/supabaseClient.ts`（`getToken()` に変更）、Clerk / Supabase のダッシュボード |
 | E2E テストの追加 | 画面をまたぐ回帰を防ぐ。Playwright で `/api/analyze` をモックし、スキャン → 確認 → 保存 → 履歴の流れを検証する（コンポーネントテストは `tests/components/` にあり、未対応の画面は追加で拡充） | M | `package.json`、新規 `e2e/`、`.github/workflows/ci.yml` |
 
@@ -66,7 +67,7 @@
 - 取り込みは FuelLens の JSON バックアップの復元と、Fuelio / FuelLens の CSV のインポートです（どちらも追記専用）。Fuelio の給油以外の記録（`## Costs` など）、マイル・ガロン単位の CSV、その他のアプリの CSV には対応していません。
 - Service Worker は Web Share Target の受け取り専用でキャッシュを持たず、オフラインでは動作しません。Web Share Target は Android Chrome のみ（iOS は非対応）。
 - 未ログイン時のデータはそのブラウザの localStorage にだけあり、端末間で共有されません。
-- 他のタブや端末での変更は、再読み込みするまで反映されません（障害中の自動再試行を除く）。
+- 他のタブや端末での変更は、ログイン中に 10 秒以上離れていた画面へ戻ったとき（30 秒に 1 回まで）に反映されます。画面を開いたまま見ている間は反映されません（Realtime は未対応）。未ログインのデータは端末内だけです。
 - 障害（一時停止・接続不可）は、ログイン中に Supabase へアクセスしたときにだけ検知されます。
 - Clerk のトークン取得失敗が確定するまで、postgrest-js の再試行により最長 7 秒ほどかかります。
 - Vercel Hobby の Cron は 1 日 1 回、実行時刻に ±59 分のずれがあり、本番デプロイでしか動きません。

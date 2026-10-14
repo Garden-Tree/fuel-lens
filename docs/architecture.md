@@ -17,7 +17,7 @@ FuelLens の構成、データの流れ、主要なモジュールの役割を�
 | `app/api/analyze/route.ts` | Gemini で画像を解析する API（[api-analyze.md](./api-analyze.md)） |
 | `app/api/account/route.ts`、`lib/server/account/handler.ts` | アカウント削除の API（`DELETE /api/account`。Clerk のユーザーを削除する。[api-account.md](./api-account.md)） |
 | `app/api/keepalive/route.ts` | Supabase 自動停止対策のエンドポイント（[operations.md](./operations.md#3-supabase-の自動停止と-keepalive)） |
-| `app/layout.tsx` | `ClerkProvider` / `ToastProvider` / `UserSync` / `SupabaseStatusBanner`、フォント（Noto Sans JP + JetBrains Mono）、`metadata` と `viewport` |
+| `app/layout.tsx` | `ClerkProvider`（`localization` は `lib/clerkLocalization.ts`） / `ToastProvider` / `UserSync` / `SupabaseStatusBanner`、フォント（Noto Sans JP + JetBrains Mono）、`metadata` と `viewport` |
 | `app/globals.css` | デザイントークン（`@theme`）と `num` などのユーティリティ（[design-system.md](./design-system.md)） |
 | `components/AppShell.tsx` / `components/AppNav.tsx` / `components/ScanActionMenu.tsx` / `components/ScanActions.tsx` | アプリ画面の枠。`AppFrame`（本文の器とナビ）/ `PageHeader`（見出し + 車両チップ）/ `HookErrorLine` / `ReadOnlyCaption`、ナビ（スマホは下部タブバー、PC は左サイドバー）、スキャンメニュー（撮影する / アルバムから選ぶ / 手動で入力）と、ホームがメニューに処理を登録する `ScanActionsProvider` / `RegisterScanActions`（[ナビゲーションとスキャンメニュー](#ナビゲーションとスキャンメニュー)） |
 | `components/ui/*` | デザインシステムの部品（`Section` / `GroupedList` / `ListRow` / `ValueRow` / `SegmentedControl` / `Chip` / `IconButton` / `Num` / `Menu` / `MenuItem` / `BrandMark`）。`@/components/ui` から import する |
@@ -38,6 +38,7 @@ FuelLens の構成、データの流れ、主要なモジュールの役割を�
 | `lib/types.ts` | ドメインの型と定数（`FuelRecord` / `Vehicle` / `VehicleSettings` / `VehicleType` / `FuelType` / `FUEL_TYPES` / `FUEL_TYPE_LABELS` / `DistanceMode` / `RecordInput` / `NewRecordField`）。import なし。フックのファイル（`useFuelRecords` / `useVehicles` / `useRecordForm`）は互換のため再エクスポートしている（`@deprecated`） |
 | `lib/dates.ts` | 日付・日時の検証と変換（`isValidCalendarDate` / `normalizeDateString` / `parseLocalDate` / `localDateString` / `todayLocalISO` / `subtractMonthsClamped` / `normalizeTimestamp`）。import なしの純粋関数 |
 | `lib/events.ts` | アプリ内の window イベント。`FUEL_RECORDS_CHANGED_EVENT` と `notifyRecordsChanged()`、購読フック `useWindowEvent(name, handler)` |
+| `lib/useReturnRefresh.ts` | 画面に戻ったときの再取得のフック `useReturnRefresh(callback, { enabled })` と判定の純粋関数 `shouldRefreshOnReturn`（[4 章](#画面に戻ったときの再取得両フック共通libusereturnrefreshts)） |
 | `lib/vehicleSelection.ts` | 選択中の車両の決定（`pickSelected` / `shouldPersistSelection`）と保存キー（`selectedVehicleStorageKey`）。純粋関数 |
 | `lib/analyze.ts` | `/api/analyze` の純粋ヘルパーと型。import するのは依存のないドメインモジュール（`lib/types.ts` / `lib/dates.ts` / `lib/calculations.ts`）だけ |
 | `lib/calculations.ts` | `calculateFuelMetrics`（燃費・単価の計算） |
@@ -251,6 +252,16 @@ useVehicles / useFuelRecords
 
 書き込みの失敗は `withOutageHandling`（`lib/data/withOutage.ts`）が `toUserFacingWriteError` で日本語メッセージの `DataError` に変換します。UI は `useToast()` で表示します。
 
+### 画面に戻ったときの再取得（両フック共通。`lib/useReturnRefresh.ts`）
+
+ログイン中で障害が無いとき、`useVehicles` と `useFuelRecords` は、しばらく離れていた画面に戻ると一覧を裏で読み直します（他の端末・タブで追加した記録や車両が、手動で再読み込みしなくても反映される）。未ログインでは何もしません。
+
+- きっかけは `visibilitychange`（visible に戻った）で、`window` の `focus` を予備にします（iOS の PWA では visibilitychange が確実）。離れた時刻（hidden / blur の早いほう）はタブ内で共有し、戻ったときに 1 回だけ判定します。
+- 判定は純粋関数 `shouldRefreshOnReturn`: 10 秒以上離れていた・そのフックの前回の再取得から 30 秒以上・オンライン（`navigator.onLine !== false`）のときだけ再取得します。同じ画面の 2 つのフックは、戻るたびにそれぞれ 1 回ずつ読み直します（GET が 2 本）。
+- 再取得は通常の読み込みと同じ `loadVehicles` / `loadData` を新しい fetch id で呼ぶ「裏の読み込み」（`background: true`）です。初期化は強制せず（`force` なし）、`loading` を立てないのでスケルトンは出ません。成功したときだけ一覧を置き換え、失敗しても表示中の一覧とエラー表示はそのまま（console にだけ出す。障害ならストアが `outage` を記録し、以降は再試行の仕組みに任せる）。
+- 読み込みが実行中なら再取得しません。裏の読み込みも `fetchCounter` で新しい読み込みに無効化され、`inFlightLoads` に数えるので、実行中に書き込みが完了すれば `reloadIfLoadInFlight` が（裏の読み込みだけが実行中なら裏のまま）読み直します。
+- 障害中（`getOutage()` が null でない）は何もしません（`fuel_lens_retry` の再試行が読み直す）。
+
 ### `useRecordForm(initial?, context?)`（`lib/useRecordForm.ts`）
 
 手動入力・最新記録の編集・履歴の編集・確認シートで共用するフォーム状態です。
@@ -400,6 +411,7 @@ Supabase Free のプロジェクトが一時停止すると、API は HTTP 540 �
 
 - 認証は Clerk（`@clerk/nextjs`）です。`proxy.ts` の `clerkMiddleware()` は全ルートを公開のままにし、
   `/api/analyze` と `/api/account`（アカウント削除）はルートハンドラ内の `auth()` で未ログインを 401 にします。
+- Clerk の UI（ログイン・サインアップ・アカウント管理）は `app/layout.tsx` の `<ClerkProvider localization>` で日本語化しています。`lib/clerkLocalization.ts` が `@clerk/localizations` の `jaJP`（サブパス `/ja-JP` から読み込み）に、メール確認コードの案内（迷惑メールフォルダの確認）を深くマージした設定です。
 - Supabase へは、Clerk のトークンを supabase-js の `accessToken` として渡します。取得方法は公開環境変数
   `NEXT_PUBLIC_CLERK_SUPABASE_JWT_TEMPLATE` で切り替えます（`lib/supabaseClient.ts` の `fetchSupabaseToken`）。
   値あり（`supabase`）なら `getToken({ template })`（JWT テンプレート方式。Clerk 開発インスタンス = ローカル / Preview）、

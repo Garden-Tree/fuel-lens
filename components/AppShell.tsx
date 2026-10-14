@@ -88,7 +88,7 @@ export function PageHeader({ title, brand = false, rightSlot }: PageHeaderProps)
         {rightSlot}
         <div className="flex shrink-0 items-center lg:hidden">
           <SignedOut>
-            <SignInButton forceRedirectUrl={redirectUrl}>
+            <SignInButton mode="modal" forceRedirectUrl={redirectUrl}>
               <button
                 type="button"
                 className="h-10 whitespace-nowrap rounded-xl px-2.5 text-sm font-bold text-accent transition-colors hover:bg-surface focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"

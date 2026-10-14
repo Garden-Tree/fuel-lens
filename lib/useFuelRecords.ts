@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { isUnclassifiedRecord, isUuid, sortRecordsByDateDesc } from "./recordFilters";
 import { FUEL_RECORDS_CHANGED_EVENT, notifyRecordsChanged, notifyVehiclesChanged, useWindowEvent } from "./events";
-import { SUPABASE_RETRY_EVENT, useSupabaseOutage } from "./supabaseHealth";
+import { getOutage, SUPABASE_RETRY_EVENT, useSupabaseOutage } from "./supabaseHealth";
+import { useReturnRefresh } from "./useReturnRefresh";
 import { applyFillChain, distanceModeOf, normalizeRecord } from "./fillChain";
 import { applyRecordPatch } from "./data/columns";
 import { matchesRecordScope, recordScopeOf } from "./data/scope";
@@ -87,6 +88,8 @@ export function useFuelRecords(
   const fetchCounter = useRef(0);
   // 実行中の一覧の読み込みの数。書き込みの完了時に読み込みが実行中なら、その応答は書き込み前の一覧の可能性があるので読み直す
   const inFlightLoads = useRef(0);
+  // inFlightLoads のうち、画面復帰時の裏の読み込み（loading を立てない）の数
+  const inFlightBackground = useRef(0);
   // 「再試行」イベントの再読み込みだけ、クラウドの初期化の失敗メモ（30 秒）を飛ばす
   const forceBootstrap = useRef(false);
 
@@ -113,11 +116,39 @@ export function useFuelRecords(
     [rawRecords, selectedMode]
   );
 
-  const loadData = useCallback(async (fetchId: number) => {
+  /**
+   * 選択中の範囲の記録を読み込む。
+   * background: true は画面復帰時の再取得（クラウドのみ）。loading を立てず表示中の一覧を残し、成功したときだけ置き換える。
+   * 失敗しても一覧とエラー表示は変えない（console にだけ出す。障害ならストアが outage を記録する）。
+   * どちらも fetchCounter で新しい読み込みに無効化される。
+   */
+  const loadData = useCallback(async (fetchId: number, { background = false }: { background?: boolean } = {}) => {
     if (!isLoaded) return;
+    const isCurrent = () => fetchId === fetchCounter.current;
+    if (background) {
+      if (stores?.kind !== "cloud" || !enabled || !isUuid(scope.vehicleId)) return;
+      inFlightLoads.current++;
+      inFlightBackground.current++;
+      try {
+        const { migrationError, migrated } = await stores.bootstrap();
+        if (migrated) notifyVehiclesChanged();
+        if (!isCurrent()) return;
+        const list = await stores.records.list(scope);
+        if (!isCurrent()) return;
+        setError(migrationError ?? null);
+        setRecords(sortRecordsByDateDesc(list));
+      } catch (e) {
+        console.error("給油記録の再取得に失敗（表示中の一覧を残す）:", e);
+      } finally {
+        inFlightLoads.current--;
+        inFlightBackground.current--;
+        // この読み込みが通常の読み込みを無効化していた場合に備えて解除する（既に false なら何も変わらない）
+        if (isCurrent()) setLoading(false);
+      }
+      return;
+    }
     setLoading(true);
     setError(null);
-    const isCurrent = () => fetchId === fetchCounter.current;
     const force = forceBootstrap.current;
     forceBootstrap.current = false;
     if (!stores) return;
@@ -205,8 +236,10 @@ export function useFuelRecords(
    */
   const reloadIfLoadInFlight = () => {
     if (inFlightLoads.current === 0) return;
+    // 実行中が画面復帰時の裏の読み込みだけなら、読み直しも裏で行う（スケルトンを出さない）
+    const background = inFlightLoads.current === inFlightBackground.current;
     const currentFetchId = ++fetchCounter.current;
-    void loadDataRef.current(currentFetchId);
+    void loadDataRef.current(currentFetchId, { background });
   };
 
   /**
@@ -300,6 +333,14 @@ export function useFuelRecords(
     forceBootstrap.current = true;
     void refresh();
   });
+
+  // しばらく離れた画面に戻ったら、他の端末・タブでの変更を裏で読み直す（ログイン中・障害なしのときだけ。
+  // 障害中は再試行の仕組みが読み直す）。読み込みが実行中なら、その結果が新しいので何もしない
+  useReturnRefresh(() => {
+    if (getOutage() || inFlightLoads.current > 0) return;
+    const currentFetchId = ++fetchCounter.current;
+    void loadDataRef.current(currentFetchId, { background: true });
+  }, { enabled: stores?.kind === "cloud" && outage == null });
 
   return {
     /** 連鎖計算（lib/fillChain.ts）を適用済みの記録。日付の降順 */

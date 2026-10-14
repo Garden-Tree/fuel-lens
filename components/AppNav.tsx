@@ -128,7 +128,7 @@ export function AppSidebar({ onScan }: { onScan: (anchor: ScanMenuAnchor) => voi
 
       <div className="mt-auto border-t border-line px-1 pt-4">
         <SignedOut>
-          <SignInButton forceRedirectUrl={redirectUrl}>
+          <SignInButton mode="modal" forceRedirectUrl={redirectUrl}>
             <button
               type="button"
               className="flex min-h-11 w-full items-center justify-center rounded-xl border border-border bg-surface px-4 text-sm font-bold text-ink transition-colors hover:bg-surface-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"

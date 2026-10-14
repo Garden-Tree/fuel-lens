@@ -13,7 +13,7 @@ export default function HeaderAuthButtons() {
   return (
     <div className="flex items-center gap-1 sm:gap-3">
       <SignedOut>
-        <SignInButton forceRedirectUrl="/app">
+        <SignInButton mode="modal" forceRedirectUrl="/app">
           <button className="min-h-10 px-3 py-2 text-sm font-semibold text-sub transition hover:text-ink focus:outline-none focus-visible:ring-2 focus-visible:ring-accent sm:px-4">
             ログイン
           </button>
