@@ -7,7 +7,12 @@
  * 日本語は端末のフォントを使う（Web フォントは読み込まない。docs/design-system.md）。
  * iOS / macOS = ヒラギノ角ゴ、Android = Noto Sans CJK JP、Windows = 游ゴシック（下の "FuelLens YuGothic"）→ メイリオ。
  */
-@theme inline {
+/*
+ * フォントは inline ではない @theme に置く（:root に --font-sans / --font-mono を出力させるため）。
+ * @theme inline だと変数が出力されず、body の var(--font-sans) と num の var(--font-mono) が Tailwind の既定値に落ちる。
+ * --font-jetbrains-mono は layout.tsx の next/font が <html> に付けるクラスで定義される（:root = html なので解決できる）。
+ */
+@theme {
   /* フォント（layout.tsx の next/font が --font-jetbrains-mono を定義する） */
   --font-sans: "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Noto Sans JP", "Noto Sans CJK JP", "FuelLens YuGothic", "Yu Gothic UI", Meiryo, system-ui, sans-serif;
   --font-mono: var(--font-jetbrains-mono), var(--font-sans), ui-monospace, monospace;
