@@ -36,6 +36,7 @@ FuelLens の構成、データの流れ、主要なモジュールの役割を�
 | `components/ImportPanel.tsx` | 設定画面の「インポート」。Fuelio / FuelLens の CSV を読み込み、復元と同じ流れで追加する（[8 章](#インポートcsv)） |
 | `components/RestoreCounts.tsx` / `components/settingsUi.ts` | 復元・取り込みの件数プレビュー（と補足の箇条書き） / 設定画面のパネルで共有するクラス名と処理中フラグの型（`SettingsBusy`） |
 | `components/Toast.tsx` | `ToastProvider` と `useToast()`（通知と確認ダイアログ） |
+| `components/share/*` / `lib/share/` | 「今月の燃費をシェア」。`ShareCardButton`（ボタン。燃費が無ければ描画しない）と `ShareCardModal`（プレビューと 共有する / X に投稿 / 画像を保存）、モデル `lib/share/card.ts`（`shareCardModelOf`・文言・URL）と canvas の描画 `lib/share/drawCard.ts`（[シェアカード](#シェアカード今月の燃費をシェア)） |
 | `components/UserSync.tsx` | ログイン中のユーザーを `users` テーブルへ upsert |
 | `components/SupabaseStatusBanner.tsx` | クラウド障害時の警告バナーと「再試行」 |
 | `lib/types.ts` | ドメインの型と定数（`FuelRecord` / `Vehicle` / `VehicleSettings` / `VehicleType` / `FuelType` / `FUEL_TYPES` / `FUEL_TYPE_LABELS` / `DistanceMode` / `RecordInput` / `NewRecordField`）。import なし。フックのファイル（`useFuelRecords` / `useVehicles` / `useRecordForm`）は互換のため再エクスポートしている（`@deprecated`） |
@@ -62,7 +63,7 @@ FuelLens の構成、データの流れ、主要なモジュールの役割を�
 | `lib/supabaseHealth.ts` | 障害の分類、閲覧専用モード、キャッシュ、再試行（[6 章](#6-障害時の動作)） |
 | `lib/supabase/errors.ts` / `outage.ts` / `retry.ts` / `cache.ts` | `supabaseHealth.ts` の実体。errors = 失敗の分類とエラーメッセージ（純粋関数。`migrateLocalData.ts` は `lib/supabase/` のうちここだけを import）、outage = 障害状態の記録・通知・`useSupabaseOutage`、retry = 再試行イベントと自動再試行、cache = per-user キャッシュ。`supabaseHealth.ts` は互換用の再エクスポート |
 | `lib/format.ts` | 表示用の純粋フォーマット（`efficiencyNullReason` / `formatOdometer` / `formatKm` / `formatPriceDiff`） |
-| `lib/home/` | ホーム画面の表示用の純粋関数。`hero`（ヒーローのモデルと前回比）/ `gauge`（燃費メーターの目盛りと円弧の座標）/ `month`（今月の集計）/ `recent`（最近の記録の行と日付の書式）。フックは `useCurrentMonthKey`（いまの月。画面に戻ってきたときに読み直す）だけ |
+| `lib/home/` | ホーム画面の表示用の純粋関数。`hero`（ヒーローのモデルと前回比）/ `gauge`（燃費メーターの目盛りと円弧の座標）/ `month`（今月の集計）/ `recent`（最近の記録の行と日付の書式）。フックは `useCurrentMonthKey` / `useTodayKey`（いまの月 / 今日。画面に戻ってきたときに読み直す）だけ |
 | `lib/history/` | 履歴画面の純粋関数。`recordList`（年・月の絞り込み・並べ替え・数値の書式・行の DOM id と `#record-<id>` の解析）/ `groupByMonth`（月ごとのまとまりと合計） |
 | `lib/importers/csvParse.ts` | CSV 取り込みの共有プリミティブ（`parseCsvRows` / `parseCsvNumber` / `parseFlexibleDate` / `hashString` / `isBlankRow`）。`fuelio.ts` は互換のため再エクスポート |
 | `lib/scan/` | メイン画面のスキャン。`analyzeClient.ts`（`compressToDataUrl` / `requestAnalyze`。React に依存しない I/O）、`shortcuts.ts`（`?action=` の判定 `resolveShortcutAction` / `shortcutReadinessOf`、スキャンメニューの可否 `scanMenuAvailabilityOf`。純粋関数）、フック `useScanPipeline` / `useImageDropPaste` / `useShortcutActions`（[メイン画面の構成](#メイン画面の構成app)） |
@@ -323,7 +324,7 @@ useVehicles / useFuelRecords
 | `LatestRecordCard` / `EfficiencyGauge` | ヒーローカード。直前に保存した記録（なければ最新）の燃費を半円メーターで表示し、平均の目盛り・前回比と平均のチップを添える（見出しは「前回の燃費」、スキャンで保存した直後は「スキャンした記録」）。**最新の記録（`records[0]`）の燃費が無く（部分給油・記録漏れなど）、かつこの画面で保存した直後の記録でないときだけ**、燃費の出ている最も新しい記録をメーターに出し、最新の記録は注記で知らせる（`heroDisplayOf`。保存した直後の記録はスキャン・手動入力とも差し替えない）。「編集」を押すとその場で入力フォームのカード（`RecordFormCard`）に切り替わる。燃費が無い記録（部分給油など）は数値の代わりに理由（`efficiencyNullReason`）を出す。モデルは `lib/home/hero.ts`（前回比・平均は `summarize`、目盛りは `lib/home/gauge.ts` の `gaugeScaleOf`。元にするのは直近 10 回の燃費から外れ値（四分位範囲の 1.5 倍の外）を除いた値 `gaugeBasisOf` で、表示中の値と平均は必ず含める） |
 | `ManualEntryCard` | 手動入力のカード（見出し「手動で記録を追加」。`RecordFormCard` を共用） |
 | `WelcomeCard` | 記録が 1 件も無いときのヒーロー（「最初の給油を記録しましょう」） |
-| `MonthSummarySection` | 「今月」（見出しは「10月」など）のグループリスト: 給油代・給油量（回数）・単価（前回比）。集計は `lib/home/month.ts` の `monthSummaryOf`（ローカル暦）。月は描画時の日付から求め（`useCurrentMonthKey`）、`visibilitychange` / `focus` で読み直すので、開いたまま月をまたいだ PWA でも切り替わる。読み込み完了後にだけ描画するのでハイドレーションには関わらない |
+| `MonthSummarySection` | 「今月」（見出しは「10月」など）のグループリスト: 給油代・給油量（回数）・単価（前回比）。見出しの右に「今月の燃費をシェア」（`ShareCardButton`。[シェアカード](#シェアカード今月の燃費をシェア)。ログイン中のキャッシュ表示 `previewing` の間は押せない）。集計は `lib/home/month.ts` の `monthSummaryOf`（ローカル暦）。月は描画時の日付から求め（`useCurrentMonthKey`）、`visibilitychange` / `focus` で読み直すので、開いたまま月をまたいだ PWA でも切り替わる。読み込み完了後にだけ描画するのでハイドレーションには関わらない |
 | `RecentRecordsSection` | 「最近の記録」の 3 件（店舗名・日付・燃料種別・支払総額、右に燃費）。行は `/history#record-<id>` へ、「すべて見る」は `/history` へ。行は `lib/home/recent.ts` の `recentRowOf` |
 | `ScanEntryList` | 記録の入口（撮影する / アルバムから選ぶ / 手動で入力）のグループリスト。記録が無いときは左カラム、あるときは PC の右カラムだけに出す（スマホはタブバーのスキャンボタンから）。未ログインでは撮影・アルバムを無効にして案内を出す |
 | `DropZoneRow` | PC だけに出す細いドロップ先の案内（押すとアルバム）。ドロップ・貼り付け自体はページ全体で受け付ける |
@@ -332,7 +333,21 @@ useVehicles / useFuelRecords
 
 レイアウトは、スマホが 1 カラム（ヒーロー → 今月 → 最近の記録）、PC（lg 以上）が 2 カラム（左: ヒーローと今月 / 右: 最近の記録・記録の入口・ドロップ先）です。記録が無いときは左にヒーローの代わりに `WelcomeCard`、その下に `ScanEntryList` を出します。
 
-部品のテストは `tests/components/ScanPanel.test.tsx` / `LatestRecordCard.test.tsx` / `HomePage.test.tsx`（`?action=` の案内・取り下げ、手動入力の破棄確認）/ `ScanActions.test.tsx`（メニューからの直接呼び出し）/ `homeMonth.test.tsx`、純粋関数は `tests/home/*.test.ts`（`gauge` / `month` / `heroRecent`）/ `tests/analyze.test.ts` / `scanShortcuts.test.ts` / `scanClient.test.ts`（`requestAnalyze` を fetch のモックで検証）です。
+部品のテストは `tests/components/ScanPanel.test.tsx` / `LatestRecordCard.test.tsx` / `HomePage.test.tsx`（`?action=` の案内・取り下げ、手動入力の破棄確認）/ `ScanActions.test.tsx`（メニューからの直接呼び出し）/ `homeMonth.test.tsx` / `ShareCard.test.tsx`（シェアのモーダルの操作）、純粋関数は `tests/home/*.test.ts`（`gauge` / `month` / `heroRecent`）/ `tests/analyze.test.ts` / `scanShortcuts.test.ts` / `scanClient.test.ts`（`requestAnalyze` を fetch のモックで検証）です。
+
+### シェアカード（「今月の燃費をシェア」）
+
+利用者が今月の燃費の画像を X / LINE などに投稿し、アプリへのリンクで新しい利用者を呼ぶための機能です。ホームの「今月」の見出しの右と、統計のヒーロー（平均燃費）の右上に `ShareCardButton`（`components/share/`）を置きます。ログインの有無に関係なく、表示中の車両の記録（連鎖計算済み）だけで動き、**画像はブラウザの `<canvas>` で作ってサーバーには何も送りません**（保存もしない）。
+
+- **モデル**（`lib/share/card.ts` の `shareCardModelOf(records, today, vehicleName)`。純粋関数）: 期間は今月（ローカル暦。`lib/home/month.ts` と同じ境界）。燃費は統計の平均燃費と同じ Σ区間距離 ÷ Σ給油量（`summarize`。満タン給油で閉じた run 単位なので、部分給油は次の満タン給油に合算され、単独では数えない）。今月に燃費の出た満タン給油が無ければ直近 30 日（今日を含む）に切り替え（見出し「直近30日」、ボタンは「直近30日の燃費をシェア」）、そこにも無ければ `null` でボタンを出しません。補足は期間内の全記録の給油回数・走行距離（Σ区間距離、整数）・給油代（分かる記録の合計。無ければ省く）。ゲージの目盛りはヒーローと同じ `gaugeScaleOf`。統計ページでも期間フィルタに関係なく今月（または直近 30 日）です。
+- **画像**（`lib/share/drawCard.ts`）: 1200×630 の PNG。D デザインの地の色にロゴとワードマーク、「2026年10月の燃費」と車両名、補足の数値、右のパネルに半円ゲージと燃費（小数第 2 位）、右下に `fuel-lens.gadelog.com`。日本語は `--font-sans`（端末のフォント）、数字は `--font-jetbrains-mono` を CSS 変数から読み、`document.fonts.load` で JetBrains Mono の読み込みを待ってから描きます（3 秒で打ち切り）。色はトークンの値を複製しています（canvas にはクラスが効かないため）。
+- **モーダル**（`ShareCardModal`。`components/Modal.tsx`）: 開いたときに画像を作ってプレビューし、
+  - 「共有する」: `navigator.canShare({ files })` が true の端末（主にスマホ）だけ。`navigator.share({ files: [png], text, url })`。文言は「今月の燃費は 62.54 km/L でした #燃費記録 #FuelLens」、URL は `https://fuel-lens.gadelog.com/?utm_source=share&utm_medium=card`。キャンセル（`AbortError`）は何も表示しません。
+  - 「X に投稿」: `https://twitter.com/intent/tweet?text=…&url=…` を新しいタブで開きます（投稿画面に画像は添付できないので文言と URL だけ。共有できない端末では「保存した画像を投稿に添えてください」と案内）。
+  - 「画像を保存」: `<a download>`（`fuellens-2026-10.png`、直近 30 日は `fuellens-<今日>.png`）。オブジェクト URL は保存の 1 秒後・モーダルを閉じたときに解放します。
+  - 結果は `useToast` で知らせます（「共有しました」「画像を保存しました」、失敗は日本語のエラー。英語の生エラーは console だけ）。
+- **計測**: Vercel Web Analytics の `beforeSend`（`components/WebAnalytics.tsx` → `lib/analytics/scrubUrl.ts`）はクエリのうち `utm_source` / `utm_medium` / `utm_campaign` / `utm_content` / `utm_term` だけを残すので、シェアからの訪問は `utm_source=share` / `utm_medium=card` と参照元（`t.co` / LINE など）で見えます。共有シートや X のアプリが URL を短縮・書き換えた場合は参照元だけが手がかりです。
+- テストは `tests/share/card.test.ts`（モデル: 満タン給油の月、部分給油の合算、部分給油だけ → 非表示、直近 30 日への切り替え、書式）/ `tests/share/drawCard.test.ts`（モックの 2D コンテキストに描く文字）/ `tests/components/ShareCard.test.tsx`（`navigator.share` / `canShare` と `toBlob` をモックしたモーダルの操作）。
 
 ### 履歴画面の構成（`/history`）
 

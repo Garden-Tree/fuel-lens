@@ -8,6 +8,7 @@ import { monthStartOf, monthSummaryOf } from "@/lib/home/month";
 import { useCurrentMonthKey } from "@/lib/home/useCurrentMonthKey";
 import { formatYen } from "@/lib/home/recent";
 import type { FuelRecord } from "@/lib/types";
+import ShareCardButton from "@/components/share/ShareCardButton";
 
 /** 単価の前回比の色（値上がりは cost-up、値下がりは up、変わらなければ sub） */
 function priceDiffTone(diff: number): string {
@@ -17,14 +18,25 @@ function priceDiffTone(diff: number): string {
   return "text-sub";
 }
 
-/** ホームの「今月」（見出しは「10月」など）: 給油代・給油量（回数）・単価（前回比）。集計は lib/home/month.ts */
-export default function MonthSummarySection({ records }: { records: ReadonlyArray<FuelRecord> }) {
+export type MonthSummarySectionProps = {
+  records: ReadonlyArray<FuelRecord>;
+  /** 選択中の車両の名前（シェアカードに出す） */
+  vehicleName?: string | null;
+  /** シェアのボタンを押せなくする（ログイン中のキャッシュ表示 previewing の間など） */
+  shareDisabled?: boolean;
+};
+
+/**
+ * ホームの「今月」（見出しは「10月」など）: 給油代・給油量（回数）・単価（前回比）。集計は lib/home/month.ts。
+ * 見出しの右に「今月の燃費をシェア」（今月か直近 30 日に燃費が出ているときだけ。components/share/ShareCardButton）
+ */
+export default function MonthSummarySection({ records, vehicleName, shareDisabled = false }: MonthSummarySectionProps) {
   // いまの月（描画時の日付から求め、画面に戻ってきたときにも読み直す。開いたまま月をまたいでも切り替わる）
   const monthKey = useCurrentMonthKey();
   const s = useMemo(() => monthSummaryOf(records, monthStartOf(monthKey)), [records, monthKey]);
 
   return (
-    <Section title={s.label}>
+    <Section title={s.label} action={<ShareCardButton records={records} vehicleName={vehicleName} disabled={shareDisabled} />}>
       <GroupedList>
         {s.count === 0 ? (
           <p className="flex min-h-[46px] items-center px-4 text-sm text-sub">この月の給油記録はまだありません</p>

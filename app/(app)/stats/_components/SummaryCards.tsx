@@ -26,6 +26,8 @@ interface EfficiencyHeroProps {
   summary: StatsSummary;
   /** 期間内の記録（最高・最低の算出に使う。平均と同じ母集団） */
   records: ReadonlyArray<Pick<FuelRecord, "fuel_efficiency">>;
+  /** 見出しの右に置く操作（「今月の燃費をシェア」） */
+  action?: ReactNode;
   /** カードの下半分に置くもの（燃費の推移グラフ） */
   children?: ReactNode;
   className?: string;
@@ -35,7 +37,7 @@ interface EfficiencyHeroProps {
  * ヒーローカード: 平均燃費（大きな数値）と最高・最低、その下に燃費の推移グラフ（children）。
  * 平均燃費は満タン法の Σkm/ΣL（summary.avgEfficiency）。各給油の単純平均は小さな補足として添える。
  */
-export function EfficiencyHero({ summary, records, children, className = "" }: EfficiencyHeroProps) {
+export function EfficiencyHero({ summary, records, action, children, className = "" }: EfficiencyHeroProps) {
   const range = efficiencyRange(records);
   return (
     <section
@@ -47,9 +49,12 @@ export function EfficiencyHero({ summary, records, children, className = "" }: E
           : "総走行距離 ÷ 総給油量（満タン法）"
       }
     >
-      <h2 id="stats-hero-title" className="text-[13px] text-sub">
-        平均燃費
-      </h2>
+      <div className="flex min-h-6 items-center justify-between gap-3">
+        <h2 id="stats-hero-title" className="text-[13px] text-sub">
+          平均燃費
+        </h2>
+        {action}
+      </div>
       <div className="mt-0.5 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
         <div>
           <Num className="text-[34px] font-bold leading-tight">

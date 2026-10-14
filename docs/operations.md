@@ -152,7 +152,7 @@ curl -i -X POST "https://<project-ref>.supabase.co/rest/v1/rpc/keepalive_ping" \
 
 - **有効化**: Vercel ダッシュボードの **Project → Analytics → Enable** を押す必要があります（押すまでデータは溜まりません）。有効化後、次のデプロイから `/_vercel/insights/*` が配信されます。
 - **送信されるのは本番のみ**: パッケージは `NODE_ENV` で本番かどうかを判定し、開発・テストではコンソールに出すだけで送信しません。
-- **除去する情報**: `beforeSend`（`components/WebAnalytics.tsx` の `stripQueryAndHash`）でクエリ文字列とハッシュを落とし、パスだけを送ります。
+- **除去する情報**: `beforeSend`（`lib/analytics/scrubUrl.ts`）でハッシュと、`utm_source` / `utm_medium` / `utm_campaign` / `utm_content` / `utm_term` 以外のクエリを落とします（共有トークン `?t=` や記録 ID は送らない）。集客の効果は Analytics の「UTM Parameters」で見られます。
   `?action=shared&t=<token>` の共有トークンや `/history#record-<id>` の記録 ID は送られません。
 - **Hobby の上限**: 月 50,000 イベント（ページビュー + カスタムイベント、チーム内の全プロジェクト合計）、レポート期間 1 か月。カスタムイベントは Pro 以上です。
   上限を超えても課金されず、3 日の猶予後に収集が止まります（出典: https://vercel.com/docs/analytics/limits-and-pricing ）。
@@ -227,3 +227,14 @@ curl -i -X POST "https://<project-ref>.supabase.co/rest/v1/rpc/keepalive_ping" \
 | AI 解析が 403 `ORIGIN_MISMATCH` | リバースプロキシやカスタムドメインで `Host` が公開ホストと異なる。`NEXT_PUBLIC_APP_URL` を設定する（[api-analyze.md](./api-analyze.md)） |
 | AI 解析が 500 `SERVER_MISCONFIGURED` | `GEMINI_API_KEY` が未設定 |
 | ローカルの記録がクラウドに移行されない | 画面の移行エラー表示を確認する。データはブラウザに残り、次回の読み込みで再試行される（[architecture.md 5 章](./architecture.md#5-ローカル--クラウド移行)） |
+
+## 週次の利用状況（集客の効果測定）
+
+[supabase/runbooks/weekly_metrics.sql](../supabase/runbooks/weekly_metrics.sql) を Supabase の SQL Editor で実行する（読み取りのみ・件数だけ）。
+
+- 全体の件数（ユーザー・車両・記録）
+- 直近 12 週の新規ユーザー・記録したユーザー・追加された記録
+- 定着（記録が 2 回以上・5 回以上のユーザーの割合）
+
+流入元は Vercel Web Analytics の Referrers、検索語は Search Console（`https://fuel-lens.gadelog.com/`。所有権確認ファイル `public/google9896bbc9767c6e06.html` は消さない）で見る。
+集客用の下書きはリポジトリ直下の `marketing/`（`.gitignore` 済み。個人の燃費データを含むため公開リポジトリにコミットしない）。

@@ -1,6 +1,7 @@
 "use client";
 
 import { useSyncExternalStore } from "react";
+import { localDateString } from "../dates";
 import { monthKeyOf } from "./month";
 
 // 画面に戻ってきたとき（PWA を開き直した・タブを切り替えた）に月を読み直す
@@ -23,4 +24,14 @@ const currentMonthKey = () => monthKeyOf(new Date());
  */
 export function useCurrentMonthKey(): string {
   return useSyncExternalStore(subscribe, currentMonthKey, currentMonthKey);
+}
+
+const currentDayKey = () => localDateString(new Date());
+
+/**
+ * 今日（ローカル暦の "YYYY-MM-DD"）。useCurrentMonthKey と同じく、画面に戻ってきたときにも読み直す。
+ * シェアカード（今月 / 直近 30 日）の期間に使う。
+ */
+export function useTodayKey(): string {
+  return useSyncExternalStore(subscribe, currentDayKey, currentDayKey);
 }

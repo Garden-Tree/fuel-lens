@@ -13,6 +13,7 @@ import EfficiencyChart from "./_components/EfficiencyChart";
 import MonthlyCostChart from "./_components/MonthlyCostChart";
 import PriceTrendChart from "./_components/PriceTrendChart";
 import StatsSkeleton from "./_components/StatsSkeleton";
+import ShareCardButton from "@/components/share/ShareCardButton";
 
 export default function StatsPage() {
   // 選択中の車両とその記録（useVehicles + useFuelRecords。記録は車両ごとの方式で連鎖計算済み）
@@ -20,6 +21,7 @@ export default function StatsPage() {
     vehicles,
     selectedVehicleId,
     setSelectedVehicleId,
+    selectedVehicle,
     records,
     vehiclesLoading,
     loading,
@@ -78,7 +80,12 @@ export default function StatsPage() {
             ) : (
               // スマホは 1 カラム（ヒーロー → 費用 → 月ごと → 単価）。PC は 2 カラム（左: ヒーロー / 右: 費用、下段: 月ごと・単価）
               <div className="grid grid-cols-1 items-start gap-4 animate-in fade-in duration-700 lg:grid-cols-2 lg:gap-6">
-                <EfficiencyHero summary={model.summary} records={model.filteredRecords}>
+                <EfficiencyHero
+                  summary={model.summary}
+                  records={model.filteredRecords}
+                  // シェアは期間フィルタに関係なく今月（無ければ直近 30 日）の燃費（ホームの「今月」と同じ）
+                  action={<ShareCardButton records={records} vehicleName={selectedVehicle?.name} disabled={previewing} />}
+                >
                   <EfficiencyChart
                     period={period}
                     efficiency={model.efficiency}

@@ -279,7 +279,9 @@ export default function Home() {
                 ) : (
                   <WelcomeCard distanceMode={distanceMode} />
                 )}
-                {hasRecords ? <MonthSummarySection records={records} /> : !editing.isManualEntry && entrySection}
+                {hasRecords ? (
+                  <MonthSummarySection records={records} vehicleName={selectedVehicle?.name} shareDisabled={previewing} />
+                ) : !editing.isManualEntry && entrySection}
               </>
             )}
           </div>
