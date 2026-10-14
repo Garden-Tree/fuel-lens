@@ -52,3 +52,6 @@ next-env.d.ts
 
 # supabase cli
 supabase/.temp/
+
+# 集客用の下書き（個人の燃費データを含むので公開リポジトリにコミットしない）
+marketing/
