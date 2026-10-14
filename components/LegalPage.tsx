@@ -6,21 +6,28 @@ import { BrandMark } from "@/components/ui";
 export const ISSUES_URL = "https://github.com/Garden-Tree/fuel-lens/issues";
 export const ENACTED_ON = "2026年10月12日";
 
+/** ログイン不要の公開ページ（規約・燃費計算）の共通ヘッダー。ロゴ → トップ、右に「トップへ戻る」 */
+export function PublicPageHeader() {
+  return (
+    <header className="border-b border-line pt-[env(safe-area-inset-top)]">
+      <div className="mx-auto flex h-14 max-w-[720px] items-center justify-between px-4">
+        <Link href="/" aria-label="FuelLens のトップへ" className="rounded-lg">
+          <BrandMark className="text-base" />
+        </Link>
+        <Link href="/" className="inline-flex min-h-10 items-center gap-1 text-sm text-sub hover:text-ink">
+          <ChevronLeft className="h-4 w-4" aria-hidden="true" />
+          トップへ戻る
+        </Link>
+      </div>
+    </header>
+  );
+}
+
 /** プライバシーポリシー・利用規約の共通レイアウト（ログイン不要、タブバーなし） */
 export function LegalPage({ title, enactedOn, children }: { title: string; enactedOn: string; children: ReactNode }) {
   return (
     <div className="min-h-screen bg-ground font-sans text-ink">
-      <header className="border-b border-line pt-[env(safe-area-inset-top)]">
-        <div className="mx-auto flex h-14 max-w-[720px] items-center justify-between px-4">
-          <Link href="/" aria-label="FuelLens のトップへ" className="rounded-lg">
-            <BrandMark className="text-base" />
-          </Link>
-          <Link href="/" className="inline-flex min-h-10 items-center gap-1 text-sm text-sub hover:text-ink">
-            <ChevronLeft className="h-4 w-4" aria-hidden="true" />
-            トップへ戻る
-          </Link>
-        </div>
-      </header>
+      <PublicPageHeader />
       <main className="mx-auto max-w-[720px] px-4 pb-16 pt-8">
         <h1 className="text-2xl font-bold">{title}</h1>
         <p className="mt-2 text-xs text-sub">制定日: {enactedOn}</p>

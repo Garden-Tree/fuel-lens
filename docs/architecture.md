@@ -14,6 +14,8 @@ FuelLens の構成、データの流れ、主要なモジュールの役割を�
 | `app/settings/page.tsx` | 設定画面（`/settings`）。見出し付きのグループリストで、データ概要・バックアップ・復元・インポート（[8 章](#8-バックアップと復元)）・アカウント（[アカウント削除](#アカウント削除)） |
 | `app/privacy/page.tsx`、`app/terms/page.tsx`、`components/LegalPage.tsx` | プライバシーポリシー（`/privacy`）と利用規約（`/terms`）。ログイン不要の静的ページ（Google OAuth 同意画面用）で、共通レイアウトは `LegalPage`（タブバーなし）。ランディングのフッターと設定画面の「このアプリについて」からリンク |
 | `app/manifest.ts` | PWA の Web App Manifest（`/manifest.webmanifest`。[9 章](#9-pwa)） |
+| `app/robots.ts`、`app/sitemap.ts`、`lib/siteUrl.ts` | `/robots.txt`（`/api/`・`/settings`・`/history`・`/stats` を除外）と `/sitemap.xml`（`/`・`/calc`・`/app`・`/privacy`・`/terms`）。サイト URL は `getSiteUrl()`（`NEXT_PUBLIC_APP_URL`、無効・未設定なら `https://fuel-lens.gadelog.com`） |
+| `app/opengraph-image.tsx`、`app/twitter-image.tsx`、`lib/og/renderOgImage.tsx` | SNS 共有用の 1200×630 画像（`next/og` の `ImageResponse`）。2 つの route は同じ `renderOgImage()` を呼ぶだけ。Noto Sans JP / JetBrains Mono をリクエスト時に Google Fonts から取得（[operations.md](./operations.md#4-4-og-画像)）。`app/layout.tsx` の `twitter.card` は `summary_large_image` |
 | `app/api/analyze/route.ts` | Gemini で画像を解析する API（[api-analyze.md](./api-analyze.md)） |
 | `app/api/account/route.ts`、`lib/server/account/handler.ts` | アカウント削除の API（`DELETE /api/account`。Clerk のユーザーを削除する。[api-account.md](./api-account.md)） |
 | `app/api/keepalive/route.ts` | Supabase 自動停止対策のエンドポイント（[operations.md](./operations.md#3-supabase-の自動停止と-keepalive)） |
@@ -338,6 +340,14 @@ useVehicles / useFuelRecords
 - **/app を表示中**は、ホームが `RegisterScanActions`（`components/ScanActions.tsx`。`AppFrame` が `ScanActionsProvider` を描画する）で登録した `openCamera` / `openAlbum` / `openManual` を、メニューの項目のクリックハンドラの中で同期的に呼びます（ファイル入力の `click()` はユーザーのタップの中でないとブラウザに黙って無視されるため）。解析中・確認中・読み込み中・閲覧専用は `canScan` / `canManual` に従って項目を無効にし、理由を 1 行添えます。「手動で入力」は、手動入力・編集のフォームを開いていれば「入力中の内容を破棄して新しく入力しますか？」を確認してから開きます。
 - **他の画面**では、項目は `/app?action=scan|album|manual` への遷移です。/app の `ShortcutActionHandler`（`useShortcutActions`）が処理し、撮影・アルバムは開くのを試したうえで「撮影の準備ができました」の案内（`ScanReadyPrompt`）を出します。始められない状態なら取り下げて toast で理由を伝えます。
 - `aria-current="page"` で現在の項目を示し、現在の画面の判定は `isNavItemActive`（パスの前方一致）です。
+
+### 燃費計算ページ（`/calc`）
+
+`app/calc/page.tsx` はログイン不要の公開ページ（「満タン法 燃費計算」などの検索からの入口）で、`AppFrame` は使わず、規約ページと同じヘッダー（`components/LegalPage.tsx` の `PublicPageHeader`）で包みます。
+計算機 `app/calc/_components/FuelCalculator.tsx`（クライアント）は走行距離（区間距離）・給油量・任意の支払総額から燃費・単価・1km あたりの燃料費を出し、入力は state にだけ持って保存しません。
+検証と計算は `lib/calcPage.ts` の `computeCalc`（数値の読み取りは `parseDraftNumber`、燃費と単価は `calculateFuelMetrics`、オドメーターらしい値の注意は `PLAUSIBILITY_LIMITS`）。
+FAQ（`CALC_FAQS`）はページと構造化データで共有し、`buildCalcJsonLd`（`WebApplication` + `FAQPage`、固定文言のみ・`<` をエスケープ）を `<script type="application/ld+json">` で出します。
+説明の下の CTA から `/app` へ誘導し、ランディングのフッターと機能紹介からリンクしています。テストは `tests/calcPage.test.ts` と `tests/components/FuelCalculator.test.tsx`。
 
 ## 5. ローカル → クラウド移行
 

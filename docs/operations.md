@@ -208,6 +208,11 @@ curl -i -X POST "https://<project-ref>.supabase.co/rest/v1/rpc/keepalive_ping" \
 
 広告ブロッカーがブラウザからの送信を止めることがあります（ブラウザ側のエラーが一部欠ける）。必要になったら `tunnelRoute` を検討しますが、`proxy.ts` の matcher からの除外とサーバーレス関数の実行増を伴うため、現状は使っていません。
 
+## 4-4. OG 画像
+
+- `app/opengraph-image.tsx` / `app/twitter-image.tsx`（`lib/og/renderOgImage.tsx`）は `dynamic = "force-dynamic"` で、**リクエスト時**に Google Fonts の CSS API から使う文字だけの Noto Sans JP / JetBrains Mono（700、ttf）を取得して描画します（ビルドは Google Fonts に依存しないので、取得失敗でビルドが壊れたり、フォント無しの画像が焼き込まれたりしません）。
+- フォントの取得に失敗（5 秒でタイムアウト）した場合は console にエラーを出し、デフォルトフォントで描画します（日本語は表示されない）。クローラーのキャッシュに残らないよう、共有が崩れていたら Vercel のログで `OG 画像のフォント取得に失敗しました` を確認してください。
+
 ## 5. トラブルシューティング
 
 | 症状 | 原因と対処 |
