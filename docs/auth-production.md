@@ -2,10 +2,16 @@
 
 2026-10-12 時点の調査。確認元はリポジトリと各サービスの公式ドキュメント（末尾）。
 
-## 1. 現状
+> **2026-10-13 に切り替え完了。** 本番（Vercel Production）は Clerk の本番インスタンス（`clerk.fuel-lens.gadelog.com`、`pk_live` / `sk_live`）+ Supabase の Third-Party Auth（`getToken()`、環境変数 `NEXT_PUBLIC_CLERK_SUPABASE_JWT_TEMPLATE` なし）で動いている。
+> Preview / Development とローカルは開発インスタンス + JWT テンプレート `supabase`（同変数 = `supabase`）のまま。オーナーの記録は新 ID に付け替え済み（切り替え前の控えは Supabase の `backup_20261013` スキーマ。RLS 有効・anon 権限なし。不要になったら `drop schema backup_20261013 cascade;`）。
+> 他のユーザーは本番で再ログインしたあとに [supabase/runbooks/remap_clerk_user_ids.sql](../supabase/runbooks/remap_clerk_user_ids.sql) を再実行する。
+> Google OAuth は GCP プロジェクト `fuellens-511414`（同意画面は本番公開済み）。DNS は wpX（シンレンタルサーバー）のサーバーパネル → DNSレコード設定。
+> 以下は切り替え前の調査と手順の記録。
 
-- 認証は Clerk の **開発インスタンス**（`pk_test`）を本番でも使っている。
-- Supabase へは Clerk の JWT テンプレート `supabase`（HS256、Supabase の JWT Secret で署名）を `lib/supabaseClient.ts` の `getToken({ template })` で渡している（テンプレート名は環境変数 `NEXT_PUBLIC_CLERK_SUPABASE_JWT_TEMPLATE`）。
+## 1. 切り替え前の状況
+
+- 認証は Clerk の **開発インスタンス**（`pk_test`）を本番でも使っていた。
+- Supabase へは Clerk の JWT テンプレート `supabase`（HS256、Supabase の JWT Secret で署名）を `lib/supabaseClient.ts` の `getToken({ template })` で渡していた（テンプレート名は環境変数 `NEXT_PUBLIC_CLERK_SUPABASE_JWT_TEMPLATE`）。
 - RLS は `(select auth.jwt()->>'sub') = user_id`。`users.id` / `vehicles.user_id` / `fuel_records.user_id` は text の Clerk ID。
   `vehicles` / `fuel_records` の `user_id` は `users.id` への FK（`ON DELETE CASCADE`、`ON UPDATE CASCADE` はなし）。
 - ログイン方法は Google OAuth とメール（コード入力）。

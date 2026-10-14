@@ -4,6 +4,7 @@ import { useCallback, useState } from "react";
 import { useAuth } from "@clerk/nextjs";
 
 import { useVehicleScope } from "@/lib/useVehicleScope";
+import AccountPanel from "@/components/AccountPanel";
 import { AppFrame, HookErrorLine, PageHeader, ReadOnlyCaption } from "@/components/AppShell";
 import BackupPanel from "@/components/BackupPanel";
 import ImportPanel from "@/components/ImportPanel";
@@ -69,6 +70,13 @@ export default function SettingsPage() {
           onDone={handleRestoreDone}
           busy={busy}
           setBusy={setBusy}
+        />
+
+        <AccountPanel
+          readOnly={readOnly}
+          busy={busy}
+          setBusy={setBusy}
+          onLocalCleared={() => setDataVersion(v => v + 1)}
         />
 
         <Section title="このアプリについて">

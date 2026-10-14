@@ -72,6 +72,11 @@ type Entry = {
 
 const entries = new Map<string, Entry>();
 
+/** アカウント削除の後に、タブ内で使い回している初期化の結果を忘れる（次の呼び出しで既定車両を作り直す） */
+export function forgetBootstrap(userId: string): void {
+  entries.delete(userId);
+}
+
 function isOutage(e: unknown): boolean {
   if (isAuthTokenError(e)) return false;
   const status = (e as { status?: unknown } | null)?.status;

@@ -1,6 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { bootstrapCloud, type CloudBootstrapDeps } from "@/lib/data/cloudBootstrap";
+import { bootstrapCloud, forgetBootstrap, type CloudBootstrapDeps } from "@/lib/data/cloudBootstrap";
 import { CrossTabLockError } from "@/lib/crossTabLock";
 import { SupabaseAuthTokenError } from "@/lib/supabaseClient";
 import type { Vehicle } from "@/lib/types";
@@ -53,6 +53,17 @@ describe("bootstrapCloud", () => {
     // 別のユーザーは別に実行する
     await bootstrapCloud(supabase, nextUser(), deps);
     expect(deps.migrate).toHaveBeenCalledTimes(2);
+  });
+
+  it("forgetBootstrap makes the next call run the bootstrap again", async () => {
+    const { deps } = makeDeps();
+    const user = nextUser();
+    await bootstrapCloud(supabase, user, deps);
+    await bootstrapCloud(supabase, user, deps);
+    expect(deps.ensureDefaultVehicle).toHaveBeenCalledTimes(1);
+    forgetBootstrap(user);
+    await bootstrapCloud(supabase, user, deps);
+    expect(deps.ensureDefaultVehicle).toHaveBeenCalledTimes(2);
   });
 
   it("re-runs when local data to migrate appears (e.g. recorded while signed out)", async () => {

@@ -12,6 +12,7 @@ afterEach(() => {
 vi.mock("@clerk/nextjs", () => ({
   useAuth: () => ({ isLoaded: true, isSignedIn: false, userId: null, getToken: async () => null }),
   useUser: () => ({ isLoaded: true, isSignedIn: false, user: null }),
+  useClerk: () => ({ signOut: async () => {} }),
   SignedIn: () => null,
   SignedOut: ({ children }: { children?: ReactNode }) => createElement("div", null, children),
   SignInButton: ({ children }: { children?: ReactNode }) => createElement("div", null, children),

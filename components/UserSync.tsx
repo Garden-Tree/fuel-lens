@@ -2,6 +2,7 @@
 
 import { useEffect, useRef } from 'react';
 import { useAuth, useUser } from '@clerk/nextjs';
+import * as Sentry from '@sentry/nextjs';
 import { AUTH_TOKEN_ERROR_MESSAGE, getSupabaseClient, isAuthTokenError } from '@/lib/supabaseClient';
 import { reportSupabaseFailure } from '@/lib/supabaseHealth';
 
@@ -13,6 +14,11 @@ export default function UserSync() {
   const { user } = useUser();
   // 同期済みの userId を保持する。同一タブでアカウントを切り替えた場合も新しいユーザーを同期できる。
   const syncedUserIdRef = useRef<string | null>(null);
+
+  // エラー報告にユーザー ID だけを紐づける（メールや IP は送らない。lib/sentry/scrub.ts）。DSN 未設定なら何もしない
+  useEffect(() => {
+    Sentry.setUser(isSignedIn && userId ? { id: userId } : null);
+  }, [isSignedIn, userId]);
 
   useEffect(() => {
     if (!isSignedIn || !userId || !user) return;

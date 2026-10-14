@@ -32,6 +32,9 @@ import { useRestoreRunner } from "@/lib/useRestoreRunner";
 
 export type { BackupBusy } from "@/components/settingsUi";
 
+/** 「バックアップ」セクションの id（アカウント削除の案内からページ内リンクで飛ぶ） */
+export const BACKUP_SECTION_ID = "settings-backup";
+
 export interface BackupPanelProps extends RestoreDataAccess {
   vehicles: Vehicle[];
   /** 車両一覧の読み込み中 */
@@ -255,7 +258,7 @@ export default function BackupPanel({
       </Section>
 
       {/* バックアップ */}
-      <Section title="バックアップ">
+      <Section title="バックアップ" id={BACKUP_SECTION_ID}>
         <GroupedList>
           <ListRow
             leading={<FileJson className="h-5 w-5 text-accent" aria-hidden="true" />}

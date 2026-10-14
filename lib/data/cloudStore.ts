@@ -101,6 +101,11 @@ export function ensureUserRow(supabase: SupabaseClient, userId: string): Promise
   return run;
 }
 
+/** アカウント削除の後に、タブ内で使い回している users 行の保証を忘れる（次の挿入で users 行を作り直す） */
+export function forgetUserRow(userId: string): void {
+  userRowInflight.delete(userId);
+}
+
 /**
  * ロックを取らない内部実装。移行処理（ロック保持中）から呼ぶ。
  * `created` は既定車両をこの呼び出しで新規作成したかどうか。

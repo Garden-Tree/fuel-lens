@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createCloudStores } from "@/lib/data/cloudStore";
+import { createCloudStores, ensureUserRow, forgetUserRow } from "@/lib/data/cloudStore";
 import { DataError, PartialWriteError, VALIDATION_CODE, type RecordStore, type VehicleStore } from "@/lib/data/types";
 import { withCache, withOutageHandling } from "@/lib/data/withOutage";
 import type { FuelRecord } from "@/lib/types";
@@ -262,5 +262,18 @@ describe("cloud VehicleStore", () => {
     await vehicles.remove(V1);
     expect((queries[1] as Query).table).toBe("vehicles");
     expect(op(queries[1], "delete")).toBeDefined();
+  });
+});
+
+describe("forgetUserRow", () => {
+  it("忘れた後の ensureUserRow は users 行の upsert をやり直す", async () => {
+    const { client, queries } = makeSupabase(ok);
+    const user = "user_forget_row";
+    await ensureUserRow(client, user);
+    await ensureUserRow(client, user);
+    expect(queries).toHaveLength(1);
+    forgetUserRow(user);
+    await ensureUserRow(client, user);
+    expect(queries).toHaveLength(2);
   });
 });
