@@ -3,6 +3,7 @@ import { JetBrains_Mono, Noto_Sans_JP } from "next/font/google";
 import { ClerkProvider } from '@clerk/nextjs';
 import { clerkLocalization } from "@/lib/clerkLocalization";
 import "./globals.css";
+import { getSiteUrl } from "@/lib/siteUrl";
 import UserSync from "@/components/UserSync";
 import ServiceWorkerRegister from "@/components/ServiceWorkerRegister";
 import SupabaseStatusBanner from "@/components/SupabaseStatusBanner";
@@ -29,15 +30,9 @@ const APP_NAME = "FuelLens";
 const APP_DESCRIPTION =
   "レシートとトリップメーターが写った写真1枚をAIが読み取り、満タン法で燃費を自動計算・記録する燃費管理アプリ。";
 
-/** NEXT_PUBLIC_APP_URL が有効な URL のときだけ metadataBase に使う（OG 画像等の相対 URL 解決用） */
-function resolveMetadataBase(): URL | undefined {
-  const raw = process.env.NEXT_PUBLIC_APP_URL;
-  if (!raw) return undefined;
-  try {
-    return new URL(raw);
-  } catch {
-    return undefined;
-  }
+/** metadataBase（OG 画像等の相対 URL の解決用）。NEXT_PUBLIC_APP_URL が無ければ本番 URL にフォールバック */
+function resolveMetadataBase(): URL {
+  return new URL(getSiteUrl());
 }
 
 export const metadata: Metadata = {
@@ -70,7 +65,7 @@ export const metadata: Metadata = {
     locale: "ja_JP",
   },
   twitter: {
-    card: "summary",
+    card: "summary_large_image",
     title: APP_NAME,
     description: APP_DESCRIPTION,
   },

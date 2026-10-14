@@ -173,6 +173,10 @@ export default function LandingPage() {
               <p className="text-sm text-sub leading-relaxed">
                 トリップメーターの区間走行距離 ÷ 今回の給油量 で実燃費（km/L）を算出。支払総額と給油量からガソリン単価（円/L）も自動で計算します。
               </p>
+              <Link href="/calc" className="mt-3 inline-flex min-h-10 items-center gap-1 text-sm font-medium text-accent hover:underline">
+                燃費計算ツールで試す（登録不要）
+                <ChevronRight className="w-4 h-4" aria-hidden="true" />
+              </Link>
             </div>
 
             {/* 特徴カード 3 */}
@@ -336,11 +340,12 @@ export default function LandingPage() {
             © {new Date().getFullYear()} FuelLens. 読み取りに Google Gemini AI を使用しています。
           </p>
 
-          <div className="flex items-center gap-2 sm:gap-6">
+          <div className="flex flex-wrap items-center justify-center gap-x-2 sm:gap-x-6">
             <a href="#features" className="hover:text-ink transition px-2 py-3 sm:p-0">機能</a>
             <a href="#demo" className="hover:text-ink transition px-2 py-3 sm:p-0">デモ</a>
             <a href="#how-to" className="hover:text-ink transition px-2 py-3 sm:p-0">使い方</a>
             <a href="#faq" className="hover:text-ink transition px-2 py-3 sm:p-0">よくある質問</a>
+            <Link href="/calc" className="hover:text-ink transition px-2 py-3 sm:p-0">燃費計算</Link>
             <Link href="/privacy" className="hover:text-ink transition px-2 py-3 sm:p-0">プライバシーポリシー</Link>
             <Link href="/terms" className="hover:text-ink transition px-2 py-3 sm:p-0">利用規約</Link>
           </div>
