@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { notifyRecordsChanged, useWindowEvent, VEHICLES_CHANGED_EVENT } from "./events";
-import { SUPABASE_RETRY_EVENT, syncCacheOwner, useSupabaseOutage } from "./supabaseHealth";
+import { getOutage, SUPABASE_RETRY_EVENT, syncCacheOwner, useSupabaseOutage } from "./supabaseHealth";
+import { useReturnRefresh } from "./useReturnRefresh";
 import { distanceModeOf, normalizeVehicle, planDistanceWriteBack } from "./fillChain";
 import { pickSelected, selectedVehicleStorageKey, shouldPersistSelection } from "./vehicleSelection";
 import { applyVehiclePatch, sanitizeVehicleSettings } from "./data/columns";
@@ -43,6 +44,8 @@ export function useVehicles() {
   const [error, setError] = useState<string | null>(null);
   const outage = useSupabaseOutage();
   const fetchCounter = useRef(0);
+  // 実行中の一覧の読み込みの数（画面復帰時の再取得は、読み込みが実行中なら行わない）
+  const inFlightLoads = useRef(0);
   // 「再試行」イベントの再読み込みだけ、クラウドの初期化の失敗メモ（30 秒）を飛ばす
   const forceBootstrap = useRef(false);
 
@@ -62,10 +65,19 @@ export function useVehicles() {
     persistSelectedId(selectedKey, id);
   }, [selectedKey]);
 
-  const loadVehicles = useCallback(async (fetchId: number) => {
+  /**
+   * 車両一覧を読み込む。
+   * background: true は画面復帰時の再取得（クラウドのみ）。loading を立てず表示中の一覧を残し、成功したときだけ置き換える。
+   * 失敗しても一覧とエラー表示は変えない（console にだけ出す。障害ならストアが outage を記録する）。
+   * どちらも fetchCounter で新しい読み込みに無効化される。
+   */
+  const loadVehicles = useCallback(async (fetchId: number, { background = false }: { background?: boolean } = {}) => {
     if (!isLoaded) return;
-    setLoading(true);
-    setError(null);
+    if (background && stores?.kind !== "cloud") return;
+    if (!background) {
+      setLoading(true);
+      setError(null);
+    }
     const isCurrent = () => fetchId === fetchCounter.current;
     const force = forceBootstrap.current;
     forceBootstrap.current = false;
@@ -92,21 +104,28 @@ export function useVehicles() {
       return;
     }
 
+    inFlightLoads.current++;
     try {
       // ローカルデータの移行と既定車両の確保（タブ内で 1 回。useFuelRecords と共有）
       const { migrationError } = await stores.bootstrap({ force });
       if (!isCurrent()) return;
       // 障害以外の移行失敗。ローカルデータは復元済みで次回再試行される。
       // アップロードされていないことが利用者に伝わるよう error に表示する
-      if (migrationError) setError(migrationError);
+      // （裏の再取得は一覧と同時に反映するので後で設定する）
+      if (migrationError && !background) setError(migrationError);
 
       // 車両一覧を取得（初期化で取得済みならそれを使い回して再取得しない。1 台もなければ既定車両を自動生成済み。新しい列は既定値で補完済み）
       const list = await stores.vehicles.list();
       if (!isCurrent()) return;
+      if (background) setError(migrationError ?? null);
       setVehicles(list);
       applySelection(list);
     } catch (e) {
       if (!isCurrent()) return;
+      if (background) {
+        console.error("車両一覧の再取得に失敗（表示中の一覧を残す）:", e);
+        return;
+      }
       const message = loadErrorMessage(e);
       if (message) setError(message);
 
@@ -117,6 +136,8 @@ export function useVehicles() {
       if (list.length > 0) applySelection(list);
       else setSelectedVehicleIdState(DEFAULT_VEHICLE.id);
     } finally {
+      inFlightLoads.current--;
+      // 裏の再取得が通常の読み込みを無効化していた場合も、ここで解除する（既に false なら何も変わらない）
       if (isCurrent()) setLoading(false);
     }
   }, [isLoaded, stores, selectedKey]);
@@ -142,6 +163,14 @@ export function useVehicles() {
   useWindowEvent(VEHICLES_CHANGED_EVENT, () => {
     void refreshVehicles();
   });
+
+  // しばらく離れた画面に戻ったら、他の端末・タブでの変更（車両の追加・削除・改名）を裏で読み直す
+  // （ログイン中・障害なしのときだけ。障害中は再試行の仕組みが読み直す）。読み込みが実行中なら何もしない
+  useReturnRefresh(() => {
+    if (getOutage() || inFlightLoads.current > 0) return;
+    const currentFetchId = ++fetchCounter.current;
+    void loadVehicles(currentFetchId, { background: true });
+  }, { enabled: stores?.kind === "cloud" && outage == null });
 
   /**
    * 車両を追加して選択する。settings（距離の入力方式・既定の燃料種別）は省略可（トリップ / 未指定）。

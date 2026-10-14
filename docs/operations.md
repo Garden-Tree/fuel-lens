@@ -138,7 +138,8 @@ curl -i -X POST "https://<project-ref>.supabase.co/rest/v1/rpc/keepalive_ping" \
 
 `.github/workflows/ci.yml` が `main` / `develop` への push とすべての Pull Request で実行されます。
 
-- Node 22、`npm ci` → `npm run lint` → `npx tsc --noEmit` → `npm test` → `npm run build`（タイムアウト 15 分）
+- Node 22、`npm ci` → `npm run lint` → `npx tsc --noEmit` → `npm test` → `npm run build`（タイムアウト 15 分）。
+  ビルドは 3 回まで再試行する: `next/font/google` がビルド時に Google Fonts を取得するため、Actions のネットワークの一時的な失敗で「Can't resolve '@vercel/turbopack-next/internal/font/google/font'」になることがある（2026-10-14 に発生。同じコミットの再実行で成功）
 - 同じブランチの古い実行は自動でキャンセルされます。権限は `contents: read` のみです。
 - ビルドはプレースホルダの環境変数で行い、Clerk / Supabase / Gemini の実 API には接続しません。
   Clerk の公開キーは形式チェックを通すため `pk_test_` + base64(`clerk.example.com$`) のダミー値を使っています。
