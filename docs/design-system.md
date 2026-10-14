@@ -36,7 +36,11 @@ FuelLens の画面は「計器盤のようなダーク UI ＋ グループリス
 
 ## 文字
 
-- 本文は Noto Sans JP（可変フォント。使うのは 400 / 500 / 700。`font-semibold`（600）は使わず `font-bold`）、数字は JetBrains Mono（`app/layout.tsx` の next/font）。
+- 本文は**端末の日本語フォント**（Web フォントは読み込まない）。`app/globals.css` の `--font-sans` = ヒラギノ角ゴ（iOS / macOS）→ Noto Sans JP / Noto Sans CJK JP（Android など）→ 游ゴシック（Windows）→ Yu Gothic UI → メイリオ → `system-ui`。
+  - 使うウェイトは 400 / 500 / 700。`font-semibold`（600）は使わず `font-bold`（ヒラギノは W3 / W6 しか無い端末があり、600 と 700 が同じ太さになるため）。
+  - Windows の游ゴシックは Regular だと細くかすれるので、`local()` だけの `@font-face`（`"FuelLens YuGothic"`）で 400〜600 を Medium、700 以上を Bold に割り当てている（ダウンロードなし）。
+  - Noto Sans JP（next/font）は 1 ページで 30 個以上・約 700KB のファイルを読み込み、モバイルの Lighthouse で FCP / LCP を数秒遅らせていたためやめた（2026-10。`display: optional` でも改善は CLS だけだった）。OG 画像（`lib/og/renderOgImage.tsx`）は従来どおり Noto Sans JP を自分で取得する。
+- 数字は JetBrains Mono（`app/layout.tsx` の next/font。latin のみ・約 40KB）。日本語が混ざったときは `--font-sans` に落ちる。
 - **金額・燃費・距離・給油量などの数値は `num` ユーティリティ**（等幅・`tabular-nums`）で表示します。部品なら `<Num>`。
 - 見出し: ページ見出し 20px 太字、セクション見出し 13px `text-sub` 中太（左右 16px）、行の本文 15px、補足 12〜13px `text-sub`。
 - UI の文言はすべて日本語（CLAUDE.md の不変条件 6）。

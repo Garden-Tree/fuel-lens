@@ -2,7 +2,7 @@
 
 import { useEffect, useRef } from 'react';
 import { useAuth, useUser } from '@clerk/nextjs';
-import * as Sentry from '@sentry/nextjs';
+import { setClientSentryUser } from '@/lib/sentry/client';
 import { AUTH_TOKEN_ERROR_MESSAGE, getSupabaseClient, isAuthTokenError } from '@/lib/supabaseClient';
 import { reportSupabaseFailure } from '@/lib/supabaseHealth';
 
@@ -17,7 +17,7 @@ export default function UserSync() {
 
   // エラー報告にユーザー ID だけを紐づける（メールや IP は送らない。lib/sentry/scrub.ts）。DSN 未設定なら何もしない
   useEffect(() => {
-    Sentry.setUser(isSignedIn && userId ? { id: userId } : null);
+    setClientSentryUser(isSignedIn && userId ? userId : null);
   }, [isSignedIn, userId]);
 
   useEffect(() => {

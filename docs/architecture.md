@@ -19,7 +19,7 @@ FuelLens の構成、データの流れ、主要なモジュールの役割を�
 | `app/api/analyze/route.ts` | Gemini で画像を解析する API（[api-analyze.md](./api-analyze.md)） |
 | `app/api/account/route.ts`、`lib/server/account/handler.ts` | アカウント削除の API（`DELETE /api/account`。Clerk のユーザーを削除する。[api-account.md](./api-account.md)） |
 | `app/api/keepalive/route.ts` | Supabase 自動停止対策のエンドポイント（[operations.md](./operations.md#3-supabase-の自動停止と-keepalive)） |
-| `app/layout.tsx` | ルートレイアウト。フォント（Noto Sans JP は可変フォント + JetBrains Mono）、`ServiceWorkerRegister` / `WebAnalytics`、`metadata` と `viewport`。Clerk・トースト・Supabase は載せない（公開ページ `/`・`/calc`・`/privacy`・`/terms` を軽くするため） |
+| `app/layout.tsx` | ルートレイアウト。フォント（数字用の JetBrains Mono。日本語は端末のフォント）、`ServiceWorkerRegister` / `WebAnalytics`、`metadata` と `viewport`。Clerk・トースト・Supabase は載せない（公開ページ `/`・`/calc`・`/privacy`・`/terms` を軽くするため） |
 | `app/(app)/layout.tsx` | アプリ画面（`/app`・`/history`・`/stats`・`/settings`。ルートグループなので URL は変わらない）の共通レイアウト。`ClerkProvider`（`localization` は `lib/clerkLocalization.ts`） / `ToastProvider` / `UserSync` / `SupabaseStatusBanner`、Clerk Frontend API への `preconnect`（`lib/clerkFrontendApi.ts`） |
 | `app/globals.css` | デザイントークン（`@theme`）と `num` などのユーティリティ（[design-system.md](./design-system.md)） |
 | `components/AppShell.tsx` / `components/AppNav.tsx` / `components/ScanActionMenu.tsx` / `components/ScanActions.tsx` | アプリ画面の枠。`AppFrame`（本文の器とナビ）/ `PageHeader`（見出し + 車両チップ）/ `HookErrorLine` / `ReadOnlyCaption`、ナビ（スマホは下部タブバー、PC は左サイドバー）、スキャンメニュー（撮影する / アルバムから選ぶ / 手動で入力）と、ホームがメニューに処理を登録する `ScanActionsProvider` / `RegisterScanActions`（[ナビゲーションとスキャンメニュー](#ナビゲーションとスキャンメニュー)） |

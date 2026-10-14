@@ -1,20 +1,13 @@
 import type { Metadata, Viewport } from "next";
-import { JetBrains_Mono, Noto_Sans_JP } from "next/font/google";
+import { JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 import { getSiteUrl } from "@/lib/siteUrl";
 import ServiceWorkerRegister from "@/components/ServiceWorkerRegister";
 import WebAnalytics from "@/components/WebAnalytics";
 
-// 本文は Noto Sans JP、数字（`num` ユーティリティ）は JetBrains Mono（docs/design-system.md）。
-// 日本語フォントは unicode-range で約 120 個に分割配信されるため preload しない。
-// weight を列挙せず可変フォントで読み込む。列挙しても配信されるのは同じ可変フォントのファイルで、
-// @font-face だけがウェイトの数だけ増えていた（描画をブロックする CSS が 283KB → 97KB、gzip 後 100KB → 34KB）。
-// 600（font-semibold）は使わない（静的 3 ウェイトのときは 700 で描画されていたため、font-bold を使う）
-const notoSansJp = Noto_Sans_JP({
-  variable: "--font-noto-sans-jp",
-  preload: false,
-  display: "swap",
-});
+// 本文は端末の日本語フォント（app/globals.css の --font-sans）、数字（`num` ユーティリティ）は JetBrains Mono（docs/design-system.md）。
+// 日本語の Web フォント（Noto Sans JP）は 1 ページで 30 個以上・約 700KB のファイルを読み込み、
+// スマホでの初期表示（FCP / LCP）を数秒遅らせていたためやめた（docs/design-system.md のタイポグラフィ）。
 
 // 可変フォントとして読み込む（weight を列挙すると Turbopack の next/font が URL を解決できないため。500 / 700 を使う）
 const jetBrainsMono = JetBrains_Mono({
@@ -84,8 +77,8 @@ export default function RootLayout({
   // ClerkProvider・ToastProvider・UserSync・SupabaseStatusBanner はアプリ画面のレイアウト（app/(app)/layout.tsx）に置く。
   // 公開ページ（ランディング・燃費計算・規約）で Clerk と Supabase の JS を読み込まないため
   return (
-    // フォントの CSS 変数は html に付ける（:root の --font-sans / --font-mono から参照するため）
-    <html lang="ja" className={`${notoSansJp.variable} ${jetBrainsMono.variable}`}>
+    // フォントの CSS 変数は html に付ける（:root の --font-mono から参照するため）
+    <html lang="ja" className={jetBrainsMono.variable}>
       <body className="antialiased bg-ground text-ink min-h-screen">
         <ServiceWorkerRegister />
         {children}

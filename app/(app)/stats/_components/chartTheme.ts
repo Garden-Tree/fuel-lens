@@ -24,7 +24,7 @@ export const CHART_COLORS = {
 export const CHART_TICK = {
   fill: CHART_COLORS.tick,
   fontSize: 10,
-  fontFamily: "var(--font-jetbrains-mono), var(--font-noto-sans-jp), monospace",
+  fontFamily: "var(--font-mono)",
 } as const;
 
 /** ツールチップの外枠（HTML なので Tailwind のクラスで書く） */

@@ -1,7 +1,7 @@
 "use client";
 
-import * as Sentry from "@sentry/nextjs";
 import { useEffect } from "react";
+import { captureClientException } from "@/lib/sentry/client";
 
 /**
  * ルートレイアウト自体が失敗したときのフォールバック。
@@ -17,7 +17,7 @@ export default function GlobalError({
 }) {
   useEffect(() => {
     console.error(error);
-    Sentry.captureException(error);
+    captureClientException(error);
   }, [error]);
 
   return (

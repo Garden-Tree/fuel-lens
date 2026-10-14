@@ -164,9 +164,10 @@ curl -i -X POST "https://<project-ref>.supabase.co/rest/v1/rpc/keepalive_ping" \
 
 | ファイル | 役割 |
 |---|---|
-| `instrumentation-client.ts` | ブラウザ側の初期化 |
+| `instrumentation-client.ts` | ブラウザ側の初期化。SDK は動的 import で後から読み込み（DSN が無いビルドでは読み込まない）、読み込み前の未処理例外は控えて初期化後に送る |
+| `lib/sentry/client.ts` / `lib/sentry/browserSdk.ts` | ブラウザでの遅延読み込み（`captureClientException` / `setClientSentryUser`）。クライアントのコードは `@sentry/nextjs` を静的に import しない（最初に読み込む JS から SDK を外すため） |
 | `instrumentation.ts` / `sentry.server.config.ts` / `sentry.edge.config.ts` | サーバー側の初期化と `onRequestError`（Server Component・Route Handler・`proxy.ts` の例外） |
-| `app/global-error.tsx` / `app/error.tsx` | レンダリングエラーを `Sentry.captureException` で送る（日本語 UI はそのまま） |
+| `app/global-error.tsx` / `app/error.tsx` | レンダリングエラーを `captureClientException` で送る（日本語 UI はそのまま） |
 | `lib/sentry/options.ts` / `lib/sentry/scrub.ts` | 共通オプションと、送信前に個人情報を落とす `beforeSend`（テストは `tests/sentryScrub.test.ts`） |
 | `next.config.ts` | `withSentryConfig`（ソースマップのアップロード。環境変数だけで制御） |
 
