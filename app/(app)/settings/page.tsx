@@ -17,13 +17,18 @@ export default function SettingsPage() {
   // データ概要・全車両 CSV は fetchAllRecords が車両ごとの距離の入力方式で連鎖計算する
   const {
     vehicles,
-    loading: vehiclesLoading,
+    loading: rawVehiclesLoading,
     error: loadError,
     readOnly,
+    previewing,
     vehicleActions: { addVehicles },
     recordActions: { fetchAllRecords, addRecords },
   } = useVehicleScope({ list: false });
-
+  // Clerk の読み込み前のキャッシュ表示（previewing）の間は、パネルを読み込み中として扱う
+  // （全件取得・書き出し・復元・取り込みはストアの準備後。各パネルは loading で操作を無効にする）。
+  // 「閲覧専用（クラウド接続待ち）」の案内は障害のときだけ出す
+  const vehiclesLoading = rawVehiclesLoading || previewing;
+  const outageReadOnly = readOnly && !previewing;
   // 復元・インポートの後に BackupPanel のデータ概要（記録数）を読み込み直す。
   // key で作り直すと処理中の復元がアンマウントされるため、refreshToken で再取得だけさせる
   const [dataVersion, setDataVersion] = useState(0);
@@ -41,7 +46,7 @@ export default function SettingsPage() {
         <PageHeader title="設定" />
 
         <HookErrorLine error={loadError} />
-        <ReadOnlyCaption show={readOnly} />
+        <ReadOnlyCaption show={outageReadOnly} />
 
         <BackupPanel
           refreshToken={dataVersion}
@@ -51,7 +56,7 @@ export default function SettingsPage() {
           vehicles={vehicles}
           loading={vehiclesLoading}
           isSignedIn={!!isSignedIn}
-          readOnly={readOnly}
+          readOnly={outageReadOnly}
           vehiclesError={loadError}
           fetchAllRecords={fetchAllRecords}
           addVehicles={addVehicles}
@@ -62,7 +67,7 @@ export default function SettingsPage() {
           vehicles={vehicles}
           loading={vehiclesLoading}
           isSignedIn={!!isSignedIn}
-          readOnly={readOnly}
+          readOnly={outageReadOnly}
           vehiclesError={loadError}
           fetchAllRecords={fetchAllRecords}
           addVehicles={addVehicles}
@@ -73,7 +78,7 @@ export default function SettingsPage() {
         />
 
         <AccountPanel
-          readOnly={readOnly}
+          readOnly={outageReadOnly}
           busy={busy}
           setBusy={setBusy}
           onLocalCleared={() => setDataVersion(v => v + 1)}

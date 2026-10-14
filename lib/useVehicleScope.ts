@@ -37,8 +37,16 @@ export type VehicleScope = {
   recordsLoading: boolean;
   /** 障害以外の読み込みエラー（車両 → 記録の順に最初のもの） */
   error: string | null;
-  /** ログイン中かつクラウド障害中。書き込みは日本語エラーを投げる */
+  /**
+   * 書き込みできない（ログイン中かつクラウド障害中、または previewing）。書き込みは日本語エラーを投げる。
+   * 書き込みのボタンを無効にするのに使う。「閲覧専用（クラウド接続待ち）」の注記は障害のときだけ出す（`readOnly && !previewing`）
+   */
   readOnly: boolean;
+  /**
+   * Clerk の読み込み前に、最後に同期した一覧（per-user キャッシュ）を表示している（ログイン中・キャッシュの持ち主が一致するときだけ）。
+   * ストアの準備前なので書き込みはできない。撮影・手動入力の可否は読み込み中と同じに扱う。最新の一覧が届いたら false になる
+   */
+  previewing: boolean;
   outage: VehiclesHook["outage"];
   /** `${selectedVehicleId}:${distanceMode}`。変わったら開いているフォームを閉じる（レンダー中の state 調整に使う） */
   scopeKey: string;
@@ -67,6 +75,11 @@ export function combineScopeLoading(vehiclesLoading: boolean, recordsLoading: bo
   return vehiclesLoading || (list && recordsLoading);
 }
 
+/** キャッシュを先に表示しているか。一覧を読まない（list: false）なら記録のほうは見ない */
+export function combinePreviewing(vehiclesPreviewing: boolean, recordsPreviewing: boolean, list: boolean): boolean {
+  return vehiclesPreviewing || (list && recordsPreviewing);
+}
+
 /**
  * useVehicles と useFuelRecords を組み合わせ、画面が共通で使う「選択中の車両とその記録」をまとめて返す。
  * - 記録は車両一覧の読み込み完了後に読み込む（`enabled: !vehiclesLoading`）。既定車両は vehicles[0]
@@ -87,7 +100,8 @@ export function useVehicleScope(options: UseVehicleScopeOptions = {}): VehicleSc
     loading: vehiclesLoading,
     error: vehiclesError,
     outage,
-    readOnly,
+    readOnly: outageReadOnly,
+    previewing: vehiclesPreviewing,
   } = useVehicles();
   const defaultVehicleId = vehicles[0]?.id;
   const {
@@ -100,11 +114,13 @@ export function useVehicleScope(options: UseVehicleScopeOptions = {}): VehicleSc
     refresh,
     loading: rawRecordsLoading,
     error: recordsError,
+    previewing: recordsPreviewing,
   } = useFuelRecords(selectedVehicleId, defaultVehicleId, { enabled: list && !vehiclesLoading, vehicles });
 
   const selectedVehicle = vehicles.find(v => v.id === selectedVehicleId) ?? null;
   const distanceMode = distanceModeOf(selectedVehicle);
   const recordsLoading = list && rawRecordsLoading;
+  const previewing = combinePreviewing(vehiclesPreviewing, recordsPreviewing, list);
 
   return {
     vehicles,
@@ -118,7 +134,8 @@ export function useVehicleScope(options: UseVehicleScopeOptions = {}): VehicleSc
     vehiclesLoading,
     recordsLoading,
     error: composeScopeError(vehiclesError, recordsError),
-    readOnly,
+    readOnly: outageReadOnly || previewing,
+    previewing,
     outage,
     scopeKey: scopeKeyOf(selectedVehicleId, distanceMode),
     vehicleActions: { addVehicle, addVehicles, updateVehicle, deleteVehicle },

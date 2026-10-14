@@ -36,12 +36,18 @@ function persistSelectedId(key: string, id: string): void {
  * 保存先（localStorage / Supabase）の違いは lib/data/ のストアが吸収し、このフックは状態・選択・通知だけを持つ。
  */
 export function useVehicles() {
-  const { isLoaded, isSignedIn, userId, stores } = useDataStores();
+  const { isLoaded, authLoaded, isSignedIn, userId, stores, cachePreview } = useDataStores();
   const [vehicles, setVehicles] = useState<Vehicle[]>([DEFAULT_VEHICLE]);
   // localStorage は SSR と初回描画で一致させるため、初期化子では読まず loadVehicles 内で読む
   const [selectedVehicleId, setSelectedVehicleIdState] = useState<string>(DEFAULT_VEHICLE.id);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // Clerk の読み込み前に、最後に同期した一覧（キャッシュ）を表示している（書き込みはできない）。
+  // 次の通常の読み込みは loading を立てずに置き換える（スケルトンに戻さない）
+  const [previewing, setPreviewing] = useState(false);
+  const previewingRef = useRef(false);
+  // 先行表示しているキャッシュの持ち主（Clerk の確定値と違えば、そのキャッシュは見せ続けない）
+  const previewUserRef = useRef<string | null>(null);
   const outage = useSupabaseOutage();
   const fetchCounter = useRef(0);
   // 実行中の一覧の読み込みの数（画面復帰時の再取得は、読み込みが実行中なら行わない）
@@ -52,13 +58,14 @@ export function useVehicles() {
   const readOnly = isSignedIn && outage != null;
 
   // ログアウト・ユーザー切り替え時に前のユーザーのキャッシュと障害フラグを消す
-  // （SupabaseStatusBanner からも呼ばれる。処理は冪等）
+  // （SupabaseStatusBanner からも呼ばれる。処理は冪等）。サーバーの初期認証状態では呼ばず、Clerk の確定値を待つ
   useEffect(() => {
-    if (!isLoaded) return;
+    if (!authLoaded) return;
     syncCacheOwner(isSignedIn ? userId : null);
-  }, [isLoaded, isSignedIn, userId]);
+  }, [authLoaded, isSignedIn, userId]);
 
-  const selectedKey = selectedVehicleStorageKey(isSignedIn ? userId : null);
+  // キャッシュを先に表示している間（Clerk の読み込み前）も、そのユーザーの選択中の車両を使う
+  const selectedKey = selectedVehicleStorageKey(isSignedIn ? userId : (cachePreview?.userId ?? null));
 
   const setSelectedVehicleId = useCallback((id: string) => {
     setSelectedVehicleIdState(id);
@@ -72,17 +79,54 @@ export function useVehicles() {
    * どちらも fetchCounter で新しい読み込みに無効化される。
    */
   const loadVehicles = useCallback(async (fetchId: number, { background = false }: { background?: boolean } = {}) => {
-    if (!isLoaded) return;
+    const cachedSelectedId = readSelectedId(selectedKey);
+    // キャッシュの先行表示をやめ、一覧を空に戻して読み込み中にする（別のユーザーのキャッシュ・消えたキャッシュを見せ続けない）
+    const dropPreview = () => {
+      if (!previewingRef.current) return;
+      previewingRef.current = false;
+      previewUserRef.current = null;
+      setPreviewing(false);
+      setVehicles([DEFAULT_VEHICLE]);
+      setSelectedVehicleIdState(DEFAULT_VEHICLE.id);
+      setLoading(true);
+    };
+    if (!isLoaded) {
+      if (background) return;
+      // サーバーがログイン中と言い、キャッシュの持ち主も同じユーザーなら、最後に同期した一覧を先に表示する（閲覧専用。選択は保存し直さない）
+      const cached = cachePreview?.vehicles();
+      if (!cachePreview || !cached || cached.length === 0) {
+        dropPreview();
+        return;
+      }
+      const list = cached.map(v => normalizeVehicle(v));
+      setVehicles(list);
+      setSelectedVehicleIdState(pickSelected(list, cachedSelectedId, DEFAULT_VEHICLE.id));
+      previewingRef.current = true;
+      previewUserRef.current = cachePreview.userId;
+      setPreviewing(true);
+      setLoading(false);
+      return;
+    }
+    // Clerk の確定したユーザーが先行表示の持ち主と違う（別のユーザー・未ログイン）なら、先にキャッシュを消す
+    if (previewingRef.current && previewUserRef.current !== (isSignedIn ? userId : null)) dropPreview();
     if (background && stores?.kind !== "cloud") return;
     if (!background) {
-      setLoading(true);
+      // キャッシュを表示中なら loading を立てずに置き換える（失敗時の扱いは通常の読み込みと同じ）
+      if (!previewingRef.current) setLoading(true);
       setError(null);
     }
     const isCurrent = () => fetchId === fetchCounter.current;
+    // 通常の読み込みが最新のまま終わったら loading とキャッシュの先行表示を解除する
+    const finish = () => {
+      if (!isCurrent()) return;
+      setLoading(false);
+      previewingRef.current = false;
+      previewUserRef.current = null;
+      setPreviewing(false);
+    };
     const force = forceBootstrap.current;
     forceBootstrap.current = false;
 
-    const cachedSelectedId = readSelectedId(selectedKey);
     // 保存値が一覧に無くフォールバックした場合は、実際の選択を保存し直す（古い ID を残さない）
     const applySelection = (list: Vehicle[]) => {
       const effective = pickSelected(list, cachedSelectedId, DEFAULT_VEHICLE.id);
@@ -99,7 +143,7 @@ export function useVehicles() {
         setVehicles(list);
         applySelection(list);
       } finally {
-        if (isCurrent()) setLoading(false);
+        finish();
       }
       return;
     }
@@ -138,9 +182,9 @@ export function useVehicles() {
     } finally {
       inFlightLoads.current--;
       // 裏の再取得が通常の読み込みを無効化していた場合も、ここで解除する（既に false なら何も変わらない）
-      if (isCurrent()) setLoading(false);
+      finish();
     }
-  }, [isLoaded, stores, selectedKey]);
+  }, [isLoaded, isSignedIn, userId, stores, selectedKey, cachePreview]);
 
   useEffect(() => {
     const currentFetchId = ++fetchCounter.current;
@@ -273,6 +317,11 @@ export function useVehicles() {
     outage,
     /** ログイン中かつ障害中。true のとき add/update/delete は日本語エラーを投げる。 */
     readOnly,
+    /**
+     * Clerk の読み込み前に、最後に同期した一覧（キャッシュ）を表示している。ストアの準備前なので書き込みはできない
+     * （呼べばストアが無いことの日本語エラー）。画面は閲覧専用として扱う（useVehicleScope の readOnly に含まれる）
+     */
+    previewing,
     setSelectedVehicleId,
     addVehicle,
     /** 車両をまとめて追加する（復元用。選択中の車両は変えない） */

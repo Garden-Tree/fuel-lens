@@ -1,7 +1,6 @@
 "use client";
 
 import { Suspense, useRef, useState, useSyncExternalStore } from "react";
-import { useAuth } from "@clerk/nextjs";
 import type { RecordInput } from "@/lib/types";
 import ScanReviewSheet from "@/components/ScanReviewSheet";
 import VehicleSelector from "@/components/VehicleSelector";
@@ -9,6 +8,7 @@ import { useToast } from "@/components/Toast";
 import { AppFrame, HookErrorLine, PageHeader, ReadOnlyCaption } from "@/components/AppShell";
 import { Section } from "@/components/ui";
 import { useVehicleScope } from "@/lib/useVehicleScope";
+import { useResolvedAuth } from "@/lib/data/initialAuthContext";
 import { useRecordForm } from "@/lib/useRecordForm";
 import { useRecordEditing } from "@/lib/useRecordEditing";
 import { useScanPipeline } from "@/lib/scan/useScanPipeline";
@@ -50,12 +50,14 @@ const subscribeNothing = () => () => {};
  */
 export default function Home() {
   const { toast, confirm } = useToast();
-  // AIスキャンはログイン必須（/api/analyze が 401 を返す）。未ログイン時は撮影・アルバムを無効にして案内する
-  const { isLoaded: authLoaded, isSignedIn } = useAuth();
+  // AIスキャンはログイン必須（/api/analyze が 401 を返す）。未ログイン時は撮影・アルバムを無効にして案内する。
+  // サーバーが未ログインと言っていれば Clerk の読み込みを待たずに確定する（lib/data/initialAuth.ts）
+  const { isLoaded: authLoaded, isSignedIn } = useResolvedAuth();
   // 選択中の車両とその記録。未分類（vehicle_id=null）の記録は既定（先頭）車両を選択中のときだけ含まれる。
-  // loading は車両・記録のどちらかの読み込み中（スキャン中は scan.loading）
+  // loading は車両・記録のどちらかの読み込み中（スキャン中は scan.loading）。
+  // previewing はログイン中に Clerk の読み込み前のキャッシュを表示している間（表示はするが、書き込み・撮影は読み込み中と同じに扱う）
   const scope = useVehicleScope();
-  const { vehicles, selectedVehicleId, selectedVehicle, distanceMode, records, loading: isLoading, readOnly } = scope;
+  const { vehicles, selectedVehicleId, selectedVehicle, distanceMode, records, loading: isLoading, readOnly, previewing } = scope;
 
   const scan = useScanPipeline({ isSignedIn, toast, confirm });
   // 他の画面・ショートカットから撮影 / アルバムで来たときの案内。画像を選んだ・スキャンが始まった・閉じたら消す
@@ -90,7 +92,7 @@ export default function Home() {
   // 撮影・アルバム・手動入力の可否（スキャンメニュー・`?action=` で共通）
   const readiness = shortcutReadinessOf({
     mounted,
-    dataLoading: isLoading,
+    dataLoading: isLoading || previewing,
     scanning: scan.loading,
     reviewing: scan.scanResult !== null,
     readOnly,
@@ -219,7 +221,7 @@ export default function Home() {
 
         {/* データ取得エラー / 閲覧専用の表示 */}
         <HookErrorLine error={scope.error} />
-        <ReadOnlyCaption show={readOnly} />
+        <ReadOnlyCaption show={readOnly && !previewing} />
 
         {/* 他の画面・ショートカットから撮影 / アルバムで来たときの案内（ボタンのタップの中でファイル選択を開く） */}
         {showScanPrompt && (

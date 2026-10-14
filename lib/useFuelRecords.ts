@@ -76,7 +76,7 @@ export function useFuelRecords(
   options: UseFuelRecordsOptions = {}
 ) {
   const { enabled = true, vehicles } = options;
-  const { isLoaded, isSignedIn, stores } = useDataStores();
+  const { isLoaded, isSignedIn, userId, stores, cachePreview } = useDataStores();
   /**
    * 保存値のままの記録（新しい列は既定値で補完済み）。画面へは連鎖計算を適用した `records` を返す。
    * 連鎖計算を描画時に行うので、追加・更新・削除で隣の記録の燃費が変わっても、車両の方式を切り替えても即座に反映される。
@@ -84,6 +84,12 @@ export function useFuelRecords(
   const [rawRecords, setRecords] = useState<FuelRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // Clerk の読み込み前に、最後に同期した一覧（キャッシュ）を表示している範囲（書き込みはできない）。
+  // 同じ範囲の次の通常の読み込みは loading を立てずに置き換える（スケルトンに戻さない）
+  const [previewing, setPreviewing] = useState(false);
+  const previewScopeRef = useRef<string | null>(null);
+  // 先行表示しているキャッシュの持ち主（Clerk の確定値と違えば、そのキャッシュは見せ続けない）
+  const previewUserRef = useRef<string | null>(null);
   const outage = useSupabaseOutage();
   const fetchCounter = useRef(0);
   // 実行中の一覧の読み込みの数。書き込みの完了時に読み込みが実行中なら、その応答は書き込み前の一覧の可能性があるので読み直す
@@ -123,8 +129,43 @@ export function useFuelRecords(
    * どちらも fetchCounter で新しい読み込みに無効化される。
    */
   const loadData = useCallback(async (fetchId: number, { background = false }: { background?: boolean } = {}) => {
-    if (!isLoaded) return;
+    const scopeKey = `${scope.vehicleId ?? ""}:${scope.includeUnclassified}`;
+    // キャッシュの先行表示をやめ、一覧を空に戻して読み込み中にする
+    const dropPreview = () => {
+      if (previewScopeRef.current === null) return;
+      previewScopeRef.current = null;
+      previewUserRef.current = null;
+      setPreviewing(false);
+      setRecords([]);
+      setLoading(true);
+    };
+    if (!isLoaded) {
+      // サーバーがログイン中と言い、キャッシュの持ち主も同じユーザーなら、最後に同期した一覧を先に表示する（閲覧専用）。
+      // 車両一覧（キャッシュを含む）が決まってから（enabled）、UUID の車両だけ
+      if (background) return;
+      const cached = cachePreview && enabled && isUuid(scope.vehicleId) ? cachePreview.records(scope) : null;
+      if (!cachePreview || !cached) {
+        // 別の範囲（車両）のキャッシュを表示していたら、それを見せ続けない
+        dropPreview();
+        return;
+      }
+      setRecords(sortRecordsByDateDesc(normalizeAll(cached)));
+      setError(null);
+      previewScopeRef.current = scopeKey;
+      previewUserRef.current = cachePreview.userId;
+      setPreviewing(true);
+      setLoading(false);
+      return;
+    }
     const isCurrent = () => fetchId === fetchCounter.current;
+    // 読み込みが最新のまま終わったら loading とキャッシュの先行表示を解除する
+    const finish = () => {
+      if (!isCurrent()) return;
+      setLoading(false);
+      previewScopeRef.current = null;
+      previewUserRef.current = null;
+      setPreviewing(false);
+    };
     if (background) {
       if (stores?.kind !== "cloud" || !enabled || !isUuid(scope.vehicleId)) return;
       inFlightLoads.current++;
@@ -143,11 +184,15 @@ export function useFuelRecords(
         inFlightLoads.current--;
         inFlightBackground.current--;
         // この読み込みが通常の読み込みを無効化していた場合に備えて解除する（既に false なら何も変わらない）
-        if (isCurrent()) setLoading(false);
+        finish();
       }
       return;
     }
-    setLoading(true);
+    // Clerk の確定したユーザーが先行表示の持ち主と違う（別のユーザー・未ログイン）なら、先にキャッシュを消す
+    if (previewScopeRef.current !== null && previewUserRef.current !== (isSignedIn ? userId : null)) dropPreview();
+    // 同じ範囲のキャッシュを表示中なら loading を立てずに置き換える（失敗時の扱いは通常の読み込みと同じ）。
+    // 範囲が変わっていれば（車両一覧の更新で選択が変わったなど）別の車両の記録を見せ続けないよう、通常どおりスケルトンにする
+    if (previewScopeRef.current !== scopeKey) setLoading(true);
     setError(null);
     const force = forceBootstrap.current;
     forceBootstrap.current = false;
@@ -161,7 +206,7 @@ export function useFuelRecords(
         setRecords(sortRecordsByDateDesc(list));
       } finally {
         inFlightLoads.current--;
-        if (isCurrent()) setLoading(false);
+        finish();
       }
       return;
     }
@@ -173,7 +218,7 @@ export function useFuelRecords(
     // この状態ではクエリを発行せず、空のまま loading を解除する。
     if (!isUuid(scope.vehicleId)) {
       setRecords([]);
-      setLoading(false);
+      finish();
       return;
     }
 
@@ -201,9 +246,9 @@ export function useFuelRecords(
       setRecords(sortRecordsByDateDesc(normalizeAll(stores.records.cached(scope) ?? [])));
     } finally {
       inFlightLoads.current--;
-      if (isCurrent()) setLoading(false);
+      finish();
     }
-  }, [isLoaded, stores, scope, enabled]);
+  }, [isLoaded, isSignedIn, userId, stores, scope, enabled, cachePreview]);
 
   // 最新の描画の loadData（書き込みの完了後に読み直すときに、書き込みを始めた描画の古い scope で読まないように）
   const loadDataRef = useRef(loadData);
@@ -352,6 +397,8 @@ export function useFuelRecords(
     outage,
     /** ログイン中かつ障害中。true のとき add/update/delete は日本語エラーを投げる。 */
     readOnly,
+    /** Clerk の読み込み前に、最後に同期した一覧（キャッシュ）を表示している（書き込みはできない。useVehicles の previewing と同じ） */
+    previewing,
     addRecord,
     updateRecord,
     deleteRecord,
