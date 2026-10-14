@@ -2,8 +2,8 @@ import { describe, expect, it, vi } from "vitest";
 import { screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useState } from "react";
-import RecordRow from "@/app/history/_components/RecordRow";
-import RecordDetail, { type RecordDetailProps } from "@/app/history/_components/RecordDetail";
+import RecordRow from "@/app/(app)/history/_components/RecordRow";
+import RecordDetail, { type RecordDetailProps } from "@/app/(app)/history/_components/RecordDetail";
 import type { DistanceMode, FuelRecord } from "@/lib/types";
 import { renderWithProviders } from "../setup/render";
 

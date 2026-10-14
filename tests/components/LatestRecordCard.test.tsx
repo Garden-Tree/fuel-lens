@@ -1,10 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 import { screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import LatestRecordCard, { type LatestRecordCardProps } from "@/app/app/_components/LatestRecordCard";
-import ManualEntryCard from "@/app/app/_components/ManualEntryCard";
-import MonthSummarySection from "@/app/app/_components/MonthSummarySection";
-import RecentRecordsSection from "@/app/app/_components/RecentRecordsSection";
+import LatestRecordCard, { type LatestRecordCardProps } from "@/app/(app)/app/_components/LatestRecordCard";
+import ManualEntryCard from "@/app/(app)/app/_components/ManualEntryCard";
+import MonthSummarySection from "@/app/(app)/app/_components/MonthSummarySection";
+import RecentRecordsSection from "@/app/(app)/app/_components/RecentRecordsSection";
 import { useRecordForm } from "@/lib/useRecordForm";
 import { localDateString } from "@/lib/dates";
 import type { FuelRecord } from "@/lib/types";

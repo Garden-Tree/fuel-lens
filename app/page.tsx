@@ -71,7 +71,7 @@ export default function LandingPage() {
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-12 items-center">
             {/* 左側テキストコンテンツ */}
             <div className="lg:col-span-6 text-center lg:text-left space-y-6">
-              <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full border border-border bg-surface text-xs font-semibold text-accent">
+              <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full border border-border bg-surface text-xs font-bold text-accent">
                 <Sparkles className="w-3.5 h-3.5" />
                 <span>Google Gemini AI が1枚の写真を自動解析</span>
               </div>
@@ -95,7 +95,7 @@ export default function LandingPage() {
                 </Link>
                 <a
                   href="#demo"
-                  className="w-full sm:w-auto text-center bg-surface hover:bg-surface-2 text-ink font-semibold px-6 py-4 rounded-2xl border border-border transition active:scale-95 text-base focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                  className="w-full sm:w-auto text-center bg-surface hover:bg-surface-2 text-ink font-bold px-6 py-4 rounded-2xl border border-border transition active:scale-95 text-base focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
                 >
                   機能を体験する
                 </a>

@@ -2,8 +2,8 @@ import { describe, expect, it, vi } from "vitest";
 import { createRef } from "react";
 import { screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import ScanPanel, { type ScanPanelHandle, type ScanPanelProps } from "@/app/app/_components/ScanPanel";
-import ScanEntryList, { type ScanEntryListProps } from "@/app/app/_components/ScanEntryList";
+import ScanPanel, { type ScanPanelHandle, type ScanPanelProps } from "@/app/(app)/app/_components/ScanPanel";
+import ScanEntryList, { type ScanEntryListProps } from "@/app/(app)/app/_components/ScanEntryList";
 import { renderWithProviders } from "../setup/render";
 
 const PREVIEW = "data:image/jpeg;base64,AAAA";

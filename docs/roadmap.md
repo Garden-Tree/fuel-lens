@@ -31,14 +31,14 @@
 
 | 候補 | 利用者にとっての価値 | 規模 | 主な変更ファイル |
 |---|---|---|---|
-| 旧レシートの一括アップロード | 溜まったレシート写真をまとめて登録できる。レートリミット（1 分 5 回）に合わせて順に解析し、確認シートを順番に表示する | M | `lib/scan/useScanPipeline.ts`、`app/app/_components/ScanPanel.tsx`、`components/ScanReviewSheet.tsx`（キュー対応） |
+| 旧レシートの一括アップロード | 溜まったレシート写真をまとめて登録できる。レートリミット（1 分 5 回）に合わせて順に解析し、確認シートを順番に表示する | M | `lib/scan/useScanPipeline.ts`、`app/(app)/app/_components/ScanPanel.tsx`、`components/ScanReviewSheet.tsx`（キュー対応） |
 
 ### 統計と通知
 
 | 候補 | 利用者にとっての価値 | 規模 | 主な変更ファイル |
 |---|---|---|---|
-| 車両比較と月次コストの積み上げ | 複数車両の燃費・支出を並べて比較し、月次コストを車両別に積み上げて表示する | M | `app/stats/page.tsx`、`lib/stats/`（`buildStatsModel`）、`lib/useFuelRecords.ts`（全車両の取得は `fetchAllRecords` を利用できる） |
-| 月次予算 | 月ごとの燃料費の予算に対する進み具合が分かる | S | `lib/stats/`（`buildMonthlyCostSeries` を利用）、`app/stats/page.tsx`、予算の保存先 |
+| 車両比較と月次コストの積み上げ | 複数車両の燃費・支出を並べて比較し、月次コストを車両別に積み上げて表示する | M | `app/(app)/stats/page.tsx`、`lib/stats/`（`buildStatsModel`）、`lib/useFuelRecords.ts`（全車両の取得は `fetchAllRecords` を利用できる） |
+| 月次予算 | 月ごとの燃料費の予算に対する進み具合が分かる | S | `lib/stats/`（`buildMonthlyCostSeries` を利用）、`app/(app)/stats/page.tsx`、予算の保存先 |
 | 整備リマインダー | オイル交換などの時期を距離・日付で知らせる | M | 新規テーブルとマイグレーション（RLS ポリシーを追加したら [supabase/README.md](../supabase/README.md#2-rls-が有効か確認する) の監査対象一覧も更新）、新規画面 |
 
 ### 基盤・運用
@@ -63,7 +63,7 @@
 - 燃費は連鎖計算（[architecture.md 10 章](./architecture.md#10-給油の連鎖計算fill-chain)）で読み取り時に導出します。部分給油の記録は燃費が null で、次の満タン給油にまとめて計算されます。
   オドメーターモードでは、先頭の記録、前回の記録にオドメーターが無い記録、`missed_previous` の記録は区間距離が分からず燃費も null になります（トリップ → オドメーターに切り替えても既存の記録は書き換えないので、切り替え直後は `odometer` の無い記録が該当します）。
   逆にオドメーター → トリップに切り替えるときは、導出した区間距離を `total_distance` に書き戻します（[design-fill-chain.md 4 章](./design-fill-chain.md#車両管理モーダル)）。書き戻した値は保存時点のもので、後から前後に記録を足しても更新されません。区間が出ない記録の保存値は残します。
-- 画面の配色はダーク固定で、ライトテーマや OS の設定への追従はありません。recharts の色は `app/stats/_components/chartTheme.ts` にトークンと同じ値を複製しているため、トークンを変えたときは手で合わせます（[design-system.md](./design-system.md#recharts-の色)）。
+- 画面の配色はダーク固定で、ライトテーマや OS の設定への追従はありません。recharts の色は `app/(app)/stats/_components/chartTheme.ts` にトークンと同じ値を複製しているため、トークンを変えたときは手で合わせます（[design-system.md](./design-system.md#recharts-の色)）。
 - 履歴・統計・履歴画面の CSV 出力は選択中の車両単位です（全車両の CSV 出力は設定画面にあります。全車両を横断した集計はありません）。
 - 取り込みは FuelLens の JSON バックアップの復元と、Fuelio / FuelLens の CSV のインポートです（どちらも追記専用）。Fuelio の給油以外の記録（`## Costs` など）、マイル・ガロン単位の CSV、その他のアプリの CSV には対応していません。
 - Service Worker は Web Share Target の受け取り専用でキャッシュを持たず、オフラインでは動作しません。Web Share Target は Android Chrome のみ（iOS は非対応）。

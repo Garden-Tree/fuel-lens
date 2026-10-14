@@ -27,7 +27,7 @@ vi.mock("@/lib/useVehicleScope", () => scopeMock);
 const storesMock = vi.hoisted(() => ({ useDataStores: vi.fn() }));
 vi.mock("@/lib/data/useDataStores", () => storesMock);
 
-import SettingsPage from "@/app/settings/page";
+import SettingsPage from "@/app/(app)/settings/page";
 
 const CONFIRM_LABEL = "確認のため「削除」と入力してください";
 

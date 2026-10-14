@@ -7,7 +7,7 @@ import { renderWithProviders } from "../setup/render";
 const scopeMock = vi.hoisted(() => ({ useVehicleScope: vi.fn() }));
 vi.mock("@/lib/useVehicleScope", () => scopeMock);
 
-import SettingsPage from "@/app/settings/page";
+import SettingsPage from "@/app/(app)/settings/page";
 
 const vehicle = { id: "v1", name: "マイカー" } as Vehicle;
 

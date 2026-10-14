@@ -84,7 +84,7 @@ export default function DemoSimulator() {
               <div className="absolute bottom-2 left-2 h-4 w-4 border-b-2 border-l-2 border-accent" />
               <div className="absolute bottom-2 right-2 h-4 w-4 border-b-2 border-r-2 border-accent" />
 
-              <div className="absolute left-1/2 top-3 flex -translate-x-1/2 items-center gap-1.5 whitespace-nowrap rounded-full bg-accent-strong px-3 py-1 text-[11px] font-bold text-accent sm:text-xs">
+              <div className="absolute left-1/2 top-3 flex -translate-x-1/2 items-center gap-1.5 whitespace-nowrap rounded-full bg-accent-strong px-3 py-1 text-[11px] font-bold text-ink sm:text-xs">
                 <Camera className="h-3.5 w-3.5" aria-hidden="true" />
                 <span>レシート＆トリップメーター同時撮影写真 (1枚)</span>
               </div>
