@@ -55,6 +55,21 @@ export function writeLocalJson(key: string, value: unknown, storage: Storage | n
   }
 }
 
+/**
+ * 未ログイン時のデータ（記録と車両）をこの端末から削除する（設定画面の「この端末のデータをすべて削除」）。
+ * 削除後の車両一覧は既定車両だけになる。SSR 中は何もしない。削除できなければ日本語の Error を投げる。
+ */
+export function clearLocalData(storage: Storage | null = browserStorage()): void {
+  if (!storage) return;
+  try {
+    storage.removeItem(LOCAL_RECORDS_KEY);
+    storage.removeItem(LOCAL_VEHICLES_KEY);
+  } catch (e) {
+    console.error("ローカルデータの削除失敗:", e);
+    throw new Error("この端末のデータを削除できませんでした。ブラウザの設定から保存データを削除してください。", { cause: e });
+  }
+}
+
 function parseArray(raw: string | null): unknown[] {
   if (!raw) return [];
   try {

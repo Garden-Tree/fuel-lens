@@ -47,7 +47,7 @@ FuelLens の画面は「計器盤のようなダーク UI ＋ グループリス
 
 | 部品 | 用途・主な props |
 |---|---|
-| `Section` | 小見出し（`title`。既定で h2、`headingLevel` で 3 / `null`）と右側の `action`（「すべて見る」など）＋中身 |
+| `Section` | 小見出し（`title`。既定で h2、`headingLevel` で 3 / `null`）と右側の `action`（「すべて見る」など）＋中身。`id` でページ内リンクの飛び先にできる |
 | `GroupedList` | 角丸 16px・`bg-surface`・`overflow-hidden` の面。直下の行の間に区切り線を引く。`as="ul"` / `"ol"` のときは子を `<li>` で包む |
 | `ListRow` | 行（最小 46px）。`href` なら Link、`onClick` なら button、無ければ div。`leading` / `title` / `subtitle` / `trailing` / `showChevron` / `disabled` / `aria-label` |
 | `ValueRow` | 左にラベル、右に値（`num` 太字 16px）。`unit`（13px `text-sub` の単位・補足。要素も可）と `tone`（`default` / `money` / `accent` / `up` / `cost-up` / `warn` / `sub`） |
@@ -65,7 +65,7 @@ FuelLens の画面は「計器盤のようなダーク UI ＋ グループリス
 - **`GroupedList` は `overflow-hidden`** なので、行の中でメニュー（`Menu`）やポップオーバーを開くと切れます。そういう行を並べる一覧は、同じ見た目の自前の `<ul className="rounded-2xl bg-surface divide-y divide-line">` にします（履歴の一覧がこれ）。
 - **面の中の `SegmentedControl`**: 既定の背景は `bg-surface` なので、`bg-surface` のグループリストの中に置くと溶け込みます。その場合は `className="bg-ground!"` で背景を地の色にします（車両管理の「距離の入力方式」）。画面の地（`ground`）の上に直接置くなら既定のままで使えます（統計の期間フィルタ）。
 - 入力フォーム・車両管理・設定のフォームは、グループリストの行と同じ幅・余白（左右 16px・最小の高さ 46〜56px）で組み、スイッチは `role="switch"` の自前の部品（`EditFuelRecordForm.tsx`）、セグメントは `SegmentedControl` を使います。
-- 設定画面（`components/settingsUi.ts`）は、グループリストの下の補足（`captionClass`）・注意書き（`noticeClass`、`text-warn`）・行以外の領域の余白（`panelClass`）・ボタン（`primaryButtonClass` / `secondaryButtonClass`）・入力（`inputClass`）のクラスを共有します。
+- 設定画面（`components/settingsUi.ts`）は、グループリストの下の補足（`captionClass`）・注意書き（`noticeClass`、`text-warn`）・行以外の領域の余白（`panelClass`）・ボタン（`primaryButtonClass` / `secondaryButtonClass` / `dangerButtonClass`）・入力（`inputClass`）のクラスを共有します。
 
 ### recharts の色
 
@@ -114,7 +114,7 @@ recharts の SVG 属性（`stroke`・`fill` など）には Tailwind のクラ�
 
 ### 設定（/settings）
 
-- 幅の狭い 1 カラム（`AppFrame width="narrow"`、最大 768px）。スマホ・PC とも同じ並びで、「データ」「バックアップ」「復元」「インポート」の `Section` それぞれにグループリスト（`ListRow` でファイルを選ぶ・書き出す）を置く。復元・取り込みのプレビューや確認は行の下の領域（`panelClass`）に開く。
+- 幅の狭い 1 カラム（`AppFrame width="narrow"`、最大 768px）。スマホ・PC とも同じ並びで、「データ」「バックアップ」「復元」「インポート」「アカウント」の `Section` それぞれにグループリスト（`ListRow` でファイルを選ぶ・書き出す）を置く。復元・取り込みのプレビューや確認、アカウント削除の「削除」の入力は行の下の領域（`panelClass`）に開く。破壊的な行は文字とアイコンを `red-400`、最後のボタンは `dangerButtonClass`（`red-600`）にする。
 
 ## ルール
 

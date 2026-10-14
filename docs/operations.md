@@ -157,6 +157,56 @@ curl -i -X POST "https://<project-ref>.supabase.co/rest/v1/rpc/keepalive_ping" \
   上限を超えても課金されず、3 日の猶予後に収集が止まります（出典: https://vercel.com/docs/analytics/limits-and-pricing ）。
 - CSP ヘッダーは設定していないため、追加の許可は不要です。`proxy.ts` の matcher は `_vercel` を除外しています。
 
+## 4-3. Sentry（エラー監視）
+
+`@sentry/nextjs`（11.7.0）で、ブラウザ・サーバーの未処理エラーを Sentry に集めます。**エラーだけ**を送り（`tracesSampleRate: 0`、Session Replay なし、個人情報の自動収集オフ。v11 では `sendDefaultPii` の代わりに `dataCollection` を使う）、無料枠の消費を抑えています。
+
+| ファイル | 役割 |
+|---|---|
+| `instrumentation-client.ts` | ブラウザ側の初期化 |
+| `instrumentation.ts` / `sentry.server.config.ts` / `sentry.edge.config.ts` | サーバー側の初期化と `onRequestError`（Server Component・Route Handler・`proxy.ts` の例外） |
+| `app/global-error.tsx` / `app/error.tsx` | レンダリングエラーを `Sentry.captureException` で送る（日本語 UI はそのまま） |
+| `lib/sentry/options.ts` / `lib/sentry/scrub.ts` | 共通オプションと、送信前に個人情報を落とす `beforeSend`（テストは `tests/sentryScrub.test.ts`） |
+| `next.config.ts` | `withSentryConfig`（ソースマップのアップロード。環境変数だけで制御） |
+
+- **DSN が未設定なら完全に無効**です（送信せず、コンソールにも何も出さない）。ローカル・CI・Preview は DSN を入れなければ従来どおりです。CI は Sentry 関連の環境変数なしでビルドできます。
+- **環境名とリリース**: `VERCEL_ENV`（production / preview / development）と `VERCEL_GIT_COMMIT_SHA` を使います（`next.config.ts` がクライアントにも埋め込みます）。Vercel 以外では環境名は `NODE_ENV` になります。
+- **送らない情報**: URL のクエリ文字列とハッシュ（共有トークン `?action=shared&t=…`、`#record-<id>`）、Cookie、`/api/analyze` のリクエスト本文（画像）とヘッダー、メールアドレス・IP・ユーザー名。ユーザーは Clerk の ID だけを紐づけます（`components/UserSync.tsx`）。
+- **`/api/analyze` の相関**: 想定外の例外（`INTERNAL_ERROR`）は `requestId` タグ付きで送られます。画面に出るエラーの `requestId` で Sentry の Issue 検索（`requestId:xxxxxxxx`）や Vercel のログ（`[analyze xxxxxxxx]`）と突き合わせられます。
+
+### 4-3-1. Sentry プロジェクトの作り方
+
+1. https://sentry.io でアカウントを作り、**Create Project** → プラットフォームは **Next.js** を選ぶ。ウィザード（`npx @sentry/wizard`）は**実行しない**（設定済みのため）。
+2. **DSN**: プロジェクトの **Settings → Client Keys (DSN)** にある `https://<key>@o<orgId>.ingest.sentry.io/<projectId>`。
+3. **組織スラッグ / プロジェクトスラッグ**: **Settings → General Settings** に表示されるスラッグ（URL にも含まれる）。
+4. **認証トークン**（ソースマップ用、任意）: **Settings → Developer Settings → Organization Tokens**（または **Auth Tokens**）で作成する。
+
+### 4-3-2. Vercel の環境変数
+
+**Settings → Environment Variables** に追加して再デプロイします。
+
+| Name | Production | Preview | 備考 |
+|---|---|---|---|
+| `NEXT_PUBLIC_SENTRY_DSN` | **必須（これだけで有効化）** | 任意 | Preview にも入れると Preview のエラーも届く（Issue は `environment: preview` で分かれる） |
+| `SENTRY_ORG` | 任意 | 任意 | ソースマップ用 |
+| `SENTRY_PROJECT` | 任意 | 任意 | ソースマップ用 |
+| `SENTRY_AUTH_TOKEN` | 任意 | 任意 | ソースマップ用。ビルド時のみ使う秘密なので `NEXT_PUBLIC_` を付けない。3 つ揃うとスタックトレースが元のソースで読める |
+
+`NEXT_PUBLIC_` の値はビルド時にブラウザ向けバンドルへ埋め込まれるため、DSN を変えたら再デプロイが必要です。
+
+### 4-3-3. 無料枠（Developer プラン）
+
+月 5,000 エラー、ユーザー 1 人、データ保持 30 日、プロジェクト数は無制限（出典: https://sentry.io/pricing/ ）。同じ原因のエラーが大量に出ると枠を使い切るため、Issue が溜まっていないか時々確認してください。
+
+### 4-3-4. 動作確認
+
+1. DSN を入れてデプロイする（ローカルなら `.env.local` に `NEXT_PUBLIC_SENTRY_DSN` を入れて `npm run build && npm start`）。
+2. エラーを起こす。ブラウザのコンソールから投げたエラーは Sentry に拾われないため、一時的に任意のコンポーネントの描画中に `throw new Error("sentry test")` を入れる。`app/error.tsx` の「問題が発生しました」画面が出る。
+3. Sentry の **Issues** に `sentry test` が現れ、環境が `production`（ローカルは `production` ビルドなら `production`、`npm run dev` なら `development`）、URL にクエリやハッシュが付いていないことを確認する。確認後、テスト用のコードは必ず戻す。
+4. DSN が空のビルドでは、同じ操作をしても `ingest.sentry.io` への通信が発生しない。
+
+広告ブロッカーがブラウザからの送信を止めることがあります（ブラウザ側のエラーが一部欠ける）。必要になったら `tunnelRoute` を検討しますが、`proxy.ts` の matcher からの除外とサーバーレス関数の実行増を伴うため、現状は使っていません。
+
 ## 5. トラブルシューティング
 
 | 症状 | 原因と対処 |

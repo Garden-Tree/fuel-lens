@@ -16,15 +16,21 @@ export type SectionProps = {
   action?: ReactNode;
   /** 見出し要素のレベル。既定 2（モーダルなど見出しの下に置くときは 4）。null で見出し要素にしない（div） */
   headingLevel?: 2 | 3 | 4 | null;
+  /** `<section>` の id（ページ内リンク `#id` の飛び先にするとき） */
+  id?: string;
   className?: string;
   children: ReactNode;
 };
 
-export function Section({ title, action, headingLevel = 2, className = "", children }: SectionProps) {
+export function Section({ title, action, headingLevel = 2, id: sectionId, className = "", children }: SectionProps) {
   const id = useId();
   const Heading = headingLevel === null ? "div" : (`h${headingLevel}` as const);
   return (
-    <section aria-labelledby={headingLevel === null ? undefined : id} className={`flex flex-col gap-1.5 ${className}`}>
+    <section
+      id={sectionId}
+      aria-labelledby={headingLevel === null ? undefined : id}
+      className={`flex scroll-mt-4 flex-col gap-1.5 ${className}`}
+    >
       <div className="flex min-h-6 items-center justify-between gap-3 px-4">
         <Heading id={headingLevel === null ? undefined : id} className="text-[13px] font-medium text-sub">
           {title}

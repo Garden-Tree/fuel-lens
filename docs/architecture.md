@@ -11,10 +11,11 @@ FuelLens の構成、データの流れ、主要なモジュールの役割を�
 | `app/app/page.tsx`、`app/app/_components/` | ホーム画面（`/app`）。燃費メーターのヒーロー、今月の集計、最近の記録、記録の入口（撮影 / アルバム / 手動）。スキャン（画像の選択・ドロップ・貼り付け）と手動入力・最新記録の編集もここ。ページはフックと部品を組み合わせるだけで、部品は `_components/`（`EfficiencyGauge` / `LatestRecordCard` / `MonthSummarySection` / `RecentRecordsSection` / `ScanEntryList` / `WelcomeCard` / `DropZoneRow` / `ManualEntryCard` / `ScanPanel` / `ScanReadyPrompt` / `RecordCardSkeleton` / `ShortcutActionHandler`）に分割。表示用の純粋関数は `lib/home/`（[メイン画面の構成](#メイン画面の構成app)） |
 | `app/history/page.tsx`、`app/history/_components/` | 履歴一覧。年・月・並び順のチップ（`HistoryToolbar`）と CSV 出力、月ごとの見出し付きの一覧（`RecordRow`）、行を開いて明細・編集・別車両への移動・削除（`RecordDetail`）。`/history#record-<id>` でその記録を開く。絞り込み・月ごとのまとめは純粋関数 `lib/history/`（[履歴画面の構成](#履歴画面の構成history)） |
 | `app/stats/page.tsx`、`app/stats/_components/` | 統計の平均燃費ヒーロー（推移グラフ付き）・費用・月ごとの給油代・単価の推移（recharts）。ページは車両・期間の状態と `buildStatsModel` の結果を部品に渡すだけで、部品は `_components/` に分割（recharts 用の色は `chartTheme.ts`）。期間フィルタ（3 ヶ月 / 6 ヶ月 / 1 年 / 全期間）。スタンド比較の部品は残してあるが画面には出さない（[11 章](#11-統計)） |
-| `app/settings/page.tsx` | 設定画面（`/settings`）。見出し付きのグループリストで、データ概要・バックアップ・復元・インポート（[8 章](#8-バックアップと復元)） |
+| `app/settings/page.tsx` | 設定画面（`/settings`）。見出し付きのグループリストで、データ概要・バックアップ・復元・インポート（[8 章](#8-バックアップと復元)）・アカウント（[アカウント削除](#アカウント削除)） |
 | `app/privacy/page.tsx`、`app/terms/page.tsx`、`components/LegalPage.tsx` | プライバシーポリシー（`/privacy`）と利用規約（`/terms`）。ログイン不要の静的ページ（Google OAuth 同意画面用）で、共通レイアウトは `LegalPage`（タブバーなし）。ランディングのフッターと設定画面の「このアプリについて」からリンク |
 | `app/manifest.ts` | PWA の Web App Manifest（`/manifest.webmanifest`。[9 章](#9-pwa)） |
 | `app/api/analyze/route.ts` | Gemini で画像を解析する API（[api-analyze.md](./api-analyze.md)） |
+| `app/api/account/route.ts`、`lib/server/account/handler.ts` | アカウント削除の API（`DELETE /api/account`。Clerk のユーザーを削除する。[api-account.md](./api-account.md)） |
 | `app/api/keepalive/route.ts` | Supabase 自動停止対策のエンドポイント（[operations.md](./operations.md#3-supabase-の自動停止と-keepalive)） |
 | `app/layout.tsx` | `ClerkProvider` / `ToastProvider` / `UserSync` / `SupabaseStatusBanner`、フォント（Noto Sans JP + JetBrains Mono）、`metadata` と `viewport` |
 | `app/globals.css` | デザイントークン（`@theme`）と `num` などのユーティリティ（[design-system.md](./design-system.md)） |
@@ -28,8 +29,9 @@ FuelLens の構成、データの流れ、主要なモジュールの役割を�
 | `components/Modal.tsx` | 共通モーダル。`useFocusTrap` + `useBackdropClose` + Escape + 任意の本文スクロールロックを束ね、`role="dialog"` / `aria-modal` / `aria-labelledby` を付ける。保存中は `disableClose` で Escape・背景クリック・× を無視。`Modal.Header`（見出しと ×）/ `Modal.Body` / `Modal.Footer`、Escape だけ別処理にする `onEscape` |
 | `components/vehicles/*` / `lib/useVehicleDraft.ts` | 車両の管理モーダルの部品。`VehicleRow`（表示 / 編集行、削除確認文 `deleteConfirmMessage`）、`AddVehicleForm`、`VehicleSettingsFields`（距離の入力方式・既定の燃料種別・車両タイプの切り替え、`modeSwitchNote`）。追加フォーム・編集行の下書きと検証は `useVehicleDraft` |
 | `components/BackupPanel.tsx` | 設定画面の本体。データ概要、JSON / CSV の書き出し、復元（ファイル選択 → 件数プレビュー → 確認 → 追加） |
+| `components/AccountPanel.tsx` / `components/landing/AccountDeletedNotice.tsx` | 設定画面の「アカウント」（ログイン中はアカウント削除、未ログインはこの端末のデータの削除）/ 削除後にランディング（`/?deleted=1`）で一度だけ出す通知（[アカウント削除](#アカウント削除)） |
 | `components/ImportPanel.tsx` | 設定画面の「インポート」。Fuelio / FuelLens の CSV を読み込み、復元と同じ流れで追加する（[8 章](#インポートcsv)） |
-| `components/RestoreCounts.tsx` / `components/settingsUi.ts` | 復元・取り込みの件数プレビュー（と補足の箇条書き） / 設定画面の 2 パネルで共有するクラス名と処理中フラグの型（`SettingsBusy`） |
+| `components/RestoreCounts.tsx` / `components/settingsUi.ts` | 復元・取り込みの件数プレビュー（と補足の箇条書き） / 設定画面のパネルで共有するクラス名と処理中フラグの型（`SettingsBusy`） |
 | `components/Toast.tsx` | `ToastProvider` と `useToast()`（通知と確認ダイアログ） |
 | `components/UserSync.tsx` | ログイン中のユーザーを `users` テーブルへ upsert |
 | `components/SupabaseStatusBanner.tsx` | クラウド障害時の警告バナーと「再試行」 |
@@ -49,7 +51,7 @@ FuelLens の構成、データの流れ、主要なモジュールの役割を�
 | `lib/importers/fuelio.ts` / `lib/importers/fuellensCsv.ts` | CSV の取り込み（Fuelio / FuelLens の CSV → バックアップ形式）。純粋関数 |
 | `lib/useVehicles.ts` / `lib/useFuelRecords.ts` / `lib/useRecordForm.ts` | データフックとフォーム状態（[4 章](#4-フック-api)）。フォームの純粋なヘルパーは `lib/recordDraft.ts` |
 | `lib/useBackdropClose.ts` | モーダルの背景クリックで閉じるハンドラ（ドラッグでの誤閉じを防ぐ） |
-| `lib/data/` | データアダプタ層（[2 章](#データアダプタ層libdata)）。`types.ts`（`RecordStore` / `VehicleStore` / `DataError`）、`localStore.ts`（localStorage の実装と `LOCAL_*` キー・`writeLocalJson`）、`cloudStore.ts`（Supabase の実装と `ensureDefaultVehicle` / `ensureUserRow` / `withStatus`）、`withOutage.ts`（`withOutageHandling` / `withCache`）、`cloudBootstrap.ts`（移行 → 既定車両の確保をタブ内で 1 回）、`primedVehicles.ts`（取得済みの車両一覧を最初の `list()` に 1 回だけ返す）、`useDataStores.ts`（ログイン状態でストアを選ぶフック）、`columns.ts` / `scope.ts`（列の検証・パッチ、一覧の範囲。純粋関数） |
+| `lib/data/` | データアダプタ層（[2 章](#データアダプタ層libdata)）。`types.ts`（`RecordStore` / `VehicleStore` / `DataError`）、`localStore.ts`（localStorage の実装と `LOCAL_*` キー・`writeLocalJson`）、`cloudStore.ts`（Supabase の実装と `ensureDefaultVehicle` / `ensureUserRow` / `withStatus`）、`withOutage.ts`（`withOutageHandling` / `withCache`）、`cloudBootstrap.ts`（移行 → 既定車両の確保をタブ内で 1 回）、`primedVehicles.ts`（取得済みの車両一覧を最初の `list()` に 1 回だけ返す）、`useDataStores.ts`（ログイン状態でストアを選ぶフック）、`accountDeletion.ts`（アカウント削除のクラウドのデータの削除 `deleteOwnData`）、`columns.ts` / `scope.ts`（列の検証・パッチ、一覧の範囲。純粋関数） |
 | `lib/migrateLocalData.ts` | ローカル → クラウドの移行（[5 章](#5-ローカル--クラウド移行)）。`LOCAL_*` / `writeLocalJson` / `CrossTabLockError` は互換のため再エクスポート |
 | `lib/crossTabLock.ts` | ユーザー単位のクロスタブ排他ロック `withCrossTabLock`（Web Locks + localStorage リース）と `CrossTabLockError` |
 | `lib/supabaseClient.ts` | ユーザーごとの Supabase クライアント（Clerk JWT 付き） |
@@ -112,7 +114,8 @@ useVehicles / useFuelRecords
 | `cloudStore.ts` | `createCloudStores(supabase, userId)`。生の層で、失敗は `status` 付きの Supabase エラーをそのまま投げる（保存前の検証だけ日本語の `DataError`）。クエリの詳細は下 |
 | `withOutage.ts` | `withOutageHandling(store, { isReadOnly, onFailure, onRecover })`: 分類 → `setOutage` → 日本語の `DataError` への変換と、書き込み前の閲覧専用ガードを 1 か所で行う（`list` の成功で `clearOutage`）。`withCache(store, { key })`: `list` の成功でキャッシュを書き、成功した書き込みも反映する。読み込み失敗時はフックが `cached()` で最後に同期した一覧を表示する |
 | `cloudBootstrap.ts` | `bootstrapCloud(supabase, userId, deps?, { force? })`: `migrateLocalData` → `ensureDefaultVehicle` を userId ごとにタブ内で 1 回（[5 章](#5-ローカル--クラウド移行)）。結果は取得済みの車両一覧（`vehicles`）を運び、直後の最初の `vehicles.list()` はそれを使い回す（2 回目の GET を発行しない。`primedVehicles.ts`） |
-| `useDataStores.ts` | ログイン状態に応じたストア（クラウドは userId・getToken ごとにメモ化）。フックのアンマウント・ユーザー切り替え後に届いた応答ではキャッシュを書かない |
+| `useDataStores.ts` | ログイン状態に応じたストア（クラウドは userId・getToken ごとにメモ化）。フックのアンマウント・ユーザー切り替え後に届いた応答ではキャッシュを書かない。ストアのほかに、クラウドは `deleteAccountData()`（アカウント削除の 1 段目）、ローカルは `clearAll()`（この端末のデータの削除。`clearLocalData`）を持つ（[アカウント削除](#アカウント削除)） |
+| `accountDeletion.ts` | `deleteOwnData(supabase, userId)`: 利用者自身の JWT（RLS）で記録 → 車両 → `users` 行の順に削除し、記録・車両が 0 件になったことを確かめる（残っていれば `DataError`（`DELETE_INCOMPLETE_CODE`））。冪等 |
 | `columns.ts` / `scope.ts` | `pickRecordColumns`（保存する列のホワイトリストと検証）、`sanitizeVehicleSettings`、`applyRecordPatch` / `applyVehiclePatch`、`recordScopeOf` / `matchesRecordScope`（`matchesSelectedVehicle` と同じ判定） |
 
 クラウドのクエリ（`cloudStore.ts`）:
@@ -396,7 +399,7 @@ Supabase Free のプロジェクトが一時停止すると、API は HTTP 540 �
 ## 7. 認証
 
 - 認証は Clerk（`@clerk/nextjs`）です。`proxy.ts` の `clerkMiddleware()` は全ルートを公開のままにし、
-  `/api/analyze` はルートハンドラ内の `auth()` で未ログインを 401 にします。
+  `/api/analyze` と `/api/account`（アカウント削除）はルートハンドラ内の `auth()` で未ログインを 401 にします。
 - Supabase へは、Clerk のトークンを supabase-js の `accessToken` として渡します。取得方法は公開環境変数
   `NEXT_PUBLIC_CLERK_SUPABASE_JWT_TEMPLATE` で切り替えます（`lib/supabaseClient.ts` の `fetchSupabaseToken`）。
   値あり（`supabase`）なら `getToken({ template })`（JWT テンプレート方式。Clerk 開発インスタンス = ローカル / Preview）、
@@ -411,6 +414,23 @@ Supabase Free のプロジェクトが一時停止すると、API は HTTP 540 �
   Clerk と Supabase の両方でダッシュボード設定が必要です（[auth-production.md](./auth-production.md)）。
 - `proxy.ts` の `clerkMiddleware({ authorizedParties })` には、`https://fuel-lens.gadelog.com`、`NEXT_PUBLIC_APP_URL`、
   `VERCEL_URL` / `VERCEL_BRANCH_URL`（Preview）、開発時の `http://localhost:3000` を許可オリジンとして渡します。
+
+### アカウント削除
+
+設定画面の「アカウント」（`components/AccountPanel.tsx`）から、利用者が自分で削除します。サーバーには service_role キーを置かないため、
+DB のデータは利用者自身の Supabase クライアント（RLS）で消し、サーバー（`DELETE /api/account`）は Clerk のユーザーだけを消します。
+
+1. 「アカウントを削除」→ `useToast().confirm`（すべての車両・記録が消え、元に戻せないこと。先にバックアップを勧める）→ 「削除」と入力すると「完全に削除する」が押せる（バックアップへのページ内リンク `#settings-backup` 付き）。
+2. **データの削除**: `stores.deleteAccountData()`（`lib/data/useDataStores.ts`）が `deleteOwnData` を `runWithOutageHandling(…, "write")` で呼ぶ。
+   記録 → 車両 → `users` 行の順に削除し（ポリシー `fuel_records_delete_own` / `vehicles_delete_own` / `users_delete_own`。外部キーの `ON DELETE CASCADE` に頼らない。本番 DB の既存の外部キーは削除時の動作を保証できないため）、0 件を確認する。
+   成功したら、この端末のこのユーザーのキャッシュ（`clearUserCaches`）・移行の途中状態（`clearMigrationState`）・選択中の車両の保存値を消す。閲覧専用中はボタンを無効にし、呼んでも日本語の `DataError` で拒否する。
+3. **Clerk のユーザーの削除**: `DELETE /api/account`（[api-account.md](./api-account.md)）。204 なら次へ。
+4. **ログアウト**: `useClerk().signOut({ redirectUrl: "/?deleted=1" })`（失敗したら `location.assign` で移動）。ランディングの `AccountDeletedNotice` が一度だけ「削除しました」を出し、URL から `deleted` を消す（トーストは画面の移動で消えるため使わない）。
+
+- 2 が失敗したら API は呼ばず、エラーを表示する（何も消えていないか、途中まで消えている。再試行で続きから消せる）。
+- 2 の後で 3 が失敗したら「記録と車両は削除しましたが、アカウントを削除できませんでした（エラーID: …）」と表示し、もう一度「完全に削除する」で 2（冪等。その間に既定車両が作られていても消す）と 3 をやり直す。Clerk が 404（削除済み）を返したときも 204 として扱う。
+- 未ログインでは、アカウントの代わりに「この端末のデータをすべて削除」（`stores.clearAll()`。`fuel_lens_data` / `fuel_lens_vehicles` を消し、`notifyVehiclesChanged` / `notifyRecordsChanged` で画面を読み込み直す）を出す。
+- Clerk のダッシュボードからユーザーを削除した場合は DB の行が残る（webhook は使っていない）。手順は [supabase/README.md 5 章](../supabase/README.md#5-ユーザーのデータを手作業で削除する)。
 
 ## 8. バックアップと復元
 

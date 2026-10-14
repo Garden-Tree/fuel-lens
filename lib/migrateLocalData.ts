@@ -240,6 +240,21 @@ export function hasLocalDataToMigrate(userId: string): boolean {
   }
 }
 
+/**
+ * userId の移行の途中状態（退避した記録・車両と車両の対応表）を端末から消す。
+ * アカウント削除の後に、削除したアカウントの残骸を端末に残さないために使う（未ログイン時のデータ LOCAL_* は消さない）。
+ */
+export function clearMigrationState(userId: string): void {
+  if (typeof window === "undefined" || !userId) return;
+  try {
+    for (const key of [migratingRecordsKey(userId), migratingVehiclesKey(userId), vehicleMapKey(userId)]) {
+      localStorage.removeItem(key);
+    }
+  } catch {
+    // ベストエフォート
+  }
+}
+
 /** 退避キーの内容を元キーへマージして戻す（失敗時の復元）。 */
 function mergeBack(originalKey: string, pendingKey: string) {
   const pendingRaw = localStorage.getItem(pendingKey);

@@ -1,3 +1,4 @@
+import * as Sentry from "@sentry/nextjs";
 import {
   MAX_BODY_BYTES,
   derivePricePerUnit,
@@ -260,6 +261,8 @@ export async function handleAnalyze(req: Request, deps: AnalyzeDeps): Promise<Re
   } catch (error) {
     // ここに来るのは想定外の例外のみ（auth() の失敗など）。詳細はログにのみ残す
     log("error", "Unexpected error:", error);
+    // Sentry にも送る（requestId で Vercel のログと突き合わせられる。DSN 未設定なら何もしない）
+    Sentry.captureException(error, { tags: { requestId } });
     return errorResponse(500, {
       error: "解析中に予期しないエラーが発生しました。しばらくしてから再度お試しください。",
       code: "INTERNAL_ERROR",

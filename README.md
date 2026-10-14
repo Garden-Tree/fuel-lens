@@ -68,6 +68,9 @@ npm run dev                  # http://localhost:3000
 | `ALLOW_ANONYMOUS_SCAN` | 任意 | `true` で未ログインの AI 解析を IP ごとに 3 回まで許可（開発・デモ専用）。既定はログイン必須 |
 | `CRON_SECRET` | 本番で必須 | Vercel Cron → `/api/keepalive` の認証用シークレット |
 | `SUPABASE_SERVICE_ROLE_KEY` | 任意 | `/api/keepalive` で件数取得まで行う場合に設定。サーバー専用（`NEXT_PUBLIC_` を付けない） |
+| `NEXT_PUBLIC_SENTRY_DSN` | 任意 | Sentry（エラー監視）の DSN。未設定なら Sentry は完全に無効。本番では設定を推奨（[docs/operations.md](./docs/operations.md#4-3-sentryエラー監視)） |
+| `SENTRY_ORG` / `SENTRY_PROJECT` | 任意 | Sentry の組織・プロジェクトのスラッグ。ソースマップのアップロード用（ビルド時のみ） |
+| `SENTRY_AUTH_TOKEN` | 任意 | ソースマップのアップロード用トークン。ビルド時のみ・サーバー専用（`NEXT_PUBLIC_` を付けない）。未設定でもビルドは通る |
 
 各変数の詳細は [.env.example](./.env.example)、`/api/analyze` 関連は [docs/api-analyze.md](./docs/api-analyze.md)、
 keepalive 関連は [docs/operations.md](./docs/operations.md) を参照してください。

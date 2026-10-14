@@ -4,11 +4,13 @@
 export type BackupBusy = "json" | "csv" | "restore-prepare" | "restore";
 /** ImportPanel の処理中フラグ */
 export type ImportBusy = "import-prepare" | "import";
+/** AccountPanel の処理中フラグ（アカウント削除 / 未ログイン時のこの端末のデータの削除） */
+export type AccountBusy = "account-delete" | "local-clear";
 /**
- * 設定画面で共有する処理中フラグ（バックアップ・復元・取り込みを同時に動かさないため）。
- * null 以外なら、どちらかのパネルで処理中
+ * 設定画面で共有する処理中フラグ（バックアップ・復元・取り込み・削除を同時に動かさないため）。
+ * null 以外なら、いずれかのパネルで処理中
  */
-export type SettingsBusy = BackupBusy | ImportBusy;
+export type SettingsBusy = BackupBusy | ImportBusy | AccountBusy;
 
 /** グループリストの下に添える補足の文（左右 16px、13px 未満の `text-sub`） */
 export const captionClass = "px-4 text-xs leading-relaxed text-sub";
@@ -27,6 +29,9 @@ export const primaryButtonClass = `${BUTTON_BASE} bg-accent text-ground hover:bg
 
 /** 副操作ボタン（キャンセル） */
 export const secondaryButtonClass = `${BUTTON_BASE} border border-border bg-surface-2 text-ink hover:bg-line`;
+
+/** 破壊的な操作のボタン（アカウントを削除する） */
+export const dangerButtonClass = `${BUTTON_BASE} bg-red-600 text-white hover:bg-red-500`;
 
 /** テキスト入力 */
 export const inputClass =

@@ -14,6 +14,8 @@
 | 部分給油フラグ（記録漏れを含む） | 2026-10-07 | `is_full` で部分給油を区別し、次の満タン給油までの距離と給油量を合算して燃費を出す。`missed_previous` で記録し忘れの区間の連鎖を切る。計算は `lib/fillChain.ts` の `applyFillChain` |
 | 燃料種別とメモ | 2026-10-07 | 記録に燃料種別（レギュラー / ハイオク / 軽油 / その他）と 200 文字までのメモ、車両に既定の燃料種別を追加。マイグレーションは `supabase/migrations/0004_fill_chain.sql` |
 | 単価トレンド（`/stats`） | 2026-10-08 | 単価の推移グラフ（期間の平均線、前回比・30 日 / 90 日平均比）を表示する。スタンド別の平均単価の比較（店舗名のゆれを `lib/stations.ts` で吸収してまとめる。上位 8 件、2 回以上給油したスタンドどうしの「最安」）も作ったが、同日に画面から外した。部品と計算・テストは残してある。詳細は [architecture.md 11 章](./architecture.md#11-統計) |
+| アカウント削除（`/settings` の「アカウント」） | 2026-10-14 | 利用者が設定画面からアカウントとクラウドのデータを削除できる。データは利用者自身の JWT（RLS）で記録 → 車両 → `users` 行の順に削除して 0 件を確認し、Clerk のユーザーは `DELETE /api/account` で削除する。アプリ内で完結するため、当初の案の Clerk webhook（`user.deleted`）と service_role キーは不要になった。未ログインでは「この端末のデータをすべて削除」。Clerk のダッシュボードからユーザーを削除したときは DB の行が残るので、[supabase/README.md 5 章](../supabase/README.md#5-ユーザーのデータを手作業で削除する)の SQL で消す。詳細は [architecture.md](./architecture.md#アカウント削除) |
+| Sentry エラー監視 | 2026-10-14 | 導入済み（[operations.md 4-3](./operations.md)）。本番は Vercel に `NEXT_PUBLIC_SENTRY_DSN` を設定すると有効。`/api/analyze` の 500 は `requestId` タグ付き |
 | Clerk 本番インスタンスへの移行 | 2026-10-13 | 本番を Clerk の本番インスタンス + Supabase Third-Party Auth に切り替え（Preview / ローカルは開発インスタンス + JWT テンプレートのまま）。詳細は [auth-production.md](./auth-production.md) |
 | Web Share Target（Android の共有メニューから写真をスキャンへ） | 2026-10-08 | `public/sw.js` が POST /share を端末内で受け取り IndexedDB 経由で `/app?action=shared` に渡す。サーバーには送らない |
 | データアダプタ層（`lib/data/`） | 2026-10-08 | 記録・車両の保存先を `RecordStore` / `VehicleStore` に切り出し、localStorage 版とクラウド版が同じインターフェースを満たす。障害・閲覧専用・キャッシュは `withOutageHandling` / `withCache` が受け持ち、フックは状態・楽観更新・連鎖計算・イベントだけを扱う。詳細は [architecture.md 2 章](./architecture.md#データアダプタ層libdata) |
@@ -43,10 +45,8 @@
 |---|---|---|---|
 | オフラインキュー | 電波の悪い場所でも撮影・手動入力を溜めておき、復帰後に解析・同期できる | M | `public/sw.js`（現状は共有の受け取りのみ、キャッシュなし）、`lib/scan/useScanPipeline.ts`、`lib/data/`（書き込みのキュー） |
 | Supabase Realtime / 画面表示時の再取得 | 他の端末やタブでの変更が自動で反映される。表示時の再取得は S、Realtime は M | S / M | `lib/useFuelRecords.ts`、`lib/useVehicles.ts` |
-| アカウント削除 + Clerk webhook（プライバシーポリシーは 2026-10-12 に `/privacy` として公開済み） | 利用者が自分のデータを削除できる。Clerk の `user.deleted` を webhook で受けて `users` 行を削除し（外部キーの `ON DELETE CASCADE` で車両・記録も削除）、設定画面から削除できるようにする。現状は GitHub Issues での依頼対応 | S–M | 新規 webhook ルート（service_role キーを使用）、設定画面、`app/privacy/page.tsx`（削除の案内を更新） |
 | Clerk ネイティブ Third-Party Auth への移行 | Supabase の JWT Secret を Clerk に共有しなくてよくなる（[architecture.md 7 章](./architecture.md#7-認証)） | S | `lib/supabaseClient.ts`（`getToken()` に変更）、Clerk / Supabase のダッシュボード |
 | E2E テストの追加 | 画面をまたぐ回帰を防ぐ。Playwright で `/api/analyze` をモックし、スキャン → 確認 → 保存 → 履歴の流れを検証する（コンポーネントテストは `tests/components/` にあり、未対応の画面は追加で拡充） | M | `package.json`、新規 `e2e/`、`.github/workflows/ci.yml` |
-| Sentry | 本番のエラーを把握できる（`/api/analyze` の `requestId` と突き合わせられる）。Vercel Analytics（ページビュー計測）は 2026-10-12 に導入済み（[operations.md 4-2](./operations.md)） | S | `app/error.tsx`、`app/global-error.tsx`、`package.json` |
 
 ## 既知の制約
 

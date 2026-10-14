@@ -167,3 +167,35 @@ pg_dump "<connection-uri>" --schema=public --data-only -t vehicles -t fuel_recor
 ```
 
 バックアップファイルには個人の給油記録が含まれます。リポジトリにはコミットしないでください（`csv/` は `.gitignore` 済み）。
+
+---
+
+## 5. ユーザーのデータを手作業で削除する
+
+通常、アカウントの削除は利用者が設定画面の「アカウント」から行い、アプリが DB の行と Clerk のユーザーの両方を削除します
+（[docs/architecture.md「アカウント削除」](../docs/architecture.md#アカウント削除)）。Clerk の webhook は使っていないため、
+**Clerk のダッシュボードからユーザーを削除した場合は、DB の行（`users` / `vehicles` / `fuel_records`）が残ります。**
+その場合や、削除の依頼を受けて代行する場合は、SQL Editor で次を実行します（`<clerk_user_id>` は `user_` で始まる Clerk の userId）。
+
+```sql
+-- 対象の件数を確認する
+select
+  (select count(*) from public.fuel_records where user_id = '<clerk_user_id>') as records,
+  (select count(*) from public.vehicles     where user_id = '<clerk_user_id>') as vehicles,
+  (select count(*) from public.users        where id      = '<clerk_user_id>') as users;
+
+-- 削除する（外部キーの削除時の動作に依存しないよう、記録 → 車両 → users の順に消す）
+begin;
+delete from public.fuel_records where user_id = '<clerk_user_id>';
+delete from public.vehicles     where user_id = '<clerk_user_id>';
+delete from public.users        where id      = '<clerk_user_id>';
+commit;
+```
+
+外部キー（`vehicles_user_id_fkey` / `fuel_records_user_id_fkey`）が `ON DELETE CASCADE` なら `delete from public.users where id = '<clerk_user_id>';` だけでも車両・記録まで消えます。
+本番 DB の既存の外部キーの動作は次で確認できます（`confdeltype` が `c` なら CASCADE）。
+
+```sql
+select conname, confdeltype from pg_constraint
+ where conname in ('vehicles_user_id_fkey', 'fuel_records_user_id_fkey', 'fuel_records_vehicle_id_fkey');
+```

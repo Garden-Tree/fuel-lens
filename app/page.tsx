@@ -10,6 +10,7 @@ import {
   CheckCircle2,
 } from "lucide-react";
 import { BrandMark } from "@/components/ui";
+import AccountDeletedNotice from "@/components/landing/AccountDeletedNotice";
 import HeaderAuthButtons from "@/components/landing/HeaderAuthButtons";
 import HeroPhonePreview from "@/components/landing/HeroPhonePreview";
 import DemoSimulator from "@/components/landing/DemoSimulator";
@@ -60,6 +61,9 @@ export default function LandingPage() {
           <HeaderAuthButtons />
         </div>
       </header>
+
+      {/* アカウント削除の後（/?deleted=1）にだけ出す通知 */}
+      <AccountDeletedNotice />
 
       {/* ヒーローセクション */}
       <section className="relative pt-12 pb-16 sm:pt-20 md:pt-32 md:pb-24">

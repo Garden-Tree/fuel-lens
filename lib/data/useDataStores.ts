@@ -5,10 +5,13 @@ import { useAuth } from "@clerk/nextjs";
 import { getSupabaseClient, type GetToken } from "../supabaseClient";
 import { CLOUD_LOAD_ERROR_MESSAGE } from "../supabase/errors";
 import { clearOutage, getOutage, setOutage } from "../supabase/outage";
-import { readCache, recordsCacheKey, vehiclesCacheKey, writeCache } from "../supabase/cache";
+import { clearUserCaches, readCache, recordsCacheKey, vehiclesCacheKey, writeCache } from "../supabase/cache";
+import { clearMigrationState } from "../migrateLocalData";
+import { selectedVehicleStorageKey } from "../vehicleSelection";
+import { deleteOwnData } from "./accountDeletion";
 import { bootstrapCloud, type BootstrapOptions, type CloudBootstrapResult } from "./cloudBootstrap";
 import { createCloudStores } from "./cloudStore";
-import { createLocalStores } from "./localStore";
+import { clearLocalData, createLocalStores } from "./localStore";
 import { withPrimedVehicleList } from "./primedVehicles";
 import { DataError, type RecordStore, type VehicleStore } from "./types";
 import {
@@ -22,7 +25,13 @@ import {
 } from "./withOutage";
 
 /** 未ログイン時のストア（localStorage。呼び出しのたびにブラウザの localStorage を読む） */
-export type LocalDataStores = { kind: "local"; records: RecordStore; vehicles: VehicleStore };
+export type LocalDataStores = {
+  kind: "local";
+  records: RecordStore;
+  vehicles: VehicleStore;
+  /** この端末の記録と車両をすべて削除する（設定画面の「この端末のデータをすべて削除」。localStore.ts の clearLocalData） */
+  clearAll: () => Promise<void>;
+};
 
 /** ログイン時のストア（Supabase。障害の扱い + キャッシュを被せ済み） */
 export type CloudDataStores = {
@@ -40,11 +49,33 @@ export type CloudDataStores = {
    * syncCacheOwner が消した前のユーザーのキャッシュを書き戻さないようにする（useDataStores が切り替える）
    */
   setActive: (active: boolean) => void;
+  /**
+   * アカウント削除の 1 段目: このユーザーのクラウドのデータ（記録・車両・users 行）を削除し、残っていないことを確かめる
+   * （accountDeletion.ts の deleteOwnData）。書き込みとして扱う（閲覧専用中は日本語の DataError で拒否、失敗も日本語の DataError）。
+   * 成功したら、この端末に残るこのユーザーのキャッシュ・移行の途中状態・選択中の車両も消す。冪等なので再試行できる
+   */
+  deleteAccountData: () => Promise<void>;
 };
 
 export type ActiveDataStores = LocalDataStores | CloudDataStores;
 
-const LOCAL_STORES: LocalDataStores = { kind: "local", ...createLocalStores() };
+const LOCAL_STORES: LocalDataStores = {
+  kind: "local",
+  ...createLocalStores(),
+  clearAll: async () => clearLocalData(),
+};
+
+/** 削除したアカウントについて、この端末に残る情報（キャッシュ・移行の途中状態・選択中の車両）を消す */
+function forgetUserOnDevice(userId: string): void {
+  clearUserCaches(userId);
+  clearMigrationState(userId);
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.removeItem(selectedVehicleStorageKey(userId));
+  } catch {
+    // ベストエフォート
+  }
+}
 
 /** 障害状態は sessionStorage + window イベントで全フックと共有する（lib/supabase/outage.ts） */
 const OUTAGE_OPTIONS: OutageHandlingOptions = {
@@ -87,6 +118,12 @@ function createCloudDataStores(userId: string, getToken: GetToken): CloudDataSto
     },
     setActive: value => {
       active = value;
+    },
+    deleteAccountData: async () => {
+      await runWithOutageHandling(() => deleteOwnData(supabase, userId), OUTAGE_OPTIONS, "write");
+      // 削除の後に届いた一覧の応答で、このユーザーのキャッシュを書き戻さない
+      active = false;
+      forgetUserOnDevice(userId);
     },
   };
 }
