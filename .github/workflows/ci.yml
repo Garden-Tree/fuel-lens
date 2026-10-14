@@ -60,4 +60,11 @@ jobs:
         run: npm test
 
       - name: Build
-        run: npm run build
+        # next/font/google はビルド時に Google Fonts を取得する。Actions のネットワークの一時的な失敗で
+        # 「Can't resolve '@vercel/turbopack-next/internal/font/google/font'」になることがあるため 3 回まで試す
+        run: |
+          for i in 1 2 3; do
+            npm run build && exit 0
+            echo "build failed (attempt $i)"; rm -rf .next; sleep 15
+          done
+          exit 1
