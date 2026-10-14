@@ -23,6 +23,7 @@ describe("deleteOwnData", () => {
       "users:delete",
       "fuel_records:select",
       "vehicles:select",
+      "users:select",
     ]);
     expect(op(queries[0], "eq")?.args).toEqual(["user_id", USER]);
     expect(op(queries[1], "eq")?.args).toEqual(["user_id", USER]);
@@ -30,6 +31,17 @@ describe("deleteOwnData", () => {
     // 確認は 1 行だけ読む
     expect(op(queries[3], "range")?.args).toEqual([0, 0]);
     expect(op(queries[4], "eq")?.args).toEqual(["user_id", USER]);
+    expect(op(queries[5], "eq")?.args).toEqual(["id", USER]);
+  });
+
+  it("users 行が残っていても DataError を投げる", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const { client } = makeSupabase(q =>
+      q.table === "users" && q.ops[0].name === "select" ? { data: [{ id: USER }], error: null, status: 200 } : ok(q)
+    );
+    const err = await deleteOwnData(client, USER).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(DataError);
+    expect((err as DataError).code).toBe(DELETE_INCOMPLETE_CODE);
   });
 
   it("削除の後に行が残っていれば日本語の DataError を投げる", async () => {

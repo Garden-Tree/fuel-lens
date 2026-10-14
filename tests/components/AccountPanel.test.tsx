@@ -5,12 +5,12 @@ import { createElement, type ReactNode } from "react";
 import type { Vehicle } from "@/lib/types";
 import { renderWithProviders } from "../setup/render";
 
-const clerk = vi.hoisted(() => ({ signOut: vi.fn(), signedIn: true }));
+const clerk = vi.hoisted(() => ({ signOut: vi.fn(), signedIn: true, userId: "u1" }));
 vi.mock("@clerk/nextjs", () => ({
   useAuth: () => ({
     isLoaded: true,
     isSignedIn: clerk.signedIn,
-    userId: clerk.signedIn ? "u1" : null,
+    userId: clerk.signedIn ? clerk.userId : null,
     getToken: async () => "t",
   }),
   useUser: () => ({ isLoaded: true, isSignedIn: clerk.signedIn, user: null }),
@@ -57,6 +57,7 @@ const fetchMock = vi.fn();
 
 beforeEach(() => {
   clerk.signedIn = true;
+  clerk.userId = "u1";
   clerk.signOut.mockReset();
   clerk.signOut.mockResolvedValue(undefined);
   scopeMock.useVehicleScope.mockReset();
@@ -124,9 +125,77 @@ describe("設定画面のアカウント削除", () => {
     await user.click(screen.getByRole("button", { name: "完全に削除する" }));
 
     await waitFor(() => expect(clerk.signOut).toHaveBeenCalledWith({ redirectUrl: "/?deleted=1" }));
-    expect(deleteAccountData).toHaveBeenCalledTimes(1);
+    // 1 回目は Clerk の削除の前、2 回目は後（ベストエフォートの再削除）
+    expect(deleteAccountData).toHaveBeenCalledTimes(2);
     expect(fetchMock).toHaveBeenCalledWith("/api/account", expect.objectContaining({ method: "DELETE" }));
     expect(deleteAccountData.mock.invocationCallOrder[0]).toBeLessThan(fetchMock.mock.invocationCallOrder[0]);
+  });
+
+  it("API には確認を取ったユーザー ID を expectedUserId として送る", async () => {
+    cloudStores();
+    const user = userEvent.setup();
+    renderWithProviders(<SettingsPage />);
+
+    await user.type(await openTypingStep(user), "削除");
+    await user.click(screen.getByRole("button", { name: "完全に削除する" }));
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    const init = fetchMock.mock.calls[0][1] as RequestInit;
+    expect(JSON.parse(String(init.body))).toEqual({ expectedUserId: "u1" });
+  });
+
+  it("Clerk の削除に成功したら、データの削除をもう一度試みる（失敗しても進む）", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const deleteAccountData = cloudStores(
+      vi.fn().mockResolvedValueOnce(undefined).mockRejectedValueOnce(new Error("認証エラー"))
+    );
+    const user = userEvent.setup();
+    renderWithProviders(<SettingsPage />);
+
+    await user.type(await openTypingStep(user), "削除");
+    await user.click(screen.getByRole("button", { name: "完全に削除する" }));
+
+    await waitFor(() => expect(clerk.signOut).toHaveBeenCalledWith({ redirectUrl: "/?deleted=1" }));
+    expect(deleteAccountData).toHaveBeenCalledTimes(2);
+    expect(fetchMock.mock.invocationCallOrder[0]).toBeLessThan(deleteAccountData.mock.invocationCallOrder[1]);
+  });
+
+  it("ログイン中のユーザーが変わったら、確認の入力と失敗の状態を捨てる", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    cloudStores();
+    fetchMock.mockResolvedValueOnce(
+      Response.json({ error: "アカウントを削除できませんでした。", code: "DELETE_FAILED", requestId: "req123" }, { status: 500 })
+    );
+    const user = userEvent.setup();
+    const { rerender } = renderWithProviders(<SettingsPage />);
+
+    await user.type(await openTypingStep(user), "削除");
+    await user.click(screen.getByRole("button", { name: "完全に削除する" }));
+    await screen.findByText("記録と車両は削除済みです。アカウントだけが残っています。");
+
+    clerk.userId = "u2";
+    rerender(<SettingsPage />);
+
+    await waitFor(() => expect(screen.queryByLabelText(CONFIRM_LABEL)).not.toBeInTheDocument());
+    expect(screen.queryByText("記録と車両は削除済みです。アカウントだけが残っています。")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "完全に削除する" })).not.toBeInTheDocument();
+  });
+
+  it("429 ではサーバーの error をそのまま表示する", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    cloudStores();
+    const text = "リクエストが多すぎます。しばらく待ってから再度お試しください。";
+    fetchMock.mockResolvedValueOnce(Response.json({ error: text, code: "RATE_LIMITED", requestId: "r1" }, { status: 429 }));
+    const user = userEvent.setup();
+    renderWithProviders(<SettingsPage />);
+
+    await user.type(await openTypingStep(user), "削除");
+    await user.click(screen.getByRole("button", { name: "完全に削除する" }));
+
+    const alerts = await screen.findAllByRole("alert");
+    expect(alerts.map(a => a.textContent)).toContain(text);
+    expect(screen.queryByText(/エラーID|記録と車両は削除しましたが/)).not.toBeInTheDocument();
+    expect(clerk.signOut).not.toHaveBeenCalled();
   });
 
   it("データの削除に失敗したら API を呼ばない", async () => {
@@ -166,7 +235,8 @@ describe("設定画面のアカウント削除", () => {
     // 再試行（2 回目の API は成功）
     await user.click(screen.getByRole("button", { name: "完全に削除する" }));
     await waitFor(() => expect(clerk.signOut).toHaveBeenCalledWith({ redirectUrl: "/?deleted=1" }));
-    expect(deleteAccountData).toHaveBeenCalledTimes(2);
+    // 失敗した回の 1 回 + 再試行の 1 回 + 成功後の再削除の 1 回
+    expect(deleteAccountData).toHaveBeenCalledTimes(3);
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 

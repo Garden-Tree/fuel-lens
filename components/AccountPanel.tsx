@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { useClerk } from "@clerk/nextjs";
+import { useEffect, useState } from "react";
+import { useAuth, useClerk } from "@clerk/nextjs";
 import { Loader2, Trash2, UserX } from "lucide-react";
 
 import { BACKUP_SECTION_ID } from "@/components/BackupPanel";
@@ -48,16 +48,35 @@ async function apiFailureDetail(res: Response): Promise<string> {
   return `（HTTP ${res.status}）`;
 }
 
+/** サーバーが返した日本語の `error`（429 の「リクエストが多すぎます…」など）。読めなければ null */
+async function apiErrorText(res: Response): Promise<string | null> {
+  try {
+    const body: unknown = await res.json();
+    const text = (body as { error?: unknown } | null)?.error;
+    if (typeof text === "string" && text) return text;
+  } catch {
+    // 本文が JSON でない
+  }
+  return null;
+}
+
+/** サーバーの日本語メッセージをそのまま見せる失敗（429・409。「データは削除済み」の案内などは付けない） */
+class ServerMessageError extends Error {}
+
 /**
  * 設定画面の「アカウント」。
  * - ログイン中: アカウント削除。確認ダイアログ → 「削除」と入力 → (1) クラウドのデータを削除（RLS。lib/data/accountDeletion.ts）
  *   → (2) DELETE /api/account（Clerk のユーザーを削除）→ (3) ログアウトして /?deleted=1 へ。
  *   (1) の後で (2) が失敗したら、データは削除済みでアカウントが残っていることを伝え、再試行で (1)（冪等）と (2) をやり直す。
+ *   (2) の成功後にもう一度 (1) を試みる（ベストエフォート。(1) と (2) の間に別タブが作り直した行を消す）。
+ *   確認を取ったアカウントと違うアカウントを削除しないよう、ログイン中のユーザーが変わったら確認の状態をすべて捨て、
+ *   API には expectedUserId を送ってサーバーでも照合する（409 USER_MISMATCH）。
  * - 未ログイン: アカウントが無いので、この端末のデータ（localStorage）を削除する操作だけを出す。
  */
 export default function AccountPanel({ readOnly, busy, setBusy, onLocalCleared }: AccountPanelProps) {
   const { toast, confirm } = useToast();
   const { signOut } = useClerk();
+  const { userId } = useAuth();
   const { isLoaded, stores } = useDataStores();
 
   const [typing, setTyping] = useState(false);
@@ -65,6 +84,14 @@ export default function AccountPanel({ readOnly, busy, setBusy, onLocalCleared }
   const [error, setError] = useState<string | null>(null);
   // (1) が成功したか（(2) の失敗時の案内に使う）
   const [dataDeleted, setDataDeleted] = useState(false);
+
+  // ログイン中のユーザーが変わったら（別タブでの切り替え）、確認の入力も失敗の状態も捨てる。再試行で別のアカウントを消さないため
+  useEffect(() => {
+    setTyping(false);
+    setTyped("");
+    setError(null);
+    setDataDeleted(false);
+  }, [userId]);
 
   if (!isLoaded || !stores) return null;
 
@@ -135,6 +162,7 @@ export default function AccountPanel({ readOnly, busy, setBusy, onLocalCleared }
 
   const handleDelete = async () => {
     if (!confirmed || busy !== null || readOnly) return;
+    if (!userId) return;
     setBusy("account-delete");
     setError(null);
     let dataDone = false;
@@ -146,21 +174,41 @@ export default function AccountPanel({ readOnly, busy, setBusy, onLocalCleared }
       // (2) Clerk のユーザー
       let res: Response;
       try {
-        res = await fetch("/api/account", { method: "DELETE", headers: { Accept: "application/json" } });
+        res = await fetch("/api/account", {
+          method: "DELETE",
+          headers: { Accept: "application/json", "Content-Type": "application/json" },
+          body: JSON.stringify({ expectedUserId: userId }),
+        });
       } catch (e) {
         console.error("アカウント削除 API に接続できませんでした:", e);
         throw new Error("（通信エラー）");
       }
+      if (res.status === 429 || res.status === 409) {
+        const text = await apiErrorText(res);
+        if (text) throw new ServerMessageError(text);
+      }
       if (!res.ok) throw new Error(await apiFailureDetail(res));
     } catch (e) {
-      const message = dataDone
-        ? `記録と車両は削除しましたが、アカウントを削除できませんでした${errorText(e, "")}。もう一度「完全に削除する」を押してください。`
-        : errorText(e, "データを削除できませんでした。時間をおいて、もう一度お試しください。");
+      let message: string;
+      if (e instanceof ServerMessageError) {
+        message = e.message;
+      } else if (dataDone) {
+        message = `記録と車両は削除しましたが、アカウントを削除できませんでした${errorText(e, "")}。もう一度「完全に削除する」を押してください。`;
+      } else {
+        message = errorText(e, "データを削除できませんでした。時間をおいて、もう一度お試しください。");
+      }
       if (!dataDone) console.error("アカウントのデータの削除に失敗しました:", e);
       setError(message);
       toast(message, { type: "error" });
       setBusy(null);
       return;
+    }
+
+    // (2) の成功後にもう一度データを削除する（ベストエフォート）。(1) と (2) の間に別タブが作り直した行を残さない
+    try {
+      await cloud.deleteAccountData();
+    } catch (e) {
+      console.error("アカウント削除後のデータの再削除に失敗しました:", e);
     }
 
     // (3) ログアウトしてランディングへ（Clerk 側のセッションは削除済みなので、ログアウトが失敗しても移動する）

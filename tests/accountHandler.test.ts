@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   ACCOUNT_DELETE_FAILED_MESSAGE,
+  USER_MISMATCH_MESSAGE,
   handleDeleteAccount,
   type AccountDeleteDeps,
 } from "@/lib/server/account/handler";
@@ -23,10 +24,11 @@ function makeDeps(overrides: Partial<AccountDeleteDeps> = {}) {
   return { deps, deleteUser, log };
 }
 
-function request(headers: Record<string, string> = {}) {
+function request(headers: Record<string, string> = {}, body?: unknown) {
   return new Request("https://fuel-lens.example/api/account", {
     method: "DELETE",
     headers: { host: "fuel-lens.example", ...headers },
+    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
   });
 }
 
@@ -36,6 +38,21 @@ describe("handleDeleteAccount", () => {
     const res = await handleDeleteAccount(request({ origin: "https://fuel-lens.example" }), deps);
     expect(res.status).toBe(204);
     expect(deleteUser).toHaveBeenCalledWith("user_1");
+  });
+
+  it("expectedUserId が一致すれば 204", async () => {
+    const { deps, deleteUser } = makeDeps();
+    const res = await handleDeleteAccount(request({}, { expectedUserId: "user_1" }), deps);
+    expect(res.status).toBe(204);
+    expect(deleteUser).toHaveBeenCalledWith("user_1");
+  });
+
+  it("expectedUserId が auth() のユーザーと違えば 409 で、何も削除しない", async () => {
+    const { deps, deleteUser } = makeDeps();
+    const res = await handleDeleteAccount(request({}, { expectedUserId: "user_other" }), deps);
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({ error: USER_MISMATCH_MESSAGE, code: "USER_MISMATCH", requestId: "req00001" });
+    expect(deleteUser).not.toHaveBeenCalled();
   });
 
   it("未ログインは 401 で、削除しない", async () => {

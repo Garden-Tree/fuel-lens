@@ -9,8 +9,8 @@ import { clearUserCaches, readCache, recordsCacheKey, vehiclesCacheKey, writeCac
 import { clearMigrationState } from "../migrateLocalData";
 import { selectedVehicleStorageKey } from "../vehicleSelection";
 import { deleteOwnData } from "./accountDeletion";
-import { bootstrapCloud, type BootstrapOptions, type CloudBootstrapResult } from "./cloudBootstrap";
-import { createCloudStores } from "./cloudStore";
+import { bootstrapCloud, forgetBootstrap, type BootstrapOptions, type CloudBootstrapResult } from "./cloudBootstrap";
+import { createCloudStores, forgetUserRow } from "./cloudStore";
 import { clearLocalData, createLocalStores } from "./localStore";
 import { withPrimedVehicleList } from "./primedVehicles";
 import { DataError, type RecordStore, type VehicleStore } from "./types";
@@ -52,7 +52,7 @@ export type CloudDataStores = {
   /**
    * アカウント削除の 1 段目: このユーザーのクラウドのデータ（記録・車両・users 行）を削除し、残っていないことを確かめる
    * （accountDeletion.ts の deleteOwnData）。書き込みとして扱う（閲覧専用中は日本語の DataError で拒否、失敗も日本語の DataError）。
-   * 成功したら、この端末に残るこのユーザーのキャッシュ・移行の途中状態・選択中の車両も消す。冪等なので再試行できる
+   * 成功したら、この端末に残るこのユーザーのキャッシュ・移行の途中状態・選択中の車両と、タブ内の users 行・初期化の使い回しも消す。冪等なので再試行できる
    */
   deleteAccountData: () => Promise<void>;
 };
@@ -124,6 +124,9 @@ function createCloudDataStores(userId: string, getToken: GetToken): CloudDataSto
       // 削除の後に届いた一覧の応答で、このユーザーのキャッシュを書き戻さない
       active = false;
       forgetUserOnDevice(userId);
+      // タブ内の users 行・初期化の使い回しも忘れる（部分的な失敗の後に挿入しても外部キー違反にならないように）
+      forgetUserRow(userId);
+      forgetBootstrap(userId);
     },
   };
 }

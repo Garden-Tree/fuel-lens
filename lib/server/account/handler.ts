@@ -6,7 +6,7 @@ import type { RateLimiter } from "@/lib/server/analyze/rateLimit";
  * 1 段目のクラウドのデータの削除は、ブラウザが利用者自身の JWT（RLS）で先に済ませる（lib/data/accountDeletion.ts）。
  * 仕様は docs/api-account.md。依存は注入できる（tests/accountHandler.test.ts）。
  *
- * 検査の順序: Origin → 認証（401）→ レートリミット（429）→ Clerk のユーザー削除（成功・既に無い = 204、失敗 = 500）。
+ * 検査の順序: Origin → 認証（401）→ expectedUserId の照合（409）→ レートリミット（429）→ Clerk のユーザー削除（成功・既に無い = 204、失敗 = 500）。
  * Clerk のエラー本文はクライアントに返さず、requestId 付きの汎用メッセージにする（ログにだけ出す）。
  */
 
@@ -30,6 +30,20 @@ export const ACCOUNT_MAX_REQUESTS_PER_WINDOW = 3;
 
 export const ACCOUNT_DELETE_FAILED_MESSAGE =
   "アカウントを削除できませんでした。時間をおいて、もう一度お試しください。";
+
+export const USER_MISMATCH_MESSAGE =
+  "ログイン中のアカウントが変わったため中止しました。もう一度やり直してください。";
+
+/** 本文 JSON の expectedUserId（文字列のときだけ。本文が無い・不正なら null） */
+async function readExpectedUserId(req: Request): Promise<string | null> {
+  try {
+    const body: unknown = await req.json();
+    const id = (body as { expectedUserId?: unknown } | null)?.expectedUserId;
+    return typeof id === "string" && id ? id : null;
+  } catch {
+    return null;
+  }
+}
 
 function defaultRequestId(): string {
   try {
@@ -65,6 +79,14 @@ export async function handleDeleteAccount(req: Request, deps: AccountDeleteDeps)
     const { userId } = await deps.auth();
     if (!userId) {
       return errorResponse(401, { error: "ログインが必要です。", code: "UNAUTHENTICATED", requestId });
+    }
+
+    // 確認を取ったアカウントと今ログインしているアカウントが違うなら中止する（別タブでの切り替え対策）。
+    // 削除するのは常に auth() のユーザーだけ。本文が無い・読めない場合は照合しない（後方互換）
+    const expectedUserId = await readExpectedUserId(req);
+    if (expectedUserId !== null && expectedUserId !== userId) {
+      log("warn", "User mismatch: expected", expectedUserId, "actual", userId);
+      return errorResponse(409, { error: USER_MISMATCH_MESSAGE, code: "USER_MISMATCH", requestId });
     }
 
     const rate = deps.limiter.consume(userId);
