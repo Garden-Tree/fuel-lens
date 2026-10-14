@@ -113,7 +113,9 @@ export default function HistoryPage() {
     vehiclesLoading,
     loading: isLoading,
     error: hookError,
+    // previewing 中（Clerk の読み込み前のキャッシュ表示）も readOnly は true（編集・削除はできない）
     readOnly,
+    previewing,
     vehicleActions,
     recordActions: { deleteRecord, updateRecord },
   } = scope;
@@ -358,7 +360,7 @@ export default function HistoryPage() {
 
       {/* データ取得エラー / 閲覧専用の表示 */}
       <HookErrorLine error={hookError} />
-      <ReadOnlyCaption show={readOnly} />
+      <ReadOnlyCaption show={readOnly && !previewing} />
 
       {isLoading ? (
         <>

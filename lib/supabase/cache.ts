@@ -60,6 +60,19 @@ export function clearUserCaches(userId: string): void {
 const CACHE_OWNER_KEY = "fuel_lens_cache_owner";
 
 /**
+ * 最後にキャッシュを書いたログインユーザー（syncCacheOwner が記録した値。無ければ null）。
+ * Clerk の読み込み前にキャッシュを先に表示してよいか（サーバーが知っている userId と一致するか）の判定に使う（lib/data/initialAuth.ts）
+ */
+export function readCacheOwner(): string | null {
+  if (typeof window === "undefined") return null;
+  try {
+    return localStorage.getItem(CACHE_OWNER_KEY);
+  } catch {
+    return null;
+  }
+}
+
+/**
  * 現在のログインユーザー（未ログインなら null）を記録し、前回と異なれば
  * 前のユーザーのキャッシュと障害フラグを消す（ログアウト・ユーザー切り替え時のクリーンアップ）。
  */

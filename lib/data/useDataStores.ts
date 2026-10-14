@@ -11,6 +11,8 @@ import { selectedVehicleStorageKey } from "../vehicleSelection";
 import { deleteOwnData } from "./accountDeletion";
 import { bootstrapCloud, forgetBootstrap, type BootstrapOptions, type CloudBootstrapResult } from "./cloudBootstrap";
 import { createCloudStores, forgetUserRow } from "./cloudStore";
+import { createCachePreview, resolveAuth, type CachePreview } from "./initialAuth";
+import { useClientMaybeSignedIn, useInitialAuth } from "./initialAuthContext";
 import { clearLocalData, createLocalStores } from "./localStore";
 import { withPrimedVehicleList } from "./primedVehicles";
 import { DataError, type RecordStore, type VehicleStore } from "./types";
@@ -134,29 +136,52 @@ function createCloudDataStores(userId: string, getToken: GetToken): CloudDataSto
 /**
  * ログイン状態に応じたデータストアを返す（未ログイン = localStorage、ログイン = Supabase）。
  * クラウドのストアは userId・getToken ごとにメモ化する（フックのインスタンスごと）。
- * stores が null なのはログイン中なのに userId が無いとき（通常は起きない）。
+ *
+ * Clerk の読み込み前は、サーバーの初期認証状態（lib/data/initialAuth.ts の resolveAuth）で補う:
+ * - サーバーが未ログインと言い、Clerk のクライアント Cookie（`__client_uat`）も未ログイン → isLoaded: true・ローカルのストアですぐ読み込む
+ *   （Clerk を待たない）。Cookie がログイン中かもしれないと言えば（RSC の遷移でトークンが期限切れだった等）、不明として Clerk を待つ
+ * - サーバーがログイン中と言った → isLoaded: false（stores は null。ネットワークも書き込みも Clerk を待つ）。
+ *   キャッシュの持ち主が同じユーザーなら cachePreview で最後に同期した一覧を閲覧専用で先に表示できる
+ * stores が null なのは、まだ保存先を決められないとき（上の待ち）と、ログイン中なのに userId が無いとき（通常は起きない）。
+ * Clerk の読み込み前にローカルのストアを返すのは、サーバーとクライアント Cookie の両方が未ログインを示すときだけ
+ * （それでも Clerk が後からログイン中と言えば、その時点でクラウドへ切り替わる）。
  */
 export function useDataStores(): {
+  /** 保存先を決められた（Clerk の読み込み済み、またはサーバーが未ログインと言った） */
   isLoaded: boolean;
+  /** Clerk（clerk-js）の読み込み済み。syncCacheOwner など、Clerk の確定値が要る処理はこちらを待つ */
+  authLoaded: boolean;
   isSignedIn: boolean;
   userId: string | null;
   stores: ActiveDataStores | null;
+  /** Clerk の読み込み前に表示してよいキャッシュ（サーバーの userId とキャッシュの持ち主が一致するときだけ値を返す）。それ以外は null */
+  cachePreview: CachePreview | null;
 } {
-  const { getToken, userId, isSignedIn, isLoaded } = useAuth();
+  const { getToken, userId: clerkUserId, isSignedIn: clerkSignedIn, isLoaded: clerkLoaded } = useAuth();
+  const initial = useInitialAuth();
+  const clientMaybeSignedIn = useClientMaybeSignedIn();
+  const { isLoaded, isSignedIn, userId, previewUserId } = resolveAuth(
+    { isLoaded: !!clerkLoaded, isSignedIn: !!clerkSignedIn, userId: clerkUserId ?? null },
+    initial,
+    clientMaybeSignedIn
+  );
   const cloud = useMemo(
     () => (isSignedIn && userId ? createCloudDataStores(userId, getToken) : null),
     [isSignedIn, userId, getToken]
   );
+  const cachePreview = useMemo(() => (previewUserId ? createCachePreview(previewUserId) : null), [previewUserId]);
   useEffect(() => {
     if (!cloud) return;
     cloud.setActive(true);
     return () => cloud.setActive(false);
   }, [cloud]);
   return {
-    isLoaded: !!isLoaded,
-    isSignedIn: !!isSignedIn,
-    userId: userId ?? null,
-    stores: isSignedIn ? cloud : LOCAL_STORES,
+    isLoaded,
+    authLoaded: !!clerkLoaded,
+    isSignedIn,
+    userId,
+    stores: !isLoaded ? null : isSignedIn ? cloud : LOCAL_STORES,
+    cachePreview,
   };
 }
 

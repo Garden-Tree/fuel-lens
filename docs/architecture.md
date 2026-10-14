@@ -20,7 +20,7 @@ FuelLens の構成、データの流れ、主要なモジュールの役割を�
 | `app/api/account/route.ts`、`lib/server/account/handler.ts` | アカウント削除の API（`DELETE /api/account`。Clerk のユーザーを削除する。[api-account.md](./api-account.md)） |
 | `app/api/keepalive/route.ts` | Supabase 自動停止対策のエンドポイント（[operations.md](./operations.md#3-supabase-の自動停止と-keepalive)） |
 | `app/layout.tsx` | ルートレイアウト。フォント（数字用の JetBrains Mono。日本語は端末のフォント）、`ServiceWorkerRegister` / `WebAnalytics`、`metadata` と `viewport`。Clerk・トースト・Supabase は載せない（公開ページ `/`・`/calc`・`/privacy`・`/terms` を軽くするため） |
-| `app/(app)/layout.tsx` | アプリ画面（`/app`・`/history`・`/stats`・`/settings`。ルートグループなので URL は変わらない）の共通レイアウト。`ClerkProvider`（`localization` は `lib/clerkLocalization.ts`） / `ToastProvider` / `UserSync` / `SupabaseStatusBanner`、Clerk Frontend API への `preconnect`（`lib/clerkFrontendApi.ts`） |
+| `app/(app)/layout.tsx` | アプリ画面（`/app`・`/history`・`/stats`・`/settings`。ルートグループなので URL は変わらない）の共通レイアウト。`ClerkProvider`（`localization` は `lib/clerkLocalization.ts`） / `InitialAuthProvider`（サーバーの `auth()` の結果。[2 章「最初の描画」](#2-データフロー)。このため 4 画面は動的描画） / `ToastProvider` / `UserSync` / `SupabaseStatusBanner`、Clerk Frontend API への `preconnect`（`lib/clerkFrontendApi.ts`） |
 | `app/globals.css` | デザイントークン（`@theme`）と `num` などのユーティリティ（[design-system.md](./design-system.md)） |
 | `components/AppShell.tsx` / `components/AppNav.tsx` / `components/ScanActionMenu.tsx` / `components/ScanActions.tsx` | アプリ画面の枠。`AppFrame`（本文の器とナビ）/ `PageHeader`（見出し + 車両チップ）/ `HookErrorLine` / `ReadOnlyCaption`、ナビ（スマホは下部タブバー、PC は左サイドバー）、スキャンメニュー（撮影する / アルバムから選ぶ / 手動で入力）と、ホームがメニューに処理を登録する `ScanActionsProvider` / `RegisterScanActions`（[ナビゲーションとスキャンメニュー](#ナビゲーションとスキャンメニュー)） |
 | `components/ui/*` | デザインシステムの部品（`Section` / `GroupedList` / `ListRow` / `ValueRow` / `SegmentedControl` / `Chip` / `IconButton` / `Num` / `Menu` / `MenuItem` / `BrandMark`）。`@/components/ui` から import する |
@@ -55,7 +55,7 @@ FuelLens の構成、データの流れ、主要なモジュールの役割を�
 | `lib/importers/fuelio.ts` / `lib/importers/fuellensCsv.ts` | CSV の取り込み（Fuelio / FuelLens の CSV → バックアップ形式）。純粋関数 |
 | `lib/useVehicles.ts` / `lib/useFuelRecords.ts` / `lib/useRecordForm.ts` | データフックとフォーム状態（[4 章](#4-フック-api)）。フォームの純粋なヘルパーは `lib/recordDraft.ts` |
 | `lib/useBackdropClose.ts` | モーダルの背景クリックで閉じるハンドラ（ドラッグでの誤閉じを防ぐ） |
-| `lib/data/` | データアダプタ層（[2 章](#データアダプタ層libdata)）。`types.ts`（`RecordStore` / `VehicleStore` / `DataError`）、`localStore.ts`（localStorage の実装と `LOCAL_*` キー・`writeLocalJson`）、`cloudStore.ts`（Supabase の実装と `ensureDefaultVehicle` / `ensureUserRow` / `withStatus`）、`withOutage.ts`（`withOutageHandling` / `withCache`）、`cloudBootstrap.ts`（移行 → 既定車両の確保をタブ内で 1 回）、`primedVehicles.ts`（取得済みの車両一覧を最初の `list()` に 1 回だけ返す）、`useDataStores.ts`（ログイン状態でストアを選ぶフック）、`accountDeletion.ts`（アカウント削除のクラウドのデータの削除 `deleteOwnData`）、`columns.ts` / `scope.ts`（列の検証・パッチ、一覧の範囲。純粋関数） |
+| `lib/data/` | データアダプタ層（[2 章](#データアダプタ層libdata)）。`types.ts`（`RecordStore` / `VehicleStore` / `DataError`）、`localStore.ts`（localStorage の実装と `LOCAL_*` キー・`writeLocalJson`）、`cloudStore.ts`（Supabase の実装と `ensureDefaultVehicle` / `ensureUserRow` / `withStatus`）、`withOutage.ts`（`withOutageHandling` / `withCache`）、`cloudBootstrap.ts`（移行 → 既定車両の確保をタブ内で 1 回）、`primedVehicles.ts`（取得済みの車両一覧を最初の `list()` に 1 回だけ返す）、`useDataStores.ts`（ログイン状態でストアを選ぶフック）、`initialAuth.ts` / `initialAuthContext.tsx`（サーバーの初期認証状態・Clerk の読み込み前の判定・キャッシュの先行表示）、`accountDeletion.ts`（アカウント削除のクラウドのデータの削除 `deleteOwnData`）、`columns.ts` / `scope.ts`（列の検証・パッチ、一覧の範囲。純粋関数） |
 | `lib/migrateLocalData.ts` | ローカル → クラウドの移行（[5 章](#5-ローカル--クラウド移行)）。`LOCAL_*` / `writeLocalJson` / `CrossTabLockError` は互換のため再エクスポート |
 | `lib/crossTabLock.ts` | ユーザー単位のクロスタブ排他ロック `withCrossTabLock`（Web Locks + localStorage リース）と `CrossTabLockError` |
 | `lib/supabaseClient.ts` | ユーザーごとの Supabase クライアント（Clerk JWT 付き） |
@@ -98,6 +98,24 @@ FuelLens の構成、データの流れ、主要なモジュールの役割を�
   `migrateLocalData` でローカルの記録をクラウドへ移してから既定車両を確保します（[5 章](#5-ローカル--クラウド移行)）。
 - スキャンの流れ: 画像を 0.8MB 以下・長辺 1200px の JPEG に圧縮 → `POST /api/analyze` → 確認シートで確認・修正 →
   同じ日付・給油量・支払総額の記録があれば確認ダイアログ → `addRecord`。解析結果を自動保存することはありません。
+- **最初の描画（初期認証状態とキャッシュの先行表示）**: アプリ画面のレイアウト（`app/(app)/layout.tsx`）がサーバーで Clerk の `auth()` を読み、
+  `{ signedIn, userId }` を `InitialAuthProvider`（`lib/data/initialAuthContext.tsx`）でクライアントへ渡します。判定は純粋関数 `resolveAuth`（`lib/data/initialAuth.ts`）で、
+  使うのは Clerk（clerk-js、数百 KB + Frontend API の往復）の読み込みが終わるまでの間だけです。読み込み後は常に Clerk の値が優先します。
+  - サーバーが未ログイン、かつ Clerk のクライアント Cookie `__client_uat`（サフィックス付きも）が無いか `0` → `useDataStores` は `isLoaded: true`・ローカルのストアを返し、
+    Clerk を待たずに読み込みます（スケルトンを早く抜ける）。サーバーの「未ログイン」だけでは信用しません: Clerk の handshake はドキュメントの読み込みでしか起きないため、
+    セッショントークンが期限切れのまま RSC の遷移（例: `/calc` に滞在 → `<Link href="/app">`）をすると、ログイン中でもサーバーは未ログインと判定します。
+    `__client_uat` が 0 より大きい（ログイン中かもしれない）・読めない（SSR・ハイドレーション中）ときは不明として従来どおり Clerk を待ちます（`clientUatIndicatesSignedIn`）。
+    両方が未ログインを示しても Clerk がのちにログイン中と言えば、その時点でクラウドへ切り替わります（それまでの書き込みはローカルへ行く。未ログインの判定と同じ扱い）。
+  - サーバーがログイン中 → ネットワーク（Supabase はトークンが要る）と書き込みは Clerk を待ちます（その間 `stores` は `null`）。ただし、その `userId` が
+    この端末のキャッシュの持ち主（`syncCacheOwner` が記録する `fuel_lens_cache_owner`。`readCacheOwner`）と一致すれば、`cachePreview` で最後に同期した一覧
+    （`fuel_lens_cache_vehicles_<userId>` / `fuel_lens_cache_records_<userId>_<vehicleId>`）を先に表示します（フックの `previewing: true`）。
+    Clerk の読み込み後の通常の読み込みは、同じユーザー・同じ範囲なら `loading` を立てずに一覧を置き換えます（スケルトンに戻さない。失敗時の扱いは通常どおり）。範囲が変わったら通常どおりスケルトンにします。
+    Clerk が別のユーザー・未ログインと言ったとき、または読み込み前の再実行でキャッシュが無くなったときは、応答を待たずに先行表示を消して読み込み中に戻します。
+    持ち主が違う・記録が無い・サーバーの値が不明なら何も出さず、従来どおり Clerk を待ちます。
+  - `previewing` の間は `useVehicleScope` の `readOnly` が true（書き込みのボタンは無効。ストアも無いので呼べば日本語エラー）、
+    ホームの撮影・手動入力・`?action=` は読み込み中と同じ扱い、設定画面のパネルは読み込み中です。「閲覧専用（クラウド接続待ち）」の注記は障害のときだけ出します（`readOnly && !previewing`）。
+  - `syncCacheOwner` は従来どおり Clerk の確定値（`authLoaded`）を待って呼びます。移行（`migrateLocalData`）は従来どおりクラウドの初期化からだけ走ります。
+  - `auth()` を読むため `/app`・`/history`・`/stats`・`/settings` はリクエストごとの描画（ビルド出力の `ƒ`）です。公開ページ（`/`・`/calc`・`/privacy`・`/terms`）は静的のままです。
 - 選択中の車両 ID は localStorage に保存します。未ログイン時は `fuel_lens_selected_vehicle_id`、ログイン時はユーザーごとの `fuel_lens_selected_vehicle_id_<userId>` を使い、保存値が現在の車両一覧に無い場合は既定車両へフォールバックして保存値を書き換えます。
 
 ### データアダプタ層（`lib/data/`）
@@ -118,7 +136,8 @@ useVehicles / useFuelRecords
 | `cloudStore.ts` | `createCloudStores(supabase, userId)`。生の層で、失敗は `status` 付きの Supabase エラーをそのまま投げる（保存前の検証だけ日本語の `DataError`）。クエリの詳細は下 |
 | `withOutage.ts` | `withOutageHandling(store, { isReadOnly, onFailure, onRecover })`: 分類 → `setOutage` → 日本語の `DataError` への変換と、書き込み前の閲覧専用ガードを 1 か所で行う（`list` の成功で `clearOutage`）。`withCache(store, { key })`: `list` の成功でキャッシュを書き、成功した書き込みも反映する。読み込み失敗時はフックが `cached()` で最後に同期した一覧を表示する |
 | `cloudBootstrap.ts` | `bootstrapCloud(supabase, userId, deps?, { force? })`: `migrateLocalData` → `ensureDefaultVehicle` を userId ごとにタブ内で 1 回（[5 章](#5-ローカル--クラウド移行)）。結果は取得済みの車両一覧（`vehicles`）を運び、直後の最初の `vehicles.list()` はそれを使い回す（2 回目の GET を発行しない。`primedVehicles.ts`） |
-| `useDataStores.ts` | ログイン状態に応じたストア（クラウドは userId・getToken ごとにメモ化）。フックのアンマウント・ユーザー切り替え後に届いた応答ではキャッシュを書かない。ストアのほかに、クラウドは `deleteAccountData()`（アカウント削除の 1 段目）、ローカルは `clearAll()`（この端末のデータの削除。`clearLocalData`）を持つ（[アカウント削除](#アカウント削除)） |
+| `initialAuth.ts` / `initialAuthContext.tsx` | サーバーの初期認証状態（`InitialAuth`）と、Clerk の読み込み前の判定 `resolveAuth`、キャッシュの先行表示 `createCachePreview`（持ち主を読むたびに確認）。`InitialAuthProvider` / `useInitialAuth` / `useResolvedAuth`（画面の「未ログイン」表示用）。上の「最初の描画」 |
+| `useDataStores.ts` | ログイン状態に応じたストア（クラウドは userId・getToken ごとにメモ化）。Clerk の読み込み前はサーバーの初期認証状態で補い（`isLoaded` / `authLoaded` / `cachePreview`）、保存先を決められない間は `stores: null`。フックのアンマウント・ユーザー切り替え後に届いた応答ではキャッシュを書かない。ストアのほかに、クラウドは `deleteAccountData()`（アカウント削除の 1 段目）、ローカルは `clearAll()`（この端末のデータの削除。`clearLocalData`）を持つ（[アカウント削除](#アカウント削除)） |
 | `accountDeletion.ts` | `deleteOwnData(supabase, userId)`: 利用者自身の JWT（RLS）で記録 → 車両 → `users` 行の順に削除し、記録・車両が 0 件になったことを確かめる（残っていれば `DataError`（`DELETE_INCOMPLETE_CODE`））。冪等 |
 | `columns.ts` / `scope.ts` | `pickRecordColumns`（保存する列のホワイトリストと検証）、`sanitizeVehicleSettings`、`applyRecordPatch` / `applyVehiclePatch`、`recordScopeOf` / `matchesRecordScope`（`matchesSelectedVehicle` と同じ判定） |
 
@@ -251,7 +270,8 @@ useVehicles / useFuelRecords
 |---|---|
 | `error` | 障害以外の読み込みエラー（権限エラー、認証トークン欠落、移行失敗など）。画面に出せる日本語文字列 |
 | `outage` | クラウド障害の種別（`"paused"` / `"unreachable"` / `null`）。全フックで共有 |
-| `readOnly` | ログイン中かつ `outage != null`。このとき追加・更新・削除は日本語メッセージの `ReadOnlyError` を投げる |
+| `readOnly` | ログイン中かつ `outage != null`。このとき追加・更新・削除は日本語メッセージの `ReadOnlyError` を投げる。`useVehicleScope` の `readOnly` は `previewing`（Clerk の読み込み前のキャッシュ表示）の間も true |
+| `previewing` | Clerk の読み込み前に、最後に同期した一覧（キャッシュ）を表示している（[2 章「最初の描画」](#2-データフロー)）。最新の一覧が届いたら false |
 
 書き込みの失敗は `withOutageHandling`（`lib/data/withOutage.ts`）が `toUserFacingWriteError` で日本語メッセージの `DataError` に変換します。UI は `useToast()` で表示します。
 
@@ -433,6 +453,8 @@ Supabase Free のプロジェクトが一時停止すると、API は HTTP 540 �
   （「認証トークンを取得できませんでした。再ログインしてください。」）を投げます。
   オフラインによる取得失敗は障害（`unreachable`）として扱います。
 - Supabase クライアントは userId ごとにメモ化し、未ログインでは作成しません。
+- アプリ画面のレイアウトはサーバーで `auth()` を読み、初期認証状態としてクライアントへ渡します（Clerk の読み込み前の描画にだけ使う。[2 章「最初の描画」](#2-データフロー)）。
+  Next.js 内部の例外（動的描画への切り替え）は `unstable_rethrow` で投げ直し、それ以外の失敗は `null`（不明）として従来どおり Clerk を待ちます。
 - **Third-Party Auth（本番）**: JWT Secret の共有が不要で、RLS ポリシーはそのまま使えます。
   Clerk と Supabase の両方でダッシュボード設定が必要です（[auth-production.md](./auth-production.md)）。
 - `proxy.ts` の `clerkMiddleware({ authorizedParties })` には、`https://fuel-lens.gadelog.com`、`NEXT_PUBLIC_APP_URL`、

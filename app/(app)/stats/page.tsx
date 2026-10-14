@@ -25,6 +25,7 @@ export default function StatsPage() {
     loading,
     error: loadError,
     readOnly,
+    previewing,
     vehicleActions,
   } = useVehicleScope();
 
@@ -57,7 +58,7 @@ export default function StatsPage() {
         />
 
         <HookErrorLine error={loadError} />
-        <ReadOnlyCaption show={readOnly} />
+        <ReadOnlyCaption show={readOnly && !previewing} />
 
         {loading ? (
           <StatsSkeleton />

@@ -2,7 +2,7 @@
 
 import { useId, useRef } from "react";
 import Link from "next/link";
-import { useAuth } from "@clerk/nextjs";
+import { useResolvedAuth } from "@/lib/data/initialAuthContext";
 import { Camera, ChevronRight, Edit2, Image as ImageIcon, type LucideIcon } from "lucide-react";
 import Modal from "./Modal";
 import { useScanActions, type ScanActionHandlers } from "./ScanActions";
@@ -55,7 +55,8 @@ function handlerOf(handlers: ScanActionHandlers, action: ScanAction["action"]): 
 }
 
 export default function ScanActionMenu({ open, onClose, anchor = null }: ScanActionMenuProps) {
-  const { isLoaded, isSignedIn } = useAuth();
+  // サーバーが未ログインと言っていれば Clerk の読み込みを待たずに確定する（lib/data/initialAuth.ts）
+  const { isLoaded, isSignedIn } = useResolvedAuth();
   const signedOut = isLoaded && !isSignedIn;
   // /app を表示中ならホームが登録した処理（他の画面では null）
   const handlers = useScanActions();
