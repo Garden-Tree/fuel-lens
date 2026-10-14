@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, render, screen } from "@testing-library/react";
 import { useCurrentMonthKey } from "@/lib/home/useCurrentMonthKey";
-import MonthSummarySection from "@/app/app/_components/MonthSummarySection";
+import MonthSummarySection from "@/app/(app)/app/_components/MonthSummarySection";
 import type { FuelRecord } from "@/lib/types";
 
 function Probe() {

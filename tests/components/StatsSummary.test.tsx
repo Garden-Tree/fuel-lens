@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
 
-import PeriodFilter from "@/app/stats/_components/PeriodFilter";
-import { CostSummary, EfficiencyHero, efficiencyRange } from "@/app/stats/_components/SummaryCards";
+import PeriodFilter from "@/app/(app)/stats/_components/PeriodFilter";
+import { CostSummary, EfficiencyHero, efficiencyRange } from "@/app/(app)/stats/_components/SummaryCards";
 import { buildStatsModel, type StatsSummary } from "@/lib/stats";
 import type { FuelRecord } from "@/lib/types";
 

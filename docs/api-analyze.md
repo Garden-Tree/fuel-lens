@@ -20,7 +20,7 @@ Content-Type: application/json
 
 - `image` は Base64 文字列です。`data:image/...;base64,` プレフィックスは有っても無くても構いません。
   旧クライアント互換のため `imageBase64` も受け付けます。
-- クライアント（`app/app/page.tsx`）は画像を 0.8MB 以下・長辺 1200px の JPEG に圧縮してから送ります。
+- クライアント（`app/(app)/app/page.tsx`）は画像を 0.8MB 以下・長辺 1200px の JPEG に圧縮してから送ります。
   クライアント側のタイムアウトは 45 秒です。
 
 ## 処理の順序

@@ -36,7 +36,7 @@ FuelLens の画面は「計器盤のようなダーク UI ＋ グループリス
 
 ## 文字
 
-- 本文は Noto Sans JP（400 / 500 / 700）、数字は JetBrains Mono（`app/layout.tsx` の next/font）。
+- 本文は Noto Sans JP（可変フォント。使うのは 400 / 500 / 700。`font-semibold`（600）は使わず `font-bold`）、数字は JetBrains Mono（`app/layout.tsx` の next/font）。
 - **金額・燃費・距離・給油量などの数値は `num` ユーティリティ**（等幅・`tabular-nums`）で表示します。部品なら `<Num>`。
 - 見出し: ページ見出し 20px 太字、セクション見出し 13px `text-sub` 中太（左右 16px）、行の本文 15px、補足 12〜13px `text-sub`。
 - UI の文言はすべて日本語（CLAUDE.md の不変条件 6）。
@@ -69,7 +69,7 @@ FuelLens の画面は「計器盤のようなダーク UI ＋ グループリス
 
 ### recharts の色
 
-recharts の SVG 属性（`stroke`・`fill` など）には Tailwind のクラスが効かないため、`app/stats/_components/chartTheme.ts` に **トークンと同じ 16 進値を複製** しています（`CHART_COLORS`: 罫線 = `line`、目盛り = `sub`、カーソル = `border`、折れ線 = `accent`、棒 = `money-dim` / `money`、平均の破線 = `cost-up`、最終点の縁 = `surface`。`CHART_TICK`: 目盛りの文字、`CHART_TOOLTIP_CLASS`: ツールチップの外枠）。
+recharts の SVG 属性（`stroke`・`fill` など）には Tailwind のクラスが効かないため、`app/(app)/stats/_components/chartTheme.ts` に **トークンと同じ 16 進値を複製** しています（`CHART_COLORS`: 罫線 = `line`、目盛り = `sub`、カーソル = `border`、折れ線 = `accent`、棒 = `money-dim` / `money`、平均の破線 = `cost-up`、最終点の縁 = `surface`。`CHART_TICK`: 目盛りの文字、`CHART_TOOLTIP_CLASS`: ツールチップの外枠）。
 **トークン（`globals.css`）の色を変えたら `chartTheme.ts` も合わせてください**（自動では連動しません）。グラフの部品はこのファイルの定数だけを使い、16 進を直接書かないこと。
 
 ## ナビゲーション

@@ -7,11 +7,11 @@ FuelLens の構成、データの流れ、主要なモジュールの役割を�
 
 | パス | 役割 |
 |---|---|
-| `app/page.tsx` | ランディングページ（Server Component）。対話部分は `components/landing/*` |
-| `app/app/page.tsx`、`app/app/_components/` | ホーム画面（`/app`）。燃費メーターのヒーロー、今月の集計、最近の記録、記録の入口（撮影 / アルバム / 手動）。スキャン（画像の選択・ドロップ・貼り付け）と手動入力・最新記録の編集もここ。ページはフックと部品を組み合わせるだけで、部品は `_components/`（`EfficiencyGauge` / `LatestRecordCard` / `MonthSummarySection` / `RecentRecordsSection` / `ScanEntryList` / `WelcomeCard` / `DropZoneRow` / `ManualEntryCard` / `ScanPanel` / `ScanReadyPrompt` / `RecordCardSkeleton` / `ShortcutActionHandler`）に分割。表示用の純粋関数は `lib/home/`（[メイン画面の構成](#メイン画面の構成app)） |
-| `app/history/page.tsx`、`app/history/_components/` | 履歴一覧。年・月・並び順のチップ（`HistoryToolbar`）と CSV 出力、月ごとの見出し付きの一覧（`RecordRow`）、行を開いて明細・編集・別車両への移動・削除（`RecordDetail`）。`/history#record-<id>` でその記録を開く。絞り込み・月ごとのまとめは純粋関数 `lib/history/`（[履歴画面の構成](#履歴画面の構成history)） |
-| `app/stats/page.tsx`、`app/stats/_components/` | 統計の平均燃費ヒーロー（推移グラフ付き）・費用・月ごとの給油代・単価の推移（recharts）。ページは車両・期間の状態と `buildStatsModel` の結果を部品に渡すだけで、部品は `_components/` に分割（recharts 用の色は `chartTheme.ts`）。期間フィルタ（3 ヶ月 / 6 ヶ月 / 1 年 / 全期間）。スタンド比較の部品は残してあるが画面には出さない（[11 章](#11-統計)） |
-| `app/settings/page.tsx` | 設定画面（`/settings`）。見出し付きのグループリストで、データ概要・バックアップ・復元・インポート（[8 章](#8-バックアップと復元)）・アカウント（[アカウント削除](#アカウント削除)） |
+| `app/page.tsx` | ランディングページ（Server Component）。対話部分は `components/landing/*`。右上のログインボタン（`HeaderAuthButtons`）はページの読み込み完了後に `ClerkHeaderAuth`（`ClerkProvider` + `SignedIn` / `SignedOut` / `SignInButton`）を動的に読み込む（clerk-js を初期表示に載せないため。読み込むまではボタンを出さない） |
+| `app/(app)/app/page.tsx`、`app/(app)/app/_components/` | ホーム画面（`/app`）。燃費メーターのヒーロー、今月の集計、最近の記録、記録の入口（撮影 / アルバム / 手動）。スキャン（画像の選択・ドロップ・貼り付け）と手動入力・最新記録の編集もここ。ページはフックと部品を組み合わせるだけで、部品は `_components/`（`EfficiencyGauge` / `LatestRecordCard` / `MonthSummarySection` / `RecentRecordsSection` / `ScanEntryList` / `WelcomeCard` / `DropZoneRow` / `ManualEntryCard` / `ScanPanel` / `ScanReadyPrompt` / `RecordCardSkeleton` / `ShortcutActionHandler`）に分割。表示用の純粋関数は `lib/home/`（[メイン画面の構成](#メイン画面の構成app)） |
+| `app/(app)/history/page.tsx`、`app/(app)/history/_components/` | 履歴一覧。年・月・並び順のチップ（`HistoryToolbar`）と CSV 出力、月ごとの見出し付きの一覧（`RecordRow`）、行を開いて明細・編集・別車両への移動・削除（`RecordDetail`）。`/history#record-<id>` でその記録を開く。絞り込み・月ごとのまとめは純粋関数 `lib/history/`（[履歴画面の構成](#履歴画面の構成history)） |
+| `app/(app)/stats/page.tsx`、`app/(app)/stats/_components/` | 統計の平均燃費ヒーロー（推移グラフ付き）・費用・月ごとの給油代・単価の推移（recharts）。ページは車両・期間の状態と `buildStatsModel` の結果を部品に渡すだけで、部品は `_components/` に分割（recharts 用の色は `chartTheme.ts`）。期間フィルタ（3 ヶ月 / 6 ヶ月 / 1 年 / 全期間）。スタンド比較の部品は残してあるが画面には出さない（[11 章](#11-統計)） |
+| `app/(app)/settings/page.tsx` | 設定画面（`/settings`）。見出し付きのグループリストで、データ概要・バックアップ・復元・インポート（[8 章](#8-バックアップと復元)）・アカウント（[アカウント削除](#アカウント削除)） |
 | `app/privacy/page.tsx`、`app/terms/page.tsx`、`components/LegalPage.tsx` | プライバシーポリシー（`/privacy`）と利用規約（`/terms`）。ログイン不要の静的ページ（Google OAuth 同意画面用）で、共通レイアウトは `LegalPage`（タブバーなし）。ランディングのフッターと設定画面の「このアプリについて」からリンク |
 | `app/manifest.ts` | PWA の Web App Manifest（`/manifest.webmanifest`。[9 章](#9-pwa)） |
 | `app/robots.ts`、`app/sitemap.ts`、`lib/siteUrl.ts` | `/robots.txt`（`/api/`・`/settings`・`/history`・`/stats` を除外）と `/sitemap.xml`（`/`・`/calc`・`/app`・`/privacy`・`/terms`）。サイト URL は `getSiteUrl()`（`NEXT_PUBLIC_APP_URL`、無効・未設定なら `https://fuel-lens.gadelog.com`） |
@@ -19,7 +19,8 @@ FuelLens の構成、データの流れ、主要なモジュールの役割を�
 | `app/api/analyze/route.ts` | Gemini で画像を解析する API（[api-analyze.md](./api-analyze.md)） |
 | `app/api/account/route.ts`、`lib/server/account/handler.ts` | アカウント削除の API（`DELETE /api/account`。Clerk のユーザーを削除する。[api-account.md](./api-account.md)） |
 | `app/api/keepalive/route.ts` | Supabase 自動停止対策のエンドポイント（[operations.md](./operations.md#3-supabase-の自動停止と-keepalive)） |
-| `app/layout.tsx` | `ClerkProvider`（`localization` は `lib/clerkLocalization.ts`） / `ToastProvider` / `UserSync` / `SupabaseStatusBanner`、フォント（Noto Sans JP + JetBrains Mono）、`metadata` と `viewport` |
+| `app/layout.tsx` | ルートレイアウト。フォント（Noto Sans JP は可変フォント + JetBrains Mono）、`ServiceWorkerRegister` / `WebAnalytics`、`metadata` と `viewport`。Clerk・トースト・Supabase は載せない（公開ページ `/`・`/calc`・`/privacy`・`/terms` を軽くするため） |
+| `app/(app)/layout.tsx` | アプリ画面（`/app`・`/history`・`/stats`・`/settings`。ルートグループなので URL は変わらない）の共通レイアウト。`ClerkProvider`（`localization` は `lib/clerkLocalization.ts`） / `ToastProvider` / `UserSync` / `SupabaseStatusBanner`、Clerk Frontend API への `preconnect`（`lib/clerkFrontendApi.ts`） |
 | `app/globals.css` | デザイントークン（`@theme`）と `num` などのユーティリティ（[design-system.md](./design-system.md)） |
 | `components/AppShell.tsx` / `components/AppNav.tsx` / `components/ScanActionMenu.tsx` / `components/ScanActions.tsx` | アプリ画面の枠。`AppFrame`（本文の器とナビ）/ `PageHeader`（見出し + 車両チップ）/ `HookErrorLine` / `ReadOnlyCaption`、ナビ（スマホは下部タブバー、PC は左サイドバー）、スキャンメニュー（撮影する / アルバムから選ぶ / 手動で入力）と、ホームがメニューに処理を登録する `ScanActionsProvider` / `RegisterScanActions`（[ナビゲーションとスキャンメニュー](#ナビゲーションとスキャンメニュー)） |
 | `components/ui/*` | デザインシステムの部品（`Section` / `GroupedList` / `ListRow` / `ValueRow` / `SegmentedControl` / `Chip` / `IconButton` / `Num` / `Menu` / `MenuItem` / `BrandMark`）。`@/components/ui` から import する |
@@ -288,7 +289,7 @@ useVehicles / useFuelRecords
 
 ### メイン画面の構成（`/app`）
 
-`app/app/page.tsx` は状態をフックから受け取り、`app/app/_components/` の部品に渡すだけです。
+`app/(app)/app/page.tsx` は状態をフックから受け取り、`app/(app)/app/_components/` の部品に渡すだけです。
 
 | 部品・フック | 役割 |
 |---|---|
@@ -315,7 +316,7 @@ useVehicles / useFuelRecords
 
 ### 履歴画面の構成（`/history`）
 
-`app/history/page.tsx` が状態（年・月・並び順・開いている行・処理中の記録）を持ち、`app/history/_components/` の部品に渡します。
+`app/(app)/history/page.tsx` が状態（年・月・並び順・開いている行・処理中の記録）を持ち、`app/(app)/history/_components/` の部品に渡します。
 
 | 部品・モジュール | 役割 |
 |---|---|
@@ -421,7 +422,7 @@ Supabase Free のプロジェクトが一時停止すると、API は HTTP 540 �
 
 - 認証は Clerk（`@clerk/nextjs`）です。`proxy.ts` の `clerkMiddleware()` は全ルートを公開のままにし、
   `/api/analyze` と `/api/account`（アカウント削除）はルートハンドラ内の `auth()` で未ログインを 401 にします。
-- Clerk の UI（ログイン・サインアップ・アカウント管理）は `app/layout.tsx` の `<ClerkProvider localization>` で日本語化しています。`lib/clerkLocalization.ts` が `@clerk/localizations` の `jaJP`（サブパス `/ja-JP` から読み込み）に、メール確認コードの案内（迷惑メールフォルダの確認）を深くマージした設定です。
+- Clerk の UI（ログイン・サインアップ・アカウント管理）は `app/(app)/layout.tsx`（アプリ画面）と `components/landing/ClerkHeaderAuth.tsx`（ランディングのログインボタン。読み込み完了後に遅延読み込み）の `<ClerkProvider localization>` で日本語化しています。公開ページ（`/calc`・`/privacy`・`/terms`）は Clerk を読み込みません。`lib/clerkLocalization.ts` が `@clerk/localizations` の `jaJP`（サブパス `/ja-JP` から読み込み）に、メール確認コードの案内（迷惑メールフォルダの確認）を深くマージした設定です。
 - Supabase へは、Clerk のトークンを supabase-js の `accessToken` として渡します。取得方法は公開環境変数
   `NEXT_PUBLIC_CLERK_SUPABASE_JWT_TEMPLATE` で切り替えます（`lib/supabaseClient.ts` の `fetchSupabaseToken`）。
   値あり（`supabase`）なら `getToken({ template })`（JWT テンプレート方式。Clerk 開発インスタンス = ローカル / Preview）、
@@ -568,7 +569,7 @@ CSV を `lib/importers/` の純粋関数でバックアップ形式（`FuelLensB
 - アイコンは `public/icons/` の `icon-192.png` / `icon-512.png`（通常）と `icon-maskable-512.png`（maskable。余白付きの全面塗り）、
   iOS 用の `public/apple-touch-icon.png`（180x180。`metadata.icons.apple`）です。
 - ショートカット（アイコンの長押しメニュー）は「スキャン」`/app?action=scan` と「手動で入力」`/app?action=manual` の 2 つです（アプリ内のスキャンメニューにある「アルバムから選ぶ」`?action=album` はマニフェストには載せていない）。
-  `lib/scan/useShortcutActions.ts`（`app/app/page.tsx` の `ShortcutActionHandler`）が `action` パラメータを 1 回だけ処理し、処理後にパラメータを URL から取り除きます（再読み込みで繰り返し開かないため）。
+  `lib/scan/useShortcutActions.ts`（`app/(app)/app/page.tsx` の `ShortcutActionHandler`）が `action` パラメータを 1 回だけ処理し、処理後にパラメータを URL から取り除きます（再読み込みで繰り返し開かないため）。
 - **Web Share Target（共有から読み取り）**: `manifest` の `share_target` は `POST /share`（`multipart/form-data`、画像は `image` フィールド、`accept: image/*`）です。
   `params` は `files` だけを宣言し（`title` / `text` / `url` は無し）、テキストやリンクの共有先には FuelLens を出しません。
   **SW が有効なら** 画像はサーバーへ送らず端末内だけで受け渡すので、サイズの上限もサーバー保存もありません。
@@ -658,7 +659,7 @@ CSV を `lib/importers/` の純粋関数でバックアップ形式（`FuelLensB
 
 `/stats` は選択中の車両の記録（連鎖計算済み）を期間フィルタ（`filterByPeriod`）で絞り、`lib/stats/` の純粋関数で集計します。
 平均燃費・円/km を run 単位で求める理由は [10 章](#10-給油の連鎖計算fill-chain) の「統計」を参照してください。
-画面が使う値（期間フィルタ後の記録、サマリー、各グラフの系列と軸、スタンド比較の表示行と棒の長さ、前回比）は純粋関数 `buildStatsModel`（`lib/stats/model.ts`）が一度に導出し、`app/stats/_components/` の部品は model の一部を受け取って描画するだけです。
+画面が使う値（期間フィルタ後の記録、サマリー、各グラフの系列と軸、スタンド比較の表示行と棒の長さ、前回比）は純粋関数 `buildStatsModel`（`lib/stats/model.ts`）が一度に導出し、`app/(app)/stats/_components/` の部品は model の一部を受け取って描画するだけです。
 
 画面の構成（上から。スマホは 1 カラム、PC は 2 カラム）:
 
@@ -675,7 +676,7 @@ PC は 2 カラムで、左上が `EfficiencyHero`、右上が `CostSummary`、�
 
 ### 単価トレンドとスタンド比較
 
-> スタンド比較（店舗別の平均単価）は 2026-10-08 に画面から外しました（利用者の要望）。部品 `app/stats/_components/StationComparison.tsx`（どこからも使われていない）と `lib/stats/prices.ts` / `stationRows.ts` の計算・テストは残しています。
+> スタンド比較（店舗別の平均単価）は 2026-10-08 に画面から外しました（利用者の要望）。部品 `app/(app)/stats/_components/StationComparison.tsx`（どこからも使われていない）と `lib/stats/prices.ts` / `stationRows.ts` の計算・テストは残しています。
 
 - **単価**: 記録の `price_per_unit`（正の値）を使い、無ければ支払総額 ÷ 給油量を `calculateFuelMetrics` と同じ 0.1 円単位で丸めて補います（`recordPrice`）。
 - **単価の推移**: `buildPriceSeries` が日付の有効な記録を日付昇順（同日は id 順）に並べます。2 点未満は空表示です。

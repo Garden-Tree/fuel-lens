@@ -5,7 +5,7 @@ import { createElement, type ReactNode } from "react";
 import { AppFrame } from "@/components/AppShell";
 import { SCAN_BUTTON_LABEL } from "@/components/AppNav";
 import { RegisterScanActions, type ScanActionHandlers } from "@/components/ScanActions";
-import ScanReadyPrompt from "@/app/app/_components/ScanReadyPrompt";
+import ScanReadyPrompt from "@/app/(app)/app/_components/ScanReadyPrompt";
 import { renderWithProviders } from "../setup/render";
 
 // ログイン中（tests/setup/dom.ts の未ログインのモックを上書きする）

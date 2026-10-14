@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { createElement, type ReactNode } from "react";
-import Home from "@/app/app/page";
+import Home from "@/app/(app)/app/page";
 import { SCAN_BUTTON_LABEL } from "@/components/AppNav";
 import type { FuelRecord, Vehicle } from "@/lib/types";
 import type { VehicleScope } from "@/lib/useVehicleScope";

@@ -188,7 +188,7 @@ export default function ScanReviewSheet({
               内容を確認・修正してから保存してください。
               {Object.keys(highlightFields).length > 0 && (
                 <>
-                  <span className="font-semibold text-warn">「要確認」</span>
+                  <span className="font-bold text-warn">「要確認」</span>
                   の項目は読み取れなかったか、確信度が低い項目です。
                 </>
               )}
