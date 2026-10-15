@@ -13,6 +13,8 @@ import { useRecordForm } from "@/lib/useRecordForm";
 import { useRecordEditing } from "@/lib/useRecordEditing";
 import { useScanPipeline } from "@/lib/scan/useScanPipeline";
 import { useImageDropPaste } from "@/lib/scan/useImageDropPaste";
+import { useTrial } from "@/lib/scan/trialContext";
+import { scanAccessOf } from "@/lib/trial";
 import {
   DISCARD_FORM_CONFIRM_MESSAGE,
   SHARE_UNAVAILABLE_MESSAGE,
@@ -32,6 +34,7 @@ import ScanEntryList from "./_components/ScanEntryList";
 import WelcomeCard from "./_components/WelcomeCard";
 import DropZoneRow from "./_components/DropZoneRow";
 import ScanReadyPrompt from "./_components/ScanReadyPrompt";
+import TrialLoginPrompt from "./_components/TrialLoginPrompt";
 
 const subscribeNothing = () => () => {};
 
@@ -40,6 +43,7 @@ const subscribeNothing = () => () => {};
  * 状態と処理はフックに、描画は ./_components に分けている（docs/architecture.md「メイン画面の構成」）。
  * - useVehicleScope: 選択中の車両とその記録（連鎖計算済み・日付の降順）
  * - useScanPipeline: 圧縮 → /api/analyze → 確認シート（ScanReviewSheet）。保存は確認シートの「保存」のみ
+ *   （未ログインのお試し読み取りも同じ流れで、保存先はこのブラウザ。残り回数は useTrial の表示用の写し）
  * - useImageDropPaste: 画像のドロップ（ページ全体）・ペースト
  * - useRecordEditing: 手動入力・最新記録の編集（重複確認付きの保存）
  * - RegisterScanActions: スキャンメニュー（AppFrame）に撮影・アルバム・手動入力の処理を登録する（メニューがタップの中で直接呼ぶ）
@@ -51,16 +55,19 @@ const subscribeNothing = () => () => {};
  */
 export default function Home() {
   const { toast, confirm } = useToast();
-  // AIスキャンはログイン必須（/api/analyze が 401 を返す）。未ログイン時は撮影・アルバムを無効にして案内する。
+  // 未ログインの AI スキャンはお試し読み取り（lib/trial.ts）が残っているときだけ。無ければ撮影・アルバムを無効にして案内する。
   // サーバーが未ログインと言っていれば Clerk の読み込みを待たずに確定する（lib/data/initialAuth.ts）
   const { isLoaded: authLoaded, isSignedIn } = useResolvedAuth();
+  const trial = useTrial();
   // 選択中の車両とその記録。未分類（vehicle_id=null）の記録は既定（先頭）車両を選択中のときだけ含まれる。
   // loading は車両・記録のどちらかの読み込み中（スキャン中は scan.loading）。
   // previewing はログイン中に Clerk の読み込み前のキャッシュを表示している間（表示はするが、書き込み・撮影は読み込み中と同じに扱う）
   const scope = useVehicleScope();
   const { vehicles, selectedVehicleId, selectedVehicle, distanceMode, records, loading: isLoading, readOnly, previewing } = scope;
 
-  const scan = useScanPipeline({ isSignedIn, toast, confirm });
+  const scan = useScanPipeline({ isSignedIn, toast, confirm, onTrialRemaining: trial.setRemaining });
+  // お試しを使い切ったときのログインの案内を「閉じる」で消したか（この表示中だけ）
+  const [trialPromptDismissed, setTrialPromptDismissed] = useState(false);
   // 他の画面・ショートカットから撮影 / アルバムで来たときの案内。画像を選んだ・スキャンが始まった・閉じたら消す
   const [scanPrompt, setScanPrompt] = useState(false);
   const processFile = (file: File) => {
@@ -89,6 +96,8 @@ export default function Home() {
   // ハイドレーション後に true（ログイン状態などブラウザにしかない値は、それまで出さない）
   const mounted = useSyncExternalStore(subscribeNothing, () => true, () => false);
   const signedOut = mounted && authLoaded && !isSignedIn;
+  // AI スキャン（撮影・アルバム・ドロップ）の可否と案内。ログイン中は常に使える
+  const access = scanAccessOf(signedOut, trial);
 
   // 撮影・アルバム・手動入力の可否（スキャンメニュー・`?action=` で共通）
   const readiness = shortcutReadinessOf({
@@ -151,7 +160,9 @@ export default function Home() {
   const justSaved = !!active && active.id === displayRecord?.id;
   const scanned = justSaved && !!active?.fromScan;
   const hasRecords = records.length > 0;
-  const showScanPrompt = scanPrompt && availability.canScan;
+  const showScanPrompt = scanPrompt && availability.canScan && !access.locked;
+  // お試しを使い切ったらログインを案内する（確認シートを開いている間は出さない）
+  const showTrialPrompt = access.exhausted && !trialPromptDismissed && scan.scanResult === null;
 
   const entrySection = (
     <Section title="記録する">
@@ -159,7 +170,7 @@ export default function Home() {
         onCamera={openCamera}
         onAlbum={openAlbum}
         onManual={() => void requestManualEntry()}
-        signedOut={signedOut}
+        access={access}
         scanning={scan.loading}
         readOnly={readOnly}
         distanceMode={distanceMode}
@@ -228,6 +239,13 @@ export default function Home() {
         {/* データ取得エラー / 閲覧専用の表示 */}
         <HookErrorLine error={scope.error} />
         <ReadOnlyCaption show={readOnly && !previewing} />
+
+        {/* 未ログインでお試し読み取りを使い切ったときのログインの案内 */}
+        {showTrialPrompt && (
+          <div className="mb-3 lg:mb-6">
+            <TrialLoginPrompt onDismiss={() => setTrialPromptDismissed(true)} />
+          </div>
+        )}
 
         {/* 他の画面・ショートカットから撮影 / アルバムで来たときの案内（ボタンのタップの中でファイル選択を開く） */}
         {showScanPrompt && (
@@ -304,7 +322,7 @@ export default function Home() {
                 </>
               )
             )}
-            <DropZoneRow isDragging={isDragging} onClick={openAlbum} disabled={scan.loading} signedOut={signedOut} />
+            <DropZoneRow isDragging={isDragging} onClick={openAlbum} disabled={scan.loading} locked={access.locked} />
           </div>
         </div>
       </div>

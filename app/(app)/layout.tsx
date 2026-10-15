@@ -1,5 +1,6 @@
 import { ClerkProvider } from "@clerk/nextjs";
 import { auth } from "@clerk/nextjs/server";
+import { cookies } from "next/headers";
 import { unstable_rethrow } from "next/navigation";
 import { preconnect } from "react-dom";
 import { clerkLocalization } from "@/lib/clerkLocalization";
@@ -9,6 +10,9 @@ import SupabaseStatusBanner from "@/components/SupabaseStatusBanner";
 import { ToastProvider } from "@/components/Toast";
 import { InitialAuthProvider } from "@/lib/data/initialAuthContext";
 import type { InitialAuth } from "@/lib/data/initialAuth";
+import { TrialProvider } from "@/lib/scan/trialContext";
+import { TRIAL_COOKIE_NAME, TRIAL_DISABLED, type TrialState } from "@/lib/trial";
+import { trialStateFromCookie } from "@/lib/server/analyze/trialCookie";
 
 /**
  * サーバーが知っているログイン状態（proxy.ts の clerkMiddleware が検証したセッション）。
@@ -28,6 +32,21 @@ async function readInitialAuth(): Promise<InitialAuth | null> {
 }
 
 /**
+ * 未ログインのお試し読み取りの初期状態（有効か・残り回数）。HttpOnly の Cookie はクライアントから読めないので、ここで読む。
+ * 表示用（判定は /api/analyze が行う）。読めなければ無効として扱う（従来どおり「ログイン後に使えます」）。
+ */
+async function readInitialTrial(): Promise<TrialState> {
+  try {
+    const value = (await cookies()).get(TRIAL_COOKIE_NAME)?.value;
+    return trialStateFromCookie(value, process.env.TRIAL_COOKIE_SECRET);
+  } catch (e) {
+    unstable_rethrow(e);
+    console.error("お試しの状態を読めませんでした:", e);
+    return TRIAL_DISABLED;
+  }
+}
+
+/**
  * アプリ画面（/app・/history・/stats・/settings）の共通レイアウト。
  * Clerk（clerk-js は数百 KB）・トースト・Supabase へのユーザー同期と障害バナーはここだけで読み込み、
  * 公開ページ（/・/calc・/privacy・/terms）には載せない。ランディングのログインボタンは
@@ -39,16 +58,18 @@ export default async function AppLayout({ children }: Readonly<{ children: React
   // Clerk の Frontend API（/v1/environment・/v1/client。Cookie 付き）への接続を先に張る
   const clerkOrigin = clerkFrontendApiOrigin(process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY);
   if (clerkOrigin) preconnect(clerkOrigin);
-  const initialAuth = await readInitialAuth();
+  const [initialAuth, initialTrial] = await Promise.all([readInitialAuth(), readInitialTrial()]);
 
   return (
     <ClerkProvider localization={clerkLocalization}>
       <InitialAuthProvider value={initialAuth}>
-        <ToastProvider>
-          <UserSync />
-          <SupabaseStatusBanner />
-          {children}
-        </ToastProvider>
+        <TrialProvider initial={initialTrial}>
+          <ToastProvider>
+            <UserSync />
+            <SupabaseStatusBanner />
+            {children}
+          </ToastProvider>
+        </TrialProvider>
       </InitialAuthProvider>
     </ClerkProvider>
   );

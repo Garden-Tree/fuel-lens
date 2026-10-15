@@ -513,6 +513,20 @@ describe("analyzeErrorMessage", () => {
     ["401 未ログイン", 401, { error: "Unauthorized" }, { isSignedIn: false }, SIGNED_OUT_401],
     ["401 ログイン状態が未確定は未ログイン扱い", 401, null, { isSignedIn: undefined }, SIGNED_OUT_401],
     ["401 ログイン中（セッション切れ）", 401, { error: "Unauthorized" }, { isSignedIn: true }, SIGNED_IN_401],
+    [
+      "401 お試しを使い切った（サーバーの文言）",
+      401,
+      { error: "お試しの読み取りは3回までです。ログインすると続けて使えます", code: "TRIAL_EXHAUSTED" },
+      { isSignedIn: false },
+      "お試しの読み取りは3回までです。ログインすると続けて使えます",
+    ],
+    [
+      "429 お試しの IP ごとの 1 日の上限は秒数を出さない",
+      429,
+      { error: "1日の上限に達しました。", code: "TRIAL_IP_LIMITED" },
+      { retryAfter: "86400" },
+      "1日の上限に達しました。",
+    ],
     ["422 サーバーの文言を優先", 422, { error: "画像を読み取れませんでした" }, {}, "画像を読み取れませんでした"],
     [
       "422 文言なし",

@@ -52,7 +52,7 @@ describe("requestAnalyze", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     const res = await requestAnalyze(DATA_URL);
-    expect(res).toEqual({ ok: true, status: 200, body, retryAfter: null });
+    expect(res).toEqual({ ok: true, status: 200, body, retryAfter: null, trialRemaining: null });
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
@@ -73,13 +73,28 @@ describe("requestAnalyze", () => {
       status: 429,
       body: { error: "混雑しています。", requestId: "r2" },
       retryAfter: "12",
+      trialRemaining: null,
     });
+  });
+
+  it("未ログインのお試しの残り回数（X-Trial-Remaining）を読む。不正な値は null", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => jsonResponse({ requestId: "r3" }, { headers: { "X-Trial-Remaining": "2" } })));
+    expect((await requestAnalyze(DATA_URL)).trialRemaining).toBe(2);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        jsonResponse({ error: "x", code: "TRIAL_EXHAUSTED" }, { status: 401, headers: { "X-Trial-Remaining": "0" } })
+      )
+    );
+    expect((await requestAnalyze(DATA_URL)).trialRemaining).toBe(0);
+    vi.stubGlobal("fetch", vi.fn(async () => jsonResponse({}, { headers: { "X-Trial-Remaining": "99" } })));
+    expect((await requestAnalyze(DATA_URL)).trialRemaining).toBeNull();
   });
 
   it("本文が JSON でなければ body は null", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => new Response("<html>Bad Gateway</html>", { status: 502 })));
     const res = await requestAnalyze(DATA_URL);
-    expect(res).toEqual({ ok: false, status: 502, body: null, retryAfter: null });
+    expect(res).toEqual({ ok: false, status: 502, body: null, retryAfter: null, trialRemaining: null });
   });
 
   it("接続に失敗したら日本語メッセージで投げる", async () => {

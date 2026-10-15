@@ -16,7 +16,8 @@ import HeaderAuthButtons from "@/components/landing/HeaderAuthButtons";
 import HeroPhonePreview from "@/components/landing/HeroPhonePreview";
 import DemoSimulator from "@/components/landing/DemoSimulator";
 import FaqAccordion, { type FaqItem } from "@/components/landing/FaqAccordion";
-import { LANDING_DESCRIPTION, LANDING_TITLE, buildLandingJsonLd } from "@/lib/landingPage";
+import { LANDING_TITLE, aiAvailabilityCopy, buildLandingJsonLd, landingDescription } from "@/lib/landingPage";
+import { isTrialEnabled } from "@/lib/server/analyze/trialCookie";
 
 // このページは Server Component。インタラクティブな部分（ログインボタン・スマホモック・デモ・FAQ）だけを
 // components/landing/ 配下の小さなクライアントコンポーネントに切り出している。
@@ -24,6 +25,11 @@ import { LANDING_DESCRIPTION, LANDING_TITLE, buildLandingJsonLd } from "@/lib/la
 // 検索向けのタイトルと説明（「燃費管理アプリ」「燃費 記録」「給油記録 アプリ」などで見つけてもらうため。文言は lib/landingPage.ts）。
 // openGraph / twitter はレイアウトの値とマージされず置き換わるので、type などもここで指定する。
 // OG 画像は app/opengraph-image.tsx・app/twitter-image.tsx（ファイル規約）が付く
+// AI の読み取りの文言は、未ログインのお試し（TRIAL_COOKIE_SECRET）が有効かで切り替える（静的描画なのでビルド時の値）
+const TRIAL_ENABLED = isTrialEnabled();
+const LANDING_DESCRIPTION = landingDescription(TRIAL_ENABLED);
+const AI_COPY = aiAvailabilityCopy(TRIAL_ENABLED);
+
 export const metadata: Metadata = {
   title: { absolute: LANDING_TITLE },
   description: LANDING_DESCRIPTION,
@@ -46,11 +52,11 @@ export const metadata: Metadata = {
 const faqs: FaqItem[] = [
   {
     q: "本当に無料で使えますか？",
-    a: "はい、AI解析を含めたすべての基本機能を無料でご利用いただけます。広告や追加課金の心配なく、燃費管理を始めていただけます（AI解析のみログインが必要です）。",
+    a: `はい、AI解析を含めたすべての基本機能を無料でご利用いただけます。広告や追加課金の心配なく、燃費管理を始めていただけます${AI_COPY.faqFreeNote}。`,
   },
   {
     q: "ユーザー登録は必須ですか？",
-    a: "いいえ、ユーザー登録なしでも「ローカル保存モード」として手動入力・履歴・グラフをすぐにご利用いただけます（データはお使いのブラウザに保存されます）。ただし、写真からのAI解析はログイン後にご利用いただけます。記録をクラウドに保存して機種変更時やパソコンなど複数端末で共有したい場合も、ログインしてご利用ください。",
+    a: `いいえ、ユーザー登録なしでも「ローカル保存モード」として手動入力・履歴・グラフをすぐにご利用いただけます（データはお使いのブラウザに保存されます）。${AI_COPY.faqSignupAi}記録をクラウドに保存して機種変更時やパソコンなど複数端末で共有したい場合も、ログインしてご利用ください。`,
   },
   {
     q: "レシートとメーターは別々に撮影する必要がありますか？",
@@ -69,7 +75,7 @@ const faqs: FaqItem[] = [
 export default function LandingPage() {
   return (
     <div className="relative min-h-screen overflow-hidden bg-ground font-sans text-ink selection:bg-accent selection:text-ground">
-      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: buildLandingJsonLd() }} />
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: buildLandingJsonLd(LANDING_DESCRIPTION) }} />
 
       {/* ヘッダーナビゲーション */}
       <header className="sticky top-0 z-50 border-b border-line bg-ground/90 pt-[env(safe-area-inset-top)] backdrop-blur-md">
@@ -131,6 +137,11 @@ export default function LandingPage() {
                 <span className="flex items-center gap-1.5">
                   <CheckCircle2 className="w-4 h-4 text-money" /> 手動入力・ローカル保存は登録不要
                 </span>
+                {AI_COPY.heroCheck && (
+                  <span className="flex items-center gap-1.5">
+                    <CheckCircle2 className="w-4 h-4 text-money" /> {AI_COPY.heroCheck}
+                  </span>
+                )}
                 <span className="flex items-center gap-1.5">
                   <CheckCircle2 className="w-4 h-4 text-money" /> 写真1枚のアップロードで完結
                 </span>
@@ -186,7 +197,7 @@ export default function LandingPage() {
               </div>
               <h3 className="text-lg font-bold text-ink mb-2">1枚の写真からAI自動読取</h3>
               <p className="text-sm text-sub leading-relaxed">
-                レシートの給油データとトリップメーター（前回給油からの区間距離）が同時に写った写真を撮影するだけ。Gemini AIが給油量・金額・走行距離・日付・店舗名をまとめて抽出します。※AI解析はログイン後に利用できます。
+                レシートの給油データとトリップメーター（前回給油からの区間距離）が同時に写った写真を撮影するだけ。Gemini AIが給油量・金額・走行距離・日付・店舗名をまとめて抽出します。{AI_COPY.featureNote}
               </p>
             </div>
 
@@ -245,7 +256,7 @@ export default function LandingPage() {
               </div>
               <h3 className="text-lg font-bold text-ink mb-2">クラウド同期 & ローカル体験</h3>
               <p className="text-sm text-sub leading-relaxed">
-                未ログインでも手動入力した記録はブラウザ内（ローカル）に保存されます。ログインすると記録がクラウド（Supabase）に保存され、PCやタブレットでも同期。AIによる写真解析はログイン後に利用できます。
+                未ログインでも手動入力した記録はブラウザ内（ローカル）に保存されます。ログインすると記録がクラウド（Supabase）に保存され、PCやタブレットでも同期。{AI_COPY.syncNote}
               </p>
             </div>
           </div>
@@ -300,7 +311,7 @@ export default function LandingPage() {
               </div>
               <h3 className="text-lg font-bold text-ink">AI が自動解析</h3>
               <p className="text-sm text-sub max-w-xs">
-                ログインして「スキャン」ボタンから写真をアップロードすると、Gemini AI が1枚の画像から給油量・金額・区間走行距離などを自動的に抽出します。
+                {AI_COPY.howToScan}
               </p>
             </div>
 
@@ -352,7 +363,7 @@ export default function LandingPage() {
           </div>
 
           <div className="text-xs text-sub">
-            手動入力は登録不要でお試し可能 • AI解析はログイン後に利用可 • スマートフォンでの撮影に対応
+            {AI_COPY.footerNote}
           </div>
         </div>
       </section>

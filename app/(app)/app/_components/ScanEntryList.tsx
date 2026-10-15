@@ -3,15 +3,15 @@
 import type { LucideIcon } from "lucide-react";
 import { Camera, Edit2, Image as ImageIcon } from "lucide-react";
 import { GroupedList, ListRow } from "@/components/ui";
-import { SIGNED_OUT_SCAN_NOTE } from "@/components/ScanActionMenu";
 import type { DistanceMode } from "@/lib/types";
+import type { ScanAccess } from "@/lib/trial";
 
 export type ScanEntryListProps = {
   onCamera: () => void;
   onAlbum: () => void;
   onManual: () => void;
-  /** 未ログイン（AI スキャンは使えない。撮影・アルバムを無効にして案内を出す） */
-  signedOut: boolean;
+  /** AI スキャンの可否と案内（lib/trial.ts の scanAccessOf。未ログインでお試しが無い・使い切ったら locked） */
+  access: ScanAccess;
   /** スキャン中（すべて押せない） */
   scanning: boolean;
   /** 閲覧専用（手動入力を押せない） */
@@ -40,12 +40,12 @@ export default function ScanEntryList({
   onCamera,
   onAlbum,
   onManual,
-  signedOut,
+  access,
   scanning,
   readOnly,
   distanceMode,
 }: ScanEntryListProps) {
-  const scanDisabled = signedOut || scanning;
+  const scanDisabled = access.locked || scanning;
   const manualDisabled = scanning || readOnly;
   return (
     <div className="flex flex-col gap-2">
@@ -76,7 +76,7 @@ export default function ScanEntryList({
         />
       </GroupedList>
       <div className="flex flex-col gap-1 px-4 text-xs leading-relaxed">
-        {signedOut && <p className="text-warn">{SIGNED_OUT_SCAN_NOTE}</p>}
+        {access.note && <p className={access.warn ? "text-warn" : "text-sub"}>{access.note}</p>}
         <p className="text-sub">
           {distanceMode === "odometer"
             ? "メーターはオドメーター（積算距離）が写るように撮影してください"

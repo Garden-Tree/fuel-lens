@@ -1,7 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import { handleAnalyze, type AnalyzeDeps } from "@/lib/server/analyze/handler";
 import { GeminiCallError } from "@/lib/server/analyze/errors";
-import { createAnonymousQuota, createRateLimiter } from "@/lib/server/analyze/rateLimit";
+import { createRateLimiter } from "@/lib/server/analyze/rateLimit";
+import { encodeTrialCookie } from "@/lib/server/analyze/trialCookie";
 
 // ---------------------------------------------------------------------------
 // fixtures: 先頭バイトにマジックナンバーを持つ 32 バイトのダミー画像（tests/analyze.test.ts と同じ作り）
@@ -28,6 +29,9 @@ const GOOD_JSON = JSON.stringify({
 });
 
 const NOW = 1_000_000;
+const SECRET = "test-trial-secret";
+const IP_A = { "x-forwarded-for": "203.0.113.5, 10.0.0.1" };
+const cookieFor = (count: number) => `other=1; fuel_lens_trial=${encodeTrialCookie(count, SECRET)}`;
 const looseLimiter = () => createRateLimiter({ windowMs: 60_000, max: 100, maxKeys: 10_000, now: () => NOW });
 
 type GeminiMock = ReturnType<typeof vi.fn>;
@@ -40,7 +44,7 @@ function makeDeps(overrides: Partial<AnalyzeDeps> = {}) {
     gemini: gemini as unknown as AnalyzeDeps["gemini"],
     env: { GEMINI_API_KEY: "test-key" },
     limiter: createRateLimiter({ windowMs: 60_000, max: 5, maxKeys: 10_000, now: () => NOW }),
-    anonQuota: createAnonymousQuota({ max: 3, maxKeys: 10_000 }),
+    trialLimiter: createRateLimiter({ windowMs: 24 * 60 * 60 * 1000, max: 10, maxKeys: 10_000, now: () => NOW }),
     now: () => NOW,
     log,
     newRequestId: () => "req00001",
@@ -95,35 +99,150 @@ describe("handleAnalyze", () => {
     expect(gemini).not.toHaveBeenCalled();
   });
 
-  it("allows anonymous scans (per IP) when ALLOW_ANONYMOUS_SCAN=true, then 403 at the quota", async () => {
-    const { deps, gemini } = makeDeps({
-      auth: async () => ({ userId: null }),
-      env: { GEMINI_API_KEY: "k", ALLOW_ANONYMOUS_SCAN: "true" },
-      limiter: looseLimiter(), // 匿名枠の検証なのでレートリミットは緩める
-    });
-    const headers = { "x-forwarded-for": "203.0.113.5, 10.0.0.1" };
-    for (let i = 0; i < 3; i++) {
-      expect((await handleAnalyze(makeReq(goodBody, headers), deps)).status).toBe(200);
-    }
-    const blocked = await handleAnalyze(makeReq(goodBody, headers), deps);
-    const json = await expectError(blocked, 403, "ANONYMOUS_LIMIT_EXCEEDED");
-    expect(json.error).toContain("3回");
-    expect(gemini).toHaveBeenCalledTimes(3);
-    // 別 IP は影響を受けない
-    expect((await handleAnalyze(makeReq(goodBody, { "x-forwarded-for": "198.51.100.9" }), deps)).status).toBe(200);
+  it("ignores the trial cookie when TRIAL_COOKIE_SECRET is unset (401, no trial header)", async () => {
+    const { deps, gemini } = makeDeps({ auth: async () => ({ userId: null }) });
+    const res = await handleAnalyze(
+      makeReq(goodBody, { cookie: `fuel_lens_trial=${encodeTrialCookie(0, "whatever")}` }),
+      deps
+    );
+    await expectError(res, 401, "AUTH_REQUIRED");
+    expect(res.headers.get("X-Trial-Remaining")).toBeNull();
+    expect(res.headers.get("Set-Cookie")).toBeNull();
+    expect(gemini).not.toHaveBeenCalled();
   });
 
-  it("only counts the anonymous quota on successful scans", async () => {
-    const { deps, gemini } = makeDeps({
-      auth: async () => ({ userId: null }),
-      env: { GEMINI_API_KEY: "k", ALLOW_ANONYMOUS_SCAN: "true" },
-      limiter: looseLimiter(),
-    });
-    gemini.mockRejectedValue(new GeminiCallError("upstream", 500, new Error("boom")));
-    for (let i = 0; i < 4; i++) {
-      expect((await handleAnalyze(makeReq(goodBody), deps)).status).toBe(502);
+  it("returns 200 for logged-in users without touching the trial cookie or the IP bucket", async () => {
+    const trialLimiter = { consume: vi.fn(() => ({ allowed: true, retryAfterSec: 0 })) };
+    const { deps } = makeDeps({ env: { GEMINI_API_KEY: "k", TRIAL_COOKIE_SECRET: SECRET }, trialLimiter });
+    const res = await handleAnalyze(makeReq(goodBody, { cookie: cookieFor(3) }), deps);
+    expect(res.status).toBe(200);
+    expect(res.headers.get("Set-Cookie")).toBeNull();
+    expect(res.headers.get("X-Trial-Remaining")).toBeNull();
+    expect(trialLimiter.consume).not.toHaveBeenCalled();
+  });
+
+  describe("anonymous trial (TRIAL_COOKIE_SECRET set)", () => {
+    function trialDeps(overrides: Partial<AnalyzeDeps> = {}) {
+      return makeDeps({
+        auth: async () => ({ userId: null }),
+        env: { GEMINI_API_KEY: "k", TRIAL_COOKIE_SECRET: SECRET },
+        limiter: looseLimiter(), // お試しの検証なので 1 分間の上限は緩める
+        ...overrides,
+      });
     }
-    expect(deps.anonQuota.isExceeded("unknown_ip")).toBe(false);
+
+    it("allows uses 1-3, increments the signed cookie and reports the remaining count; the 4th is 401 TRIAL_EXHAUSTED", async () => {
+      const { deps, gemini } = trialDeps();
+      let cookie: string | null = null;
+      for (let used = 1; used <= 3; used++) {
+        const res = await handleAnalyze(makeReq(goodBody, { ...IP_A, ...(cookie ? { cookie } : {}) }), deps);
+        expect(res.status).toBe(200);
+        expect(res.headers.get("X-Trial-Remaining")).toBe(String(3 - used));
+        const setCookie = res.headers.get("Set-Cookie") ?? "";
+        expect(setCookie).toContain(`fuel_lens_trial=${encodeTrialCookie(used, SECRET)}`);
+        expect(setCookie).toMatch(/HttpOnly/);
+        expect(setCookie).toMatch(/SameSite=Lax/);
+        expect(setCookie).toMatch(/Max-Age=15552000/);
+        expect(setCookie).toMatch(/Path=\//);
+        expect(setCookie).not.toMatch(/Secure/); // 本番（NODE_ENV=production）以外
+        cookie = setCookie.split(";")[0];
+      }
+      const blocked = await handleAnalyze(makeReq(goodBody, { ...IP_A, cookie: cookie ?? "" }), deps);
+      const json = await expectError(blocked, 401, "TRIAL_EXHAUSTED");
+      expect(json.error).toBe("お試しの読み取りは3回までです。ログインすると続けて使えます");
+      expect(blocked.headers.get("X-Trial-Remaining")).toBe("0");
+      expect(blocked.headers.get("Set-Cookie")).toBeNull();
+      expect(gemini).toHaveBeenCalledTimes(3);
+    });
+
+    it("sets Secure on the cookie in production", async () => {
+      const { deps } = trialDeps({ env: { GEMINI_API_KEY: "k", TRIAL_COOKIE_SECRET: SECRET, NODE_ENV: "production" } });
+      const res = await handleAnalyze(makeReq(goodBody, IP_A), deps);
+      expect(res.headers.get("Set-Cookie")).toMatch(/; Secure$/);
+    });
+
+    it("never trusts client-provided counts (request headers are ignored)", async () => {
+      const { deps } = trialDeps();
+      const res = await handleAnalyze(makeReq(goodBody, { ...IP_A, cookie: cookieFor(3), "x-trial-remaining": "3" }), deps);
+      await expectError(res, 401, "TRIAL_EXHAUSTED");
+    });
+
+    it("treats a tampered or malformed cookie as a new device, but the per-IP daily cap still applies", async () => {
+      const { deps, gemini } = trialDeps();
+      const forged = `fuel_lens_trial=0.${"A".repeat(43)}`;
+      const otherSecret = `fuel_lens_trial=${encodeTrialCookie(0, "another-secret")}`;
+      const garbage = "fuel_lens_trial=%%%";
+      const cookies = [forged, otherSecret, garbage];
+      for (let i = 0; i < 10; i++) {
+        const res = await handleAnalyze(makeReq(goodBody, { ...IP_A, cookie: cookies[i % 3] }), deps);
+        expect(res.status).toBe(200);
+        expect(res.headers.get("X-Trial-Remaining")).toBe("2"); // 毎回 0 回目として数え直される
+      }
+      const capped = await handleAnalyze(makeReq(goodBody, { ...IP_A, cookie: forged }), deps);
+      const json = await expectError(capped, 429, "TRIAL_IP_LIMITED");
+      expect(json.error).toContain("ログイン");
+      expect(capped.headers.get("Retry-After")).toBe(String(24 * 60 * 60));
+      expect(capped.headers.get("X-Trial-Remaining")).toBe("3");
+      expect(gemini).toHaveBeenCalledTimes(10);
+      // 別の IP は影響を受けない。X-Real-IP にもフォールバックする
+      expect((await handleAnalyze(makeReq(goodBody, { "x-real-ip": "198.51.100.9" }), deps)).status).toBe(200);
+    });
+
+    it("keys the IP cap by the first X-Forwarded-For entry and counts failed requests too", async () => {
+      const { deps, gemini } = trialDeps();
+      gemini.mockRejectedValue(new GeminiCallError("upstream", 500, new Error("boom")));
+      for (let i = 0; i < 10; i++) {
+        const res = await handleAnalyze(makeReq(goodBody, { "x-forwarded-for": `203.0.113.5, 10.0.0.${i}` }), deps);
+        expect(res.status).toBe(502);
+        expect(res.headers.get("Set-Cookie")).toBeNull(); // 失敗はお試しの回数に数えない
+        expect(res.headers.get("X-Trial-Remaining")).toBe("3");
+      }
+      await expectError(
+        await handleAnalyze(makeReq(goodBody, { "x-forwarded-for": "203.0.113.5" }), deps),
+        429,
+        "TRIAL_IP_LIMITED"
+      );
+    });
+
+    it("does not count an exhausted cookie against the IP cap", async () => {
+      const trialLimiter = { consume: vi.fn(() => ({ allowed: true, retryAfterSec: 0 })) };
+      const { deps } = trialDeps({ trialLimiter });
+      await expectError(await handleAnalyze(makeReq(goodBody, { ...IP_A, cookie: cookieFor(3) }), deps), 401, "TRIAL_EXHAUSTED");
+      expect(trialLimiter.consume).not.toHaveBeenCalled();
+    });
+
+    it("applies the per-minute limit per IP before the daily cap (429 RATE_LIMITED)", async () => {
+      const { deps } = trialDeps({
+        limiter: createRateLimiter({ windowMs: 60_000, max: 5, maxKeys: 10_000, now: () => NOW }),
+      });
+      for (let i = 0; i < 5; i++) {
+        expect((await handleAnalyze(makeReq(goodBody, IP_A), deps)).status).toBe(200);
+      }
+      const res = await handleAnalyze(makeReq(goodBody, IP_A), deps);
+      await expectError(res, 429, "RATE_LIMITED");
+      expect(res.headers.get("X-Trial-Remaining")).toBe("3");
+    });
+
+    it("does not count a 422 NOTHING_EXTRACTED against the trial", async () => {
+      const { deps, gemini } = trialDeps();
+      gemini.mockResolvedValue({ text: JSON.stringify({ date: "2026-10-03", gas_station: "x" }) });
+      const res = await handleAnalyze(makeReq(goodBody, { ...IP_A, cookie: cookieFor(2) }), deps);
+      await expectError(res, 422, "NOTHING_EXTRACTED");
+      expect(res.headers.get("Set-Cookie")).toBeNull();
+      expect(res.headers.get("X-Trial-Remaining")).toBe("1");
+    });
+
+    it("does not log the client IP", async () => {
+      const blocked = { consume: () => ({ allowed: false, retryAfterSec: 5 }) };
+      const minute = trialDeps({ limiter: blocked });
+      await expectError(await handleAnalyze(makeReq(goodBody, IP_A), minute.deps), 429, "RATE_LIMITED");
+      const daily = trialDeps({ trialLimiter: blocked });
+      await expectError(await handleAnalyze(makeReq(goodBody, IP_A), daily.deps), 429, "TRIAL_IP_LIMITED");
+      for (const { log } of [minute, daily]) {
+        expect(log).toHaveBeenCalled();
+        expect(JSON.stringify(log.mock.calls)).not.toContain("203.0.113.5");
+      }
+    });
   });
 
   it("returns 429 with Retry-After once the per-user rate limit is exceeded", async () => {
@@ -232,14 +351,10 @@ describe("handleAnalyze", () => {
     expect(json.requestId).toBe("req00001");
   });
 
-  it("returns 422 NOTHING_EXTRACTED when no core value is read (and does not count the anonymous quota)", async () => {
-    const { deps, gemini } = makeDeps({
-      auth: async () => ({ userId: null }),
-      env: { GEMINI_API_KEY: "k", ALLOW_ANONYMOUS_SCAN: "true" },
-    });
+  it("returns 422 NOTHING_EXTRACTED when no core value is read", async () => {
+    const { deps, gemini } = makeDeps();
     gemini.mockResolvedValue({ text: JSON.stringify({ date: "2026-10-03", gas_station: "x" }) });
     await expectError(await handleAnalyze(makeReq(goodBody), deps), 422, "NOTHING_EXTRACTED");
-    expect(deps.anonQuota.isExceeded("unknown_ip")).toBe(false);
   });
 
   it("maps an empty Gemini response to 422 BLOCKED or 502 UPSTREAM_EMPTY", async () => {

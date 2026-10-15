@@ -417,9 +417,10 @@ export type AnalyzeErrorMessageOptions = {
 /**
  * /api/analyze の失敗レスポンス（HTTP ステータスと本文）を、画面に出す日本語メッセージに変換する。
  * 本文は信頼しない（`error` / `requestId` が文字列のときだけ使う）。
- * - 401: ログイン必須。ログイン中ならセッション切れ、未ログインなら手動入力はログイン不要と案内する
+ * - 401: ログイン必須。ログイン中ならセッション切れ、未ログインなら手動入力はログイン不要と案内する。
+ *   お試しを使い切った（code: TRIAL_EXHAUSTED）ならサーバーの文言
  * - 422: 読み取れなかった（サーバーの文言を優先）
- * - 429: 混雑。Retry-After が秒数なら「約N秒後に」
+ * - 429: 混雑。Retry-After が秒数なら「約N秒後に」。お試しの IP ごとの 1 日の上限（code: TRIAL_IP_LIMITED）はサーバーの文言だけ
  * - 504: AI 解析のタイムアウト
  * - それ以外: サーバーの文言（無ければ汎用文）に requestId を添える
  */
@@ -431,8 +432,17 @@ export function analyzeErrorMessage(
   const data = typeof body === "object" && body !== null ? (body as Record<string, unknown>) : null;
   const serverMessage = typeof data?.error === "string" ? data.error : "";
   const requestId = typeof data?.requestId === "string" ? data.requestId : "";
+  const code = typeof data?.code === "string" ? data.code : "";
   const suffix = requestId ? `（ID: ${requestId}）` : "";
 
+  if (status === 401 && code === "TRIAL_EXHAUSTED") {
+    // 未ログインのお試し（3 回）を使い切った。ログインの案内はホームのカードでも出す
+    return serverMessage || "お試しの読み取りは上限に達しました。ログインすると続けて使えます";
+  }
+  if (status === 429 && code === "TRIAL_IP_LIMITED") {
+    // お試しの IP ごとの 1 日の上限（Retry-After は最大 24 時間なので秒数は出さない）
+    return serverMessage || "お試しの読み取りが1日の上限に達しました。ログインすると続けて使えます。";
+  }
   if (status === 401) {
     // ログイン必須。手動入力はログインなしでも使えることを伝える
     return options.isSignedIn

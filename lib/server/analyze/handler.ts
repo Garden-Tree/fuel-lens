@@ -11,26 +11,33 @@ import {
   type AnalyzeErrorResponse,
   type AnalyzeSuccessResponse,
 } from "@/lib/analyze";
+import { TRIAL_COOKIE_NAME, TRIAL_EXHAUSTED_MESSAGE, TRIAL_MAX_SCANS, TRIAL_REMAINING_HEADER } from "@/lib/trial";
 import { GeminiCallError } from "./errors";
 // 型のみ。geminiClient は `server-only` を import するため、実体はここから読み込まない（テストで差し替え可能にする）
 import type { callGemini } from "./geminiClient";
-import type { AnonymousQuota, RateLimiter } from "./rateLimit";
+import { clientIpOf, type RateLimiter } from "./rateLimit";
+import { decodeTrialCookie, readCookie, trialSetCookie } from "./trialCookie";
 
 export const DEFAULT_GEMINI_MODEL = "gemini-3.1-flash-lite";
 
 export type AnalyzeEnv = {
   GEMINI_API_KEY?: string;
   GEMINI_MODEL?: string;
-  ALLOW_ANONYMOUS_SCAN?: string;
+  /** 未ログインのお試し読み取りの Cookie の署名鍵。未設定ならお試しは無効（未ログインは 401 AUTH_REQUIRED） */
+  TRIAL_COOKIE_SECRET?: string;
   NEXT_PUBLIC_APP_URL?: string;
+  /** "production" ならお試しの Cookie に Secure を付ける */
+  NODE_ENV?: string;
 };
 
 export type AnalyzeDeps = {
   auth: () => Promise<{ userId: string | null }>;
   gemini: typeof callGemini;
   env: AnalyzeEnv;
+  /** 1 分間の上限（キー = `user:<id>`、未ログインは `ip:<IP>`） */
   limiter: RateLimiter;
-  anonQuota: AnonymousQuota;
+  /** 未ログインのお試しの IP ごとの 1 日の上限（キー = `ip:<IP>`） */
+  trialLimiter: RateLimiter;
   now: () => number;
   /** 第 1 引数は `[analyze <requestId>]` 接頭辞 */
   log: (level: "log" | "warn" | "error", ...args: unknown[]) => void;
@@ -46,20 +53,29 @@ function defaultRequestId(): string {
   }
 }
 
-function errorResponse(status: number, body: AnalyzeErrorResponse, headers?: Record<string, string>): Response {
-  return Response.json(body, { status, headers });
-}
-
 /**
  * POST /api/analyze の本体。検査の順序は
- * Origin → 認証 → レートリミット → サーバー設定 → Content-Length → JSON → 画像 → Gemini → 検証 → 単価 → 422 → 警告。
+ * Origin → 認証（未ログインはお試しの判定）→ レートリミット（未ログインは IP の 1 日の上限も）→ サーバー設定 →
+ * Content-Length → JSON → 画像 → Gemini → 検証 → 単価 → 422 → 警告。
  * （仕様は docs/api-analyze.md）
  */
 export async function handleAnalyze(req: Request, deps: AnalyzeDeps): Promise<Response> {
-  const { env, limiter, anonQuota } = deps;
+  const { env, limiter, trialLimiter } = deps;
   const requestId = (deps.newRequestId ?? defaultRequestId)();
   const log = (level: "log" | "warn" | "error", ...args: unknown[]) =>
     deps.log(level, `[analyze ${requestId}]`, ...args);
+
+  // 未ログインのお試しとして受け付けたとき、そのリクエスト時点の使用回数（Cookie の値。クライアントの申告は使わない）。
+  // 決まった後のレスポンスにはすべて残り回数のヘッダーを付ける
+  let trial: { count: number; secret: string } | null = null;
+  const errorResponse = (status: number, body: AnalyzeErrorResponse, headers?: Record<string, string>): Response =>
+    Response.json(body, {
+      status,
+      headers: {
+        ...headers,
+        ...(trial ? { [TRIAL_REMAINING_HEADER]: String(TRIAL_MAX_SCANS - trial.count) } : {}),
+      },
+    });
 
   try {
     // ---- Origin チェック（CSRF 的な他サイトからの直接叩きを弾く） ----
@@ -76,36 +92,49 @@ export async function handleAnalyze(req: Request, deps: AnalyzeDeps): Promise<Re
 
     // ---- 認証 ----
     const { userId } = await deps.auth();
-    // x-forwarded-for は "client, proxy1, proxy2" と複数IPが列挙されるため先頭（クライアントIP）を使う
-    const forwardedFor = req.headers.get("x-forwarded-for");
-    const ip = forwardedFor?.split(",")[0]?.trim() || "unknown_ip";
-    const allowAnonymous = env.ALLOW_ANONYMOUS_SCAN === "true";
+    const ip = clientIpOf(req.headers);
 
     if (!userId) {
-      if (!allowAnonymous) {
+      // ---- 未ログイン: お試し読み取り（TRIAL_COOKIE_SECRET が設定されているときだけ） ----
+      const secret = env.TRIAL_COOKIE_SECRET;
+      if (!secret) {
         return errorResponse(401, { error: "AI解析にはログインが必要です", code: "AUTH_REQUIRED", requestId });
       }
-      // ベストエフォートの匿名お試し: IPごとに上限回数まで。
-      // メモリ上のカウンタなのでインスタンスが変われば／再起動すればリセットされる（抜け道あり）。
-      if (anonQuota.isExceeded(ip)) {
-        return errorResponse(403, {
-          error: `お試し解析の上限（${anonQuota.max}回）に達しました。引き続き解析機能を利用するには、ログインして無料ユーザー登録を行ってください。`,
-          code: "ANONYMOUS_LIMIT_EXCEEDED",
-          requestId,
-        });
+      // 使用回数は署名付き Cookie だけから読む（不正・欠落は 0 回 = 新しい端末）
+      const count = decodeTrialCookie(readCookie(req.headers.get("cookie"), TRIAL_COOKIE_NAME), secret);
+      trial = { count, secret };
+      if (count >= TRIAL_MAX_SCANS) {
+        return errorResponse(401, { error: TRIAL_EXHAUSTED_MESSAGE, code: "TRIAL_EXHAUSTED", requestId });
       }
     }
 
-    // ---- レートリミット（ユーザーID単位。匿名時はIP単位。インスタンス内ベストエフォート） ----
+    // ---- レートリミット（ユーザーID単位。未ログインは IP 単位。インスタンス内ベストエフォート） ----
+    // IP はリミッタのメモリにだけ置き、ログには出さない
     const rateKey = userId ? `user:${userId}` : `ip:${ip}`;
     const rate = limiter.consume(rateKey, deps.now());
     if (!rate.allowed) {
-      log("warn", "Rate limit exceeded for", rateKey);
+      log("warn", userId ? `Rate limit exceeded for user:${userId}` : "Rate limit exceeded (trial)");
       return errorResponse(
         429,
         { error: "リクエストが多すぎます。しばらく時間をおいて再度お試しください。", code: "RATE_LIMITED", requestId },
         { "Retry-After": String(rate.retryAfterSec) }
       );
+    }
+    if (trial) {
+      // お試しは IP ごとに 1 日の上限も掛ける（Cookie は消せば数え直せるため）
+      const daily = trialLimiter.consume(`ip:${ip}`, deps.now());
+      if (!daily.allowed) {
+        log("warn", "Trial daily limit exceeded");
+        return errorResponse(
+          429,
+          {
+            error: "この接続からのお試しの読み取りが1日の上限に達しました。ログインすると続けて使えます。",
+            code: "TRIAL_IP_LIMITED",
+            requestId,
+          },
+          { "Retry-After": String(daily.retryAfterSec) }
+        );
+      }
     }
 
     // ---- サーバー設定チェック（API キー未設定なら即 500） ----
@@ -146,7 +175,7 @@ export async function handleAnalyze(req: Request, deps: AnalyzeDeps): Promise<Re
     if (!parsed.ok) {
       return errorResponse(parsed.status, { error: parsed.error, code: "INVALID_IMAGE", requestId });
     }
-    log("log", `image ${parsed.mimeType} ~${Math.round(parsed.approxBytes / 1024)} KB user=${userId ? "yes" : "anon"}`);
+    log("log", `image ${parsed.mimeType} ~${Math.round(parsed.approxBytes / 1024)} KB user=${userId ? "yes" : "trial"}`);
 
     // ---- Gemini 呼び出し ----
     const model = env.GEMINI_MODEL || DEFAULT_GEMINI_MODEL;
@@ -247,16 +276,21 @@ export async function handleAnalyze(req: Request, deps: AnalyzeDeps): Promise<Re
       log("warn", "Plausibility warnings:", warnings);
     }
 
-    // 匿名お試しカウント（解析成功時のみ加算）
-    if (!userId) {
-      anonQuota.record(ip);
-    }
-
     const payload: AnalyzeSuccessResponse = {
       ...data,
       ...(warnings.length > 0 ? { warnings } : {}),
       requestId,
     };
+    if (trial) {
+      // お試しの回数は読み取りに成功したときだけ数え、署名し直した Cookie を返す
+      const used = trial.count + 1;
+      return Response.json(payload, {
+        headers: {
+          "Set-Cookie": trialSetCookie(used, trial.secret, { secure: env.NODE_ENV === "production" }),
+          [TRIAL_REMAINING_HEADER]: String(TRIAL_MAX_SCANS - used),
+        },
+      });
+    }
     return Response.json(payload);
   } catch (error) {
     // ここに来るのは想定外の例外のみ（auth() の失敗など）。詳細はログにのみ残す
