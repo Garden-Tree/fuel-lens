@@ -66,6 +66,13 @@ export default function CalcPage() {
               上の例で支払総額が <span className="num">4,000</span> 円なら、単価は <span className="num">160.0</span> 円/L、
               1km あたり <span className="num">10.0</span> 円です。
             </p>
+            <p className="mt-3 text-sm text-sub">
+              距離からガソリン代を見積もるなら{" "}
+              <Link href="/gas-cost" className="text-accent underline-offset-2 hover:underline">
+                ガソリン代計算ツール
+              </Link>
+              をどうぞ。
+            </p>
           </section>
 
           <section>
@@ -143,6 +150,7 @@ export default function CalcPage() {
 
         <nav aria-label="関連ページ" className="mt-12 flex flex-wrap gap-x-6 gap-y-2 border-t border-line pt-6 text-sm text-sub">
           <Link href="/" className="inline-flex min-h-10 items-center hover:text-ink">FuelLens のトップ</Link>
+          <Link href="/gas-cost" className="inline-flex min-h-10 items-center hover:text-ink">ガソリン代計算ツール</Link>
           <Link href="/privacy" className="inline-flex min-h-10 items-center hover:text-ink">プライバシーポリシー</Link>
           <Link href="/terms" className="inline-flex min-h-10 items-center hover:text-ink">利用規約</Link>
         </nav>

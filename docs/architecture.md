@@ -14,12 +14,12 @@ FuelLens の構成、データの流れ、主要なモジュールの役割を�
 | `app/(app)/settings/page.tsx` | 設定画面（`/settings`）。見出し付きのグループリストで、データ概要・バックアップ・復元・インポート（[8 章](#8-バックアップと復元)）・アカウント（[アカウント削除](#アカウント削除)） |
 | `app/privacy/page.tsx`、`app/terms/page.tsx`、`components/LegalPage.tsx` | プライバシーポリシー（`/privacy`）と利用規約（`/terms`）。ログイン不要の静的ページ（Google OAuth 同意画面用）で、共通レイアウトは `LegalPage`（タブバーなし）。ランディングのフッターと設定画面の「このアプリについて」からリンク |
 | `app/manifest.ts` | PWA の Web App Manifest（`/manifest.webmanifest`。[9 章](#9-pwa)） |
-| `app/robots.ts`、`app/sitemap.ts`、`lib/siteUrl.ts` | `/robots.txt`（`/api/`・`/settings`・`/history`・`/stats` を除外）と `/sitemap.xml`（`/`・`/calc`・`/app`・`/privacy`・`/terms`）。サイト URL は `getSiteUrl()`（`NEXT_PUBLIC_APP_URL`、無効・未設定なら `https://fuel-lens.gadelog.com`） |
+| `app/robots.ts`、`app/sitemap.ts`、`lib/siteUrl.ts` | `/robots.txt`（`/api/`・`/settings`・`/history`・`/stats` を除外）と `/sitemap.xml`（`/`・`/calc`・`/gas-cost`・`/app`・`/privacy`・`/terms`）。サイト URL は `getSiteUrl()`（`NEXT_PUBLIC_APP_URL`、無効・未設定なら `https://fuel-lens.gadelog.com`） |
 | `app/opengraph-image.tsx`、`app/twitter-image.tsx`、`lib/og/renderOgImage.tsx` | SNS 共有用の 1200×630 画像（`next/og` の `ImageResponse`）。2 つの route は同じ `renderOgImage()` を呼ぶだけ。Noto Sans JP / JetBrains Mono をリクエスト時に Google Fonts から取得（[operations.md](./operations.md#4-4-og-画像)）。`app/layout.tsx` の `twitter.card` は `summary_large_image` |
 | `app/api/analyze/route.ts` | Gemini で画像を解析する API（[api-analyze.md](./api-analyze.md)） |
 | `app/api/account/route.ts`、`lib/server/account/handler.ts` | アカウント削除の API（`DELETE /api/account`。Clerk のユーザーを削除する。[api-account.md](./api-account.md)） |
 | `app/api/keepalive/route.ts` | Supabase 自動停止対策のエンドポイント（[operations.md](./operations.md#3-supabase-の自動停止と-keepalive)） |
-| `app/layout.tsx` | ルートレイアウト。フォント（数字用の JetBrains Mono。日本語は端末のフォント）、`ServiceWorkerRegister` / `WebAnalytics`、`metadata` と `viewport`。Clerk・トースト・Supabase は載せない（公開ページ `/`・`/calc`・`/privacy`・`/terms` を軽くするため） |
+| `app/layout.tsx` | ルートレイアウト。フォント（数字用の JetBrains Mono。日本語は端末のフォント）、`ServiceWorkerRegister` / `WebAnalytics`、`metadata` と `viewport`。Clerk・トースト・Supabase は載せない（公開ページ `/`・`/calc`・`/gas-cost`・`/privacy`・`/terms` を軽くするため） |
 | `app/(app)/layout.tsx` | アプリ画面（`/app`・`/history`・`/stats`・`/settings`。ルートグループなので URL は変わらない）の共通レイアウト。`ClerkProvider`（`localization` は `lib/clerkLocalization.ts`） / `InitialAuthProvider`（サーバーの `auth()` の結果。[2 章「最初の描画」](#2-データフロー)。このため 4 画面は動的描画） / `ToastProvider` / `UserSync` / `SupabaseStatusBanner`、Clerk Frontend API への `preconnect`（`lib/clerkFrontendApi.ts`） |
 | `app/globals.css` | デザイントークン（`@theme`）と `num` などのユーティリティ（[design-system.md](./design-system.md)） |
 | `components/AppShell.tsx` / `components/AppNav.tsx` / `components/ScanActionMenu.tsx` / `components/ScanActions.tsx` | アプリ画面の枠。`AppFrame`（本文の器とナビ）/ `PageHeader`（見出し + 車両チップ）/ `HookErrorLine` / `ReadOnlyCaption`、ナビ（スマホは下部タブバー、PC は左サイドバー）、スキャンメニュー（撮影する / アルバムから選ぶ / 手動で入力）と、ホームがメニューに処理を登録する `ScanActionsProvider` / `RegisterScanActions`（[ナビゲーションとスキャンメニュー](#ナビゲーションとスキャンメニュー)） |
@@ -116,7 +116,7 @@ FuelLens の構成、データの流れ、主要なモジュールの役割を�
   - `previewing` の間は `useVehicleScope` の `readOnly` が true（書き込みのボタンは無効。ストアも無いので呼べば日本語エラー）、
     ホームの撮影・手動入力・`?action=` は読み込み中と同じ扱い、設定画面のパネルは読み込み中です。「閲覧専用（クラウド接続待ち）」の注記は障害のときだけ出します（`readOnly && !previewing`）。
   - `syncCacheOwner` は従来どおり Clerk の確定値（`authLoaded`）を待って呼びます。移行（`migrateLocalData`）は従来どおりクラウドの初期化からだけ走ります。
-  - `auth()` を読むため `/app`・`/history`・`/stats`・`/settings` はリクエストごとの描画（ビルド出力の `ƒ`）です。公開ページ（`/`・`/calc`・`/privacy`・`/terms`）は静的のままです。
+  - `auth()` を読むため `/app`・`/history`・`/stats`・`/settings` はリクエストごとの描画（ビルド出力の `ƒ`）です。公開ページ（`/`・`/calc`・`/gas-cost`・`/privacy`・`/terms`）は静的のままです。
 - 選択中の車両 ID は localStorage に保存します。未ログイン時は `fuel_lens_selected_vehicle_id`、ログイン時はユーザーごとの `fuel_lens_selected_vehicle_id_<userId>` を使い、保存値が現在の車両一覧に無い場合は既定車両へフォールバックして保存値を書き換えます。
 
 ### データアダプタ層（`lib/data/`）
@@ -385,6 +385,13 @@ useVehicles / useFuelRecords
 FAQ（`CALC_FAQS`）はページと構造化データで共有し、`buildCalcJsonLd`（`WebApplication` + `FAQPage`、固定文言のみ・`<` をエスケープ）を `<script type="application/ld+json">` で出します。
 説明の下の CTA から `/app` へ誘導し、ランディングのフッターと機能紹介からリンクしています。テストは `tests/calcPage.test.ts` と `tests/components/FuelCalculator.test.tsx`。
 
+### ガソリン代計算ページ（`/gas-cost`）
+
+`app/gas-cost/page.tsx` は `/calc` と同じ作りの公開ページ（「ガソリン代 計算」「ガソリン代 割り勘」などの検索からの入口）です。
+計算機 `app/gas-cost/_components/GasCostCalculator.tsx`（クライアント）は走行距離・燃費・ガソリン単価・片道 / 往復・任意の人数から、必要なガソリン量（距離 ÷ 燃費）・ガソリン代（ガソリン量 × 単価、1 円未満を四捨五入）・1km あたりのガソリン代（単価 ÷ 燃費）・割り勘の 1 人あたり（2 人以上のとき。ガソリン代 ÷ 人数を切り上げ）を出し、入力は保存しません。
+検証と計算は `lib/gasCostPage.ts` の `computeGasCost`（数値の読み取りは `parseDraftNumber`、丸めは表示のときだけ）。単価が 50〜400 円/L の範囲外、燃費が 100 km/L 超のときは注意を出します（50cc スクーターがあるので `/calc` の 60 km/L は使わない）。車種別の燃費の目安は載せず、燃費の欄から `/calc` へ案内します。
+FAQ（`GAS_COST_FAQS`）と構造化データ（`buildGasCostJsonLd`）は `/calc` と同じ形です。`/calc` の計算式の節・関連ページ、ランディングのフッターからリンクしています。テストは `tests/gasCostPage.test.ts` と `tests/components/GasCostCalculator.test.tsx`。
+
 ## 5. ローカル → クラウド移行
 
 localStorage から Supabase へのコピーは、`lib/migrateLocalData.ts` の `migrateLocalData(supabase, userId)` だけが行います。
@@ -457,7 +464,7 @@ Supabase Free のプロジェクトが一時停止すると、API は HTTP 540 �
 
 - 認証は Clerk（`@clerk/nextjs`）です。`proxy.ts` の `clerkMiddleware()` は全ルートを公開のままにし、
   `/api/analyze` と `/api/account`（アカウント削除）はルートハンドラ内の `auth()` で未ログインを 401 にします。
-- Clerk の UI（ログイン・サインアップ・アカウント管理）は `app/(app)/layout.tsx`（アプリ画面）と `components/landing/ClerkHeaderAuth.tsx`（ランディングのログインボタン。読み込み完了後に遅延読み込み）の `<ClerkProvider localization>` で日本語化しています。公開ページ（`/calc`・`/privacy`・`/terms`）は Clerk を読み込みません。`lib/clerkLocalization.ts` が `@clerk/localizations` の `jaJP`（サブパス `/ja-JP` から読み込み）に、メール確認コードの案内（迷惑メールフォルダの確認）を深くマージした設定です。
+- Clerk の UI（ログイン・サインアップ・アカウント管理）は `app/(app)/layout.tsx`（アプリ画面）と `components/landing/ClerkHeaderAuth.tsx`（ランディングのログインボタン。読み込み完了後に遅延読み込み）の `<ClerkProvider localization>` で日本語化しています。公開ページ（`/calc`・`/gas-cost`・`/privacy`・`/terms`）は Clerk を読み込みません。`lib/clerkLocalization.ts` が `@clerk/localizations` の `jaJP`（サブパス `/ja-JP` から読み込み）に、メール確認コードの案内（迷惑メールフォルダの確認）を深くマージした設定です。
 - Supabase へは、Clerk のトークンを supabase-js の `accessToken` として渡します。取得方法は公開環境変数
   `NEXT_PUBLIC_CLERK_SUPABASE_JWT_TEMPLATE` で切り替えます（`lib/supabaseClient.ts` の `fetchSupabaseToken`）。
   値あり（`supabase`）なら `getToken({ template })`（JWT テンプレート方式。Clerk 開発インスタンス = ローカル / Preview）、
