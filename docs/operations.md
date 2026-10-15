@@ -237,4 +237,8 @@ curl -i -X POST "https://<project-ref>.supabase.co/rest/v1/rpc/keepalive_ping" \
 - 定着（記録が 2 回以上・5 回以上のユーザーの割合）
 
 流入元は Vercel Web Analytics の Referrers、検索語は Search Console（`https://fuel-lens.gadelog.com/`。所有権確認ファイル `public/google9896bbc9767c6e06.html` は消さない）で見る。
+Bing は Bing Webmaster Tools（オーナーの Google アカウント。2026-10-15 に Search Console から取り込み、サイトマップも取り込み済み）で見る。所有権は Search Console 経由で確認しているため、上の確認ファイルが Bing 側の確認も兼ねる。
+
+公開ページを増やしたら、Search Console の「URL 検査」→「インデックス登録をリクエスト」と、Bing Webmaster Tools の「URL Submission」で新しい URL を送る（サイトマップだけでも拾われるが、数日〜数週間早くなる）。
+2026-10-15 時点: トップは 2026-05-10 のクロール（当時は `X-Robots-Tag: noindex`）のまま除外されていたため再クロールを依頼済み。`/calc` は「検出 - インデックス未登録」で依頼済み。
 集客用の下書きはリポジトリ直下の `marketing/`（`.gitignore` 済み。個人の燃費データを含むため公開リポジトリにコミットしない）。

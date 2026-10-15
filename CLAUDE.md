@@ -28,7 +28,7 @@ CI は Node 22 で lint → typecheck → test → build を実行する（[docs
 
 | パス | 役割 |
 |---|---|
-| `app/` | 画面（`page.tsx` ランディング、`calc/`、ルートグループ `(app)/` 配下に `app/` ホーム・`history/`・`stats/`・`settings/` バックアップと復元）と API（`api/analyze`、`api/account` アカウント削除、`api/keepalive`）。Clerk・トースト・Supabase 同期は `(app)/layout.tsx` だけに置き、公開ページには載せない |
+| `app/` | 画面（`page.tsx` ランディング、`calc/`・`gas-cost/`（公開の計算ツール）、ルートグループ `(app)/` 配下に `app/` ホーム・`history/`・`stats/`・`settings/` バックアップと復元）と API（`api/analyze`、`api/account` アカウント削除、`api/keepalive`）。Clerk・トースト・Supabase 同期は `(app)/layout.tsx` だけに置き、公開ページには載せない |
 | `components/` | 画面の枠とナビ（`AppShell` / `AppNav` / `ScanActionMenu`）、デザインシステムの部品（`ui/`）、確認シート、入力フォーム、車両管理、`Toast`（`useToast()`）、`UserSync`、`SupabaseStatusBanner` |
 | `lib/` | 型（`types`）・日付（`dates`）・純粋ロジック（`analyze` / `calculations` / `fillChain` / `stats` / `recordFilters` / `vehicleSelection`、画面用の `home/` / `history/`）、イベント（`events`）、フック、移行、Supabase クライアントと障害検知 |
 | `lib/data/` | データアダプタ層。`RecordStore` / `VehicleStore`（`types.ts`）を localStorage（`localStore.ts`）と Supabase（`cloudStore.ts`）が実装し、`withOutageHandling` / `withCache`（`withOutage.ts`）が障害・閲覧専用・キャッシュを、`cloudBootstrap.ts` が移行 → 既定車両の確保を受け持つ。フックは `useDataStores()` でストアを選ぶだけ |

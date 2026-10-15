@@ -2,7 +2,8 @@ import type { Metadata } from "next";
 import { ENACTED_ON, ISSUES_URL, LegalPage } from "@/components/LegalPage";
 
 export const metadata: Metadata = {
-  title: "プライバシーポリシー | FuelLens",
+  // 「| FuelLens」はルートの layout.tsx の title.template が付ける
+  title: "プライバシーポリシー",
   description: "FuelLens が取得する情報、利用目的、外部サービス、保存期間と削除についての説明です。",
 };
 

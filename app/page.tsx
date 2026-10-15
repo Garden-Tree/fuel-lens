@@ -346,6 +346,7 @@ export default function LandingPage() {
             <a href="#how-to" className="hover:text-ink transition px-2 py-3 sm:p-0">使い方</a>
             <a href="#faq" className="hover:text-ink transition px-2 py-3 sm:p-0">よくある質問</a>
             <Link href="/calc" className="hover:text-ink transition px-2 py-3 sm:p-0">燃費計算</Link>
+            <Link href="/gas-cost" className="hover:text-ink transition px-2 py-3 sm:p-0">ガソリン代計算</Link>
             <Link href="/privacy" className="hover:text-ink transition px-2 py-3 sm:p-0">プライバシーポリシー</Link>
             <Link href="/terms" className="hover:text-ink transition px-2 py-3 sm:p-0">利用規約</Link>
           </div>
