@@ -30,7 +30,7 @@ npm run dev                  # http://localhost:3000
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | 必須 | Supabase の anon キー（RLS 前提） |
 | `NEXT_PUBLIC_APP_URL` | 任意 | アプリの公開 URL。`/api/analyze` の Origin 許可ホストと `metadataBase` に使う |
 | `NEXT_PUBLIC_ENABLE_SW` | 任意 | `1` で開発ビルドでも Service Worker（Web Share Target の受け取り）を登録する。本番ビルドでは常に登録 |
-| `ALLOW_ANONYMOUS_SCAN` | 任意 | `true` で未ログインの AI 解析を IP ごとに 3 回まで許可（開発・デモ専用）。既定はログイン必須 |
+| `TRIAL_COOKIE_SECRET` | 任意 | 未ログインのお試し読み取りの Cookie 署名鍵（サーバー専用。`openssl rand -base64 32` などで生成）。設定すると未ログインでも端末ごとに 3 回まで AI 解析を試せる（IP ごとに 1 日 10 回の上限つき）。未設定ならお試しは無効で、未ログインの AI 解析は 401。公開ページの文言もビルド時にこれで切り替わる（[api-analyze.md](./api-analyze.md#未ログインのお試し読み取り)） |
 | `CRON_SECRET` | 本番で必須 | Vercel Cron → `/api/keepalive` の認証用シークレット |
 | `SUPABASE_SERVICE_ROLE_KEY` | 任意 | `/api/keepalive` で件数取得まで行う場合に設定。サーバー専用（`NEXT_PUBLIC_` を付けない） |
 | `NEXT_PUBLIC_SENTRY_DSN` | 任意 | Sentry（エラー監視）の DSN。未設定なら Sentry は完全に無効。本番では設定を推奨（[operations.md](./operations.md#4-3-sentryエラー監視)） |

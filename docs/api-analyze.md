@@ -5,7 +5,8 @@
 `route.ts` は `maxDuration` と、実際の依存（Clerk の `auth`、`callGemini`、`process.env`、モジュールレベルのレートリミッタ）を渡すだけの薄い `POST` です。
 処理の本体は `lib/server/analyze/` に分かれています。`handler.ts`（`handleAnalyze(req, deps)`。下記の処理順序とエラーコードを実装し、依存を注入できるので `tests/analyzeHandler.test.ts` で fake を使って検証）、
 `geminiClient.ts`（`import "server-only"`。プロンプト・スキーマ・`callGemini`・上流エラーの分類 `classifyUpstreamError`）、
-`rateLimit.ts`（`createRateLimiter` と匿名お試し回数 `createAnonymousQuota`。Map と時計を注入でき `tests/rateLimit.test.ts` で検証）、
+`rateLimit.ts`（`createRateLimiter`・クライアント IP の取り出し `clientIpOf`・お試しの IP ごとの 1 日の上限の定数。Map と時計を注入でき `tests/rateLimit.test.ts` で検証）、
+`trialCookie.ts`（未ログインのお試しの署名付き Cookie。`node:crypto` の HMAC-SHA256。`tests/trialCookie.test.ts`）、
 `errors.ts`（`callGemini` が投げる分類済みエラー `GeminiCallError`。`server-only` を持たないので `handler.ts` から実体を読める）です。
 `lib/analyze.ts` が import するのは依存のないドメインモジュール（`lib/types.ts` / `lib/dates.ts` / `lib/calculations.ts`）だけです。
 
@@ -30,11 +31,12 @@ Content-Type: application/json
 1. **Origin チェック**: `Origin` ヘッダーのホストが `Host` / `X-Forwarded-Host` / `NEXT_PUBLIC_APP_URL` のホストの
    いずれとも一致しなければ拒否します。`Origin` ヘッダーが無いリクエスト（非ブラウザのクライアントなど）は検査せずに通します
    （認証とレートリミットは通常どおり適用）。
-2. **認証**: Clerk の `auth()` でログインを確認します。未ログインは拒否します。
-   `ALLOW_ANONYMOUS_SCAN=true` のときだけ、未ログインでも IP（`X-Forwarded-For` の先頭）ごとに 3 回まで許可します。
-   この回数は解析に成功したときだけ数えます。
-3. **レートリミット**: ログインユーザー ID ごと（匿名時は IP ごと）に **1 分間 5 回** まで。
+2. **認証**: Clerk の `auth()` でログインを確認します。ログイン中はお試しの判定をせずに次へ進みます。
+   未ログインは、`TRIAL_COOKIE_SECRET` が未設定なら 401 `AUTH_REQUIRED`（従来どおり）。設定済みなら
+   [お試し読み取り](#未ログインのお試し読み取り)として、署名付き Cookie の使用回数が 3 未満のときだけ通し、3 回に達していれば 401 `TRIAL_EXHAUSTED` を返します。
+3. **レートリミット**: ログインユーザー ID ごと（未ログインは IP ごと）に **1 分間 5 回** まで（429 `RATE_LIMITED`）。
    ここまで到達したリクエストは、成否にかかわらず 1 回と数えます。
+   未ログインのお試しは続けて **IP ごとに 1 日 10 回** の上限も掛けます（429 `TRIAL_IP_LIMITED`。こちらも成否にかかわらず数える）。
 4. **サーバー設定**: `GEMINI_API_KEY` が未設定なら 500 を返します。
 5. **サイズ上限**: `Content-Length` が **4MB（4,194,304 バイト）** を超えていれば本文を読む前に拒否します。
 6. **本文と画像の検証**: JSON として解釈し、`image` を検証します。
@@ -45,8 +47,32 @@ Content-Type: application/json
 7. **Gemini 呼び出し**（下記）。
 8. **応答の検証と正規化**、単価の再計算、妥当性チェック（下記）。
 
-レートリミットと匿名回数のカウンタはサーバーインスタンスのメモリ上にあるベストエフォートな実装です
+レートリミット（1 分間・お試しの 1 日）のカウンタはサーバーインスタンスのメモリ上にあるベストエフォートな実装です
 （[既知の制約](./roadmap.md#既知の制約)）。
+
+## 未ログインのお試し読み取り
+
+初めての人がログイン前に中心の機能を体験できるよう、`TRIAL_COOKIE_SECRET` が設定されているときだけ、
+未ログインでも **端末（ブラウザ）ごとに 3 回まで** 読み取りを許可します。未設定なら無効で、未ログインは 401 `AUTH_REQUIRED` です。
+ログイン中のリクエストには一切影響しません（Cookie を読まず、IP の 1 日の上限も掛けない）。
+
+- **回数の Cookie**: `fuel_lens_trial`。値は `<使用回数>.<HMAC-SHA256(base64url)>`（鍵は `TRIAL_COOKIE_SECRET`、対象は `fuel_lens_trial:v1:<回数>`）。
+  `HttpOnly`・`SameSite=Lax`・`Path=/`・`Max-Age` 180 日、本番（`NODE_ENV=production`）は `Secure`。
+  署名は `timingSafeEqual` で比較し、署名が合わない・形式が違う・Cookie が無いときは 0 回（新しい端末）として扱います。
+  クライアントが申告する回数（ヘッダーなど）は使いません。
+- **数え方**: 読み取りに **成功（200）したときだけ** 使用回数を 1 増やし、署名し直した Cookie を `Set-Cookie` で返します。
+  422（読み取れない）・429・5xx などの失敗は数えません。
+- **乱用の歯止め**: Cookie は消せば数え直せるため、お試しには IP ごとの上限を 2 つ掛けます。1 分間 5 回（ログイン中のユーザー単位の上限と同じリミッタ、キー `ip:<IP>`）と、
+  **1 日 10 回**（最初のリクエストから 24 時間の固定窓、キー `ip:<IP>`。成否にかかわらず数える）。使い切った Cookie（401 `TRIAL_EXHAUSTED`）は IP の上限を消費しません。
+  IP は `X-Forwarded-For` の先頭、無ければ `X-Real-IP`、どちらも無ければ `"unknown"`（そういうリクエストすべてで 1 つのバケツを共有）。
+  どちらのカウンタもインスタンスごとのメモリ上にあり（ベストエフォート）、IP はこのメモリにだけ置きます（ログ・Sentry・アナリティクスには出さない）。
+- **残り回数**: お試しとして受け付けた未ログインのリクエストには、成否にかかわらず `X-Trial-Remaining: <0〜3>` を付けます
+  （成功時は加算後の値）。ログイン中・お試しが無効のときは付けません。
+- **画面**: アプリ画面のレイアウト（`app/(app)/layout.tsx`）がサーバーで Cookie から残り回数を読み（HttpOnly なのでクライアントからは読めない）、
+  `lib/scan/trialContext.tsx` の `TrialProvider` に渡します。以降は `X-Trial-Remaining` で表示を更新します（表示用の写し。判定はサーバーだけ）。
+  文言と判定は `lib/trial.ts`（`scanAccessOf`）。公開ページ（`/`・`/calc`・`/gas-cost`）の「登録なしで3回まで試せます」は
+  `TRIAL_COOKIE_SECRET` の有無でビルド時に切り替わります（`lib/landingPage.ts` の `aiAvailabilityCopy`）。
+- 読み取り結果は通常どおり確認シートで確認し、未ログインなのでこのブラウザ（localStorage）に保存します。
 
 ## Gemini への指示
 
@@ -120,6 +146,13 @@ Content-Type: application/json
 
 各項目は読み取れなければ `null` です（`fuel_type` は `"regular"` / `"premium"` / `"diesel"` / `"other"` / `null`）。`confidence` と `warnings` は該当するときだけ含まれます。
 
+### レスポンスヘッダー（未ログインのお試し）
+
+| ヘッダー | 付く場合 | 値 |
+|---|---|---|
+| `X-Trial-Remaining` | お試しとして受け付けた未ログインのリクエスト（成功・失敗とも。`TRIAL_COOKIE_SECRET` 未設定の 401 `AUTH_REQUIRED` とログイン中には付かない） | 残り回数 `0`〜`3`（成功時は加算後） |
+| `Set-Cookie` | お試しの読み取りが成功（200）したとき | `fuel_lens_trial=<回数>.<署名>; Path=/; Max-Age=15552000; HttpOnly; SameSite=Lax`（本番は `; Secure`） |
+
 ### エラー
 
 本文は `{ "error": "<日本語メッセージ>", "code": "<コード>", "requestId": "<ID>" }` です。
@@ -129,13 +162,14 @@ Content-Type: application/json
 | 400 | `INVALID_JSON` | 本文を JSON として解釈できない |
 | 400 | `INVALID_BODY` | 本文が JSON オブジェクトでない |
 | 400 / 413 / 415 | `INVALID_IMAGE` | `image` が不正（400）、大きすぎる（413）、対応形式でない（415） |
-| 401 | `AUTH_REQUIRED` | 未ログイン（`ALLOW_ANONYMOUS_SCAN` が `true` でない） |
+| 401 | `AUTH_REQUIRED` | 未ログイン（`TRIAL_COOKIE_SECRET` が未設定で、お試しが無効） |
+| 401 | `TRIAL_EXHAUSTED` | 未ログインのお試し（3 回）を使い切った。本文は「お試しの読み取りは3回までです。ログインすると続けて使えます」。`X-Trial-Remaining: 0` 付き |
 | 403 | `ORIGIN_MISMATCH` | `Origin` のホストが許可ホストと一致しない |
-| 403 | `ANONYMOUS_LIMIT_EXCEEDED` | 匿名お試し解析の上限（3 回）に達した |
 | 413 | `PAYLOAD_TOO_LARGE` | `Content-Length` が 4MB を超える |
 | 422 | `BLOCKED` | Gemini の安全性フィルタでブロックされた |
 | 422 | `NOTHING_EXTRACTED` | 給油量・支払総額・走行距離のいずれも読み取れない |
 | 429 | `RATE_LIMITED` | レートリミット超過。`Retry-After`（秒）ヘッダー付き |
+| 429 | `TRIAL_IP_LIMITED` | 未ログインのお試しの IP ごとの 1 日の上限（10 回）を超えた。`Retry-After`（秒、最大 24 時間）付き。画面は待ち時間を出さずにログインを案内する |
 | 429 | `UPSTREAM_QUOTA` | Gemini の利用枠の上限。`Retry-After: 30` 付き |
 | 500 | `SERVER_MISCONFIGURED` | `GEMINI_API_KEY` が未設定 |
 | 500 | `INTERNAL_ERROR` | 想定外の例外 |
@@ -154,5 +188,5 @@ Gemini のエラー本文はクライアントへ返しません。詳細はサ�
 |---|---|
 | `GEMINI_API_KEY` | 必須。未設定なら 500 `SERVER_MISCONFIGURED` |
 | `GEMINI_MODEL` | 使用モデル。既定 `gemini-3.1-flash-lite` |
-| `ALLOW_ANONYMOUS_SCAN` | `true` で未ログインの解析を IP ごとに 3 回まで許可。開発・デモ専用 |
+| `TRIAL_COOKIE_SECRET` | 未ログインのお試し読み取りの Cookie 署名鍵。設定すると端末ごとに 3 回まで（IP ごとに 1 日 10 回の上限つき）。未設定ならお試しは無効（未ログインは 401）。変えると発行済みの Cookie は無効になり回数が数え直しになる |
 | `NEXT_PUBLIC_APP_URL` | Origin チェックで追加で許可するホスト（リバースプロキシやカスタムドメインで `Host` が異なる場合） |
