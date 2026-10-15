@@ -14,6 +14,11 @@ export type DropZoneProps = {
 export type UseImageDropPasteOptions = {
   /** 画像ファイルを受け取ったとき（ドロップ・ペースト） */
   onImage: (file: File) => void | Promise<void>;
+  /**
+   * 2 つ以上のファイルを受け取ったとき（旧レシートの一括読み取り）。画像以外・上限の確認は呼び出し側が行う。
+   * 省略時は従来どおり先頭の 1 つだけを onImage に渡す
+   */
+  onImages?: (files: File[]) => void;
   /** スキャン中か（同期的に判定する。true の間は受け取った画像を無視する） */
   isBusy: () => boolean;
   /** useToast().toast。lib から components へ依存しないよう、呼び出し側から渡す */
@@ -24,8 +29,9 @@ export type UseImageDropPasteOptions = {
  * 画像のドラッグ＆ドロップ（ドロップ先の要素に dropZoneProps を付ける）と、
  * クリップボードからのペースト（window 全体。入力欄にフォーカスがあるときは無視）を受け付ける。
  * 画像以外は警告の toast を出す。スキャン中の再入は黙って無視する。
+ * 2 つ以上のファイルは onImages に渡す（渡されていれば）。
  */
-export function useImageDropPaste({ onImage, isBusy, toast }: UseImageDropPasteOptions): {
+export function useImageDropPaste({ onImage, onImages, isBusy, toast }: UseImageDropPasteOptions): {
   isDragging: boolean;
   dropZoneProps: DropZoneProps;
 } {
@@ -38,10 +44,16 @@ export function useImageDropPaste({ onImage, isBusy, toast }: UseImageDropPasteO
     if (document.activeElement?.tagName === "INPUT" || document.activeElement?.tagName === "TEXTAREA") {
       return;
     }
-    const file = e.clipboardData?.files?.[0];
+    const files = Array.from(e.clipboardData?.files ?? []);
+    const file = files[0];
     if (!file) return;
     // スキャン中の再入は無視する
     if (isBusy()) return;
+    if (files.length > 1 && onImages) {
+      e.preventDefault();
+      onImages(files);
+      return;
+    }
     if (!file.type.startsWith("image/")) {
       toast("画像ファイルのみペースト可能です。", { type: "warning" });
       return;
@@ -83,10 +95,15 @@ export function useImageDropPaste({ onImage, isBusy, toast }: UseImageDropPasteO
       setIsDragging(false);
       dragCounter.current = 0;
 
-      const file = e.dataTransfer.files?.[0];
+      const files = Array.from(e.dataTransfer.files ?? []);
+      const file = files[0];
       if (!file) return;
       // スキャン中の再入は無視する
       if (isBusy()) return;
+      if (files.length > 1 && onImages) {
+        onImages(files);
+        return;
+      }
       if (!file.type.startsWith("image/")) {
         toast("画像ファイルのみアップロード可能です。", { type: "warning" });
         return;

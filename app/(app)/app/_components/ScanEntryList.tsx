@@ -63,7 +63,7 @@ export default function ScanEntryList({
           disabled={scanDisabled}
           leading={<EntryIcon icon={ImageIcon} disabled={scanDisabled} />}
           title="アルバムから選ぶ"
-          subtitle="撮影済みの写真を読み取る"
+          subtitle="撮影済みの写真を読み取る（複数枚も選べます）"
           showChevron={!scanDisabled}
         />
         <ListRow

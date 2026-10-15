@@ -22,8 +22,13 @@ export type ScanPanelProps = {
   /** 共有で受け取り、確認ダイアログで読み取らなかった画像（「読み取る」「手動で入力」を出す） */
   sharedPending: string | null;
   readOnly: boolean;
-  /** カメラ・アルバムで画像が選ばれたとき */
+  /** カメラ・アルバムで画像が 1 枚選ばれたとき */
   onSelectFile: (file: File) => void;
+  /**
+   * アルバムで 2 枚以上選ばれたとき（旧レシートの一括読み取り）。渡したときだけアルバムの入力を複数選択にする。
+   * 画像以外・上限の確認は呼び出し側が行う
+   */
+  onSelectFiles?: (files: File[]) => void;
   onClearPreview: () => void;
   onAnalyzeShared: (dataUrl: string) => void;
   onManualEntry: () => void;
@@ -72,6 +77,7 @@ export default function ScanPanel({
   sharedPending,
   readOnly,
   onSelectFile,
+  onSelectFiles,
   onClearPreview,
   onAnalyzeShared,
   onManualEntry,
@@ -90,10 +96,15 @@ export default function ScanPanel({
   );
 
   const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
+    const files = Array.from(e.target.files ?? []);
     e.target.value = "";
-    if (!file) return;
-    onSelectFile(file);
+    if (files.length === 0) return;
+    // 2 枚以上は一括読み取りへ（1 枚なら従来どおり）
+    if (files.length > 1 && onSelectFiles) {
+      onSelectFiles(files);
+      return;
+    }
+    onSelectFile(files[0]);
   };
 
   let card: ReactNode = null;
@@ -168,7 +179,15 @@ export default function ScanPanel({
     <>
       {card}
       <input type="file" accept="image/*" capture="environment" className="hidden" ref={cameraInputRef} onChange={handleFileChange} aria-label="カメラで撮影" />
-      <input type="file" accept="image/*" className="hidden" ref={galleryInputRef} onChange={handleFileChange} aria-label="画像ファイルを選択" />
+      <input
+        type="file"
+        accept="image/*"
+        multiple={onSelectFiles !== undefined}
+        className="hidden"
+        ref={galleryInputRef}
+        onChange={handleFileChange}
+        aria-label="画像ファイルを選択"
+      />
     </>
   );
 }

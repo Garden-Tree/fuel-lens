@@ -66,7 +66,7 @@ FuelLens の構成、データの流れ、主要なモジュールの役割を�
 | `lib/home/` | ホーム画面の表示用の純粋関数。`hero`（ヒーローのモデルと前回比）/ `gauge`（燃費メーターの目盛りと円弧の座標）/ `month`（今月の集計）/ `recent`（最近の記録の行と日付の書式）。フックは `useCurrentMonthKey` / `useTodayKey`（いまの月 / 今日。画面に戻ってきたときに読み直す）だけ |
 | `lib/history/` | 履歴画面の純粋関数。`recordList`（年・月の絞り込み・並べ替え・数値の書式・行の DOM id と `#record-<id>` の解析）/ `groupByMonth`（月ごとのまとまりと合計） |
 | `lib/importers/csvParse.ts` | CSV 取り込みの共有プリミティブ（`parseCsvRows` / `parseCsvNumber` / `parseFlexibleDate` / `hashString` / `isBlankRow`）。`fuelio.ts` は互換のため再エクスポート |
-| `lib/scan/` | メイン画面のスキャン。`analyzeClient.ts`（`compressToDataUrl` / `requestAnalyze`。React に依存しない I/O）、`shortcuts.ts`（`?action=` の判定 `resolveShortcutAction` / `shortcutReadinessOf`、スキャンメニューの可否 `scanMenuAvailabilityOf`。純粋関数）、フック `useScanPipeline` / `useImageDropPaste` / `useShortcutActions`（[メイン画面の構成](#メイン画面の構成app)） |
+| `lib/scan/` | メイン画面のスキャン。`analyzeClient.ts`（`compressToDataUrl` / `requestAnalyze`。React に依存しない I/O）、`shortcuts.ts`（`?action=` の判定 `resolveShortcutAction` / `shortcutReadinessOf`、スキャンメニューの可否 `scanMenuAvailabilityOf`。純粋関数）、写真の一括読み取りの `batch.ts`（上限・ペース配分・Retry-After・重複の可能性・文言。純粋関数）と `batchController.ts`（キュー。React に依存しない）、フック `useScanPipeline` / `useBatchScan` / `useImageDropPaste` / `useShortcutActions`（[メイン画面の構成](#メイン画面の構成app)、[写真の一括読み取り](#写真の一括読み取り旧レシート)） |
 | `lib/useRecordEditing.ts` | 記録の編集・手動入力のフォームの開閉と保存（重複確認・toast・車両切り替えで閉じる）。/app と /history で共用 |
 | `lib/manualPrefill.ts` | 手動入力の事前入力 `/app?action=manual&distance=…&amount=…&cost=…` の組み立て（`buildManualPrefillHref`。`/calc` から）・解析（`parseManualPrefill`。信頼できない入力として検証）・車両の入力方式への当てはめ（`prefillToRecord`）。純粋関数（[燃費計算ページ](#燃費計算ページcalc)） |
 | `lib/shareInbox.ts` | Web Share Target の受け取り箱。Service Worker が IndexedDB に置いた共有画像を、トークン一致かつ 10 分以内のときだけ取り出して削除する（`takeSharedImage` / `clearSharedImage`。[9 章](#9-pwa)） |
@@ -100,6 +100,7 @@ FuelLens の構成、データの流れ、主要なモジュールの役割を�
   `migrateLocalData` でローカルの記録をクラウドへ移してから既定車両を確保します（[5 章](#5-ローカル--クラウド移行)）。
 - スキャンの流れ: 画像を 0.8MB 以下・長辺 1200px の JPEG に圧縮 → `POST /api/analyze` → 確認シートで確認・修正 →
   同じ日付・給油量・支払総額の記録があれば確認ダイアログ → `addRecord`。解析結果を自動保存することはありません。
+  写真を 2 枚以上選んだときは同じ流れを 1 枚ずつ順に繰り返します（[写真の一括読み取り](#写真の一括読み取り旧レシート)）。
 - **最初の描画（初期認証状態とキャッシュの先行表示）**: アプリ画面のレイアウト（`app/(app)/layout.tsx`）がサーバーで Clerk の `auth()` を読み、
   `{ signedIn, userId }` を `InitialAuthProvider`（`lib/data/initialAuthContext.tsx`）でクライアントへ渡します。判定は純粋関数 `resolveAuth`（`lib/data/initialAuth.ts`）で、
   使うのは Clerk（clerk-js、数百 KB + Frontend API の往復）の読み込みが終わるまでの間だけです。読み込み後は常に Clerk の値が優先します。
@@ -317,7 +318,8 @@ useVehicles / useFuelRecords
 |---|---|
 | `useVehicleScope` | 選択中の車両とその記録 |
 | `useScanPipeline({ isSignedIn, toast, confirm })`（`lib/scan/`） | スキャンの状態（`loading` / `loadingStep` / `preview` / `sharedPending` / `scanResult`、同期判定の `isScanning()`）と処理（`processImageFile(file, { confirmBeforeAnalyze })` / `processSharedImage(token)` / `startSharedAnalysis` / `clearPreview` / `discardResult` / `abort`）。圧縮 → `requestAnalyze` → 確認シート。HTTP エラーの文言は `lib/analyze.ts` の `analyzeErrorMessage(status, body, { isSignedIn, retryAfter })`（401 は未ログイン / ログイン中で文言を分ける、422、429 は Retry-After の秒数、504、それ以外は requestId 付き）。アンマウント時は解析リクエストを中断する |
-| `useImageDropPaste({ onImage, isBusy, toast })`（`lib/scan/`） | ドロップ先に付ける `dropZoneProps` と `isDragging`、window 全体のペースト（入力欄にフォーカスがあるときは無視）。最新のハンドラは `useEffectEvent` で参照する |
+| `useBatchScan({ isSignedIn, toast, confirm })`（`lib/scan/`） | 写真の一括読み取り（2 枚以上）の状態（`active` / `state` / `currentItem` / `runId`、同期判定の `isActive()`）と操作（`start(images)` / `markSaved` / `skip` / `requestAbort`）。[写真の一括読み取り](#写真の一括読み取り旧レシート) |
+| `useImageDropPaste({ onImage, onImages, isBusy, toast })`（`lib/scan/`） | ドロップ先に付ける `dropZoneProps` と `isDragging`、window 全体のペースト（入力欄にフォーカスがあるときは無視）。2 つ以上のファイルは `onImages` に渡す。最新のハンドラは `useEffectEvent` で参照する |
 | `useRecordEditing` | 手動入力・最新記録の編集。確認シートの保存も `addWithDuplicateCheck` を使う |
 | `RegisterScanActions`（`components/ScanActions.tsx`） | 撮影・アルバム・手動入力の処理と可否（`canScan` / `canManual` / `disabledReason`。`scanMenuAvailabilityOf`）をスキャンメニューに登録する（マウント中だけ）。メニューは項目のクリックの中でこれを直接呼ぶ |
 | `ShortcutActionHandler`（`useShortcutActions`） | `?action=scan` / `album` / `manual` / `shared` / `share-unavailable` を `action` が付くたびに 1 回だけ処理し、`router.replace("/app")` でクエリごと消す（他の画面のスキャンメニュー・PWA ショートカット・共有・燃費計算ページから来たとき。`album` は capture なしのファイル選択。`manual` に `distance` / `amount` / `cost` が付いていれば、検証した値を手動入力に入れて開く。[燃費計算ページ](#燃費計算ページcalc)）。撮影・アルバム・手動入力は判定できる（マウント済み・読み込み完了）まで待ち、そのとき解析中・確認中・閲覧専用なら**実行せずに取り下げ**、理由を toast で伝える（例「読み取り中のため撮影を開始できません」「閲覧専用のため手動入力はできません」。後から勝手に開かない）。共有画像は条件がそろうまで待つ。判定は `shortcutReadinessOf` / `resolveShortcutAction`。`useSearchParams` を使うので `<Suspense>` の内側に置き、/app の静的プリレンダーを保つ |
@@ -329,12 +331,34 @@ useVehicles / useFuelRecords
 | `RecentRecordsSection` | 「最近の記録」の 3 件（店舗名・日付・燃料種別・支払総額、右に燃費）。行は `/history#record-<id>` へ、「すべて見る」は `/history` へ。行は `lib/home/recent.ts` の `recentRowOf` |
 | `ScanEntryList` | 記録の入口（撮影する / アルバムから選ぶ / 手動で入力）のグループリスト。記録が無いときは左カラム、あるときは PC の右カラムだけに出す（スマホはタブバーのスキャンボタンから）。未ログインでは撮影・アルバムを無効にして案内を出す |
 | `DropZoneRow` | PC だけに出す細いドロップ先の案内（押すとアルバム）。ドロップ・貼り付け自体はページ全体で受け付ける |
-| `ScanPanel` | 解析中・プレビュー中（次を撮る / 読み取る / 手動で入力）の状態カードと、非表示のファイル入力（カメラ / アルバム）。何もなければ入力だけ。撮影・アルバムは `ref` の `openCamera()` / `openAlbum()` で開く |
+| `ScanPanel` | 解析中・プレビュー中（次を撮る / 読み取る / 手動で入力）の状態カードと、非表示のファイル入力（カメラ / アルバム）。何もなければ入力だけ。撮影・アルバムは `ref` の `openCamera()` / `openAlbum()` で開く。アルバムは複数選択でき、2 枚以上は `onSelectFiles`（1 枚は従来どおり `onSelectFile`） |
+| `BatchScanCard` | 写真の一括読み取りの状態カード（「3 / 12 枚目」・段階・回数制限の残り秒数・この写真をスキップ / 残りを中止）。確認シートを開いていない間に見える |
 | `RecordCardSkeleton` | 読み込み中のスケルトン（左カラム。右カラムは `RecentRecordsSkeleton`） |
 
 レイアウトは、スマホが 1 カラム（ヒーロー → 今月 → 最近の記録）、PC（lg 以上）が 2 カラム（左: ヒーローと今月 / 右: 最近の記録・記録の入口・ドロップ先）です。記録が無いときは左にヒーローの代わりに `WelcomeCard`、その下に `ScanEntryList` を出します。
 
-部品のテストは `tests/components/ScanPanel.test.tsx` / `LatestRecordCard.test.tsx` / `HomePage.test.tsx`（`?action=` の案内・取り下げ、手動入力の破棄確認）/ `ScanActions.test.tsx`（メニューからの直接呼び出し）/ `homeMonth.test.tsx` / `ShareCard.test.tsx`（シェアのモーダルの操作）、純粋関数は `tests/home/*.test.ts`（`gauge` / `month` / `heroRecent`）/ `tests/analyze.test.ts` / `scanShortcuts.test.ts` / `scanClient.test.ts`（`requestAnalyze` を fetch のモックで検証）です。
+部品のテストは `tests/components/ScanPanel.test.tsx` / `LatestRecordCard.test.tsx` / `HomePage.test.tsx`（`?action=` の案内・取り下げ、手動入力の破棄確認）/ `ScanActions.test.tsx`（メニューからの直接呼び出し）/ `BatchScan.test.tsx`（一括読み取りの状態カード・確認シート・ホームでの流れ）/ `homeMonth.test.tsx` / `ShareCard.test.tsx`（シェアのモーダルの操作）、純粋関数は `tests/home/*.test.ts`（`gauge` / `month` / `heroRecent`）/ `tests/analyze.test.ts` / `scanShortcuts.test.ts` / `scanClient.test.ts`（`requestAnalyze` を fetch のモックで検証）/ `scanBatch.test.ts` / `scanBatchController.test.ts`（キューとペース配分をフェイクタイマーで検証）です。
+
+### 写真の一括読み取り（旧レシート）
+
+溜まったレシートの写真をまとめて選び、1 枚ずつ確認して登録します。アルバム（複数選択）・ドロップ・ペーストで **2 枚以上**選ばれたときだけ一括読み取りになり、1 枚なら従来の流れのままです。
+
+- **始める前の確認**（`app/(app)/app/page.tsx` の `processFiles`）: 画像以外は除いて件数を toast。上限は 20 枚（`MAX_BATCH_IMAGES`。超えた分は「一度に読み取れるのは 20 枚までです…」と伝えて最初の 20 枚だけ）。
+  未ログインは AI がログイン必須なので**解析を呼ばずに**案内（`BATCH_SIGNED_OUT_MESSAGE`）、閲覧専用（障害中）・読み込み中（`previewing` を含む）・読み取り中・確認シートの表示中は始めずに理由を toast で伝えます。
+- **キュー**（`lib/scan/batchController.ts` の `createBatchController`。React に依存しない）: 選んだ順に「圧縮（`compressToDataUrl`）→ 解析（`requestAnalyze`）」を 1 枚ずつ行います。
+  確認中の写真の**次の 1 枚までだけ**先に読み取ります（確認している間に次の解析を進める。先読みは 1 枚なので、中止しても無駄になるリクエストは最大 1 回）。
+- **回数制限**: サーバーは 1 ユーザー 1 分 5 回（[api-analyze.md](./api-analyze.md)）。クライアントは `createRequestPacer` で直近 62 秒に 5 回までに抑え、超えそうなら送る前に待ちます。
+  それでも 429 が返ったら（直前の 1 枚スキャン・別タブ・Gemini の利用枠）、`Retry-After`（秒数 / HTTP 日付。無ければ 30 秒、上限 120 秒。`parseRetryAfterMs`）だけ待って**自動で再試行**し、次の写真もその時刻までは送りません。
+  待っている間は状態カードに「読み取りの回数制限のため、あと N 秒待っています」を 1 秒ごとに出します（読み上げは秒数を含めず、写真・段階が変わったときだけ）。1 枚で 429 が 5 回続いたらその写真は「読み取れなかった」扱いにします。
+- **確認シート**（`ScanReviewSheet` の `batch`）: 進み具合「3 / 12 枚目」とバー（ダイアログ名にも含め、シートが開くたびに読み上げる）、「保存して次へ」（最後は「保存して終了」）/「この写真をスキップ」（Escape も同じ。背景のクリックでは閉じない）/「残りを中止」。
+  - 古いレシートなので、**日付が読めなければ今日を入れず空のまま**「要確認」にし、入力するまで保存できません（通常の 1 枚スキャンは従来どおり今日を入れる）。
+  - 距離（トリップモードの区間距離 / オドメーターモードのオドメーター）が読めない写真（レシートだけの写真）は、入力を促す案内を出します。検証は通常のスキャンと同じで、未入力でも保存できます（トリップモードは燃費なし、オドメーターモードは持ち越し行）。
+  - 入力中の日付・支払総額（給油量は両方にあるときだけ比べる）が選択中の車両の記録と一致すれば「同じ日付・金額の記録がすでにあります」を出します（`findPossibleDuplicate`。保存の前の注意）。スキップするか、そのまま保存できます。
+  - 読み取れなかった写真（422・タイムアウト・通信エラー・圧縮の失敗）は空の結果でシートを開き、理由と拡大できる写真を出して手入力かスキップを選べます。
+  - 保存は 1 枚スキャンと同じ `useRecordEditing().addWithDuplicateCheck`（日付・給油量・金額が完全一致なら確認ダイアログ）→ `addRecord`。古い記録を後から足しても、連鎖計算は読み取り時に日付順へ並べて適用するので正しく計算されます（`tests/fillChain.test.ts`）。
+- **中止・終了**: 「残りを中止」は `useToast().confirm` で確認してから、進行中のリクエストと待ちを止めます。401（セッション切れ）は残りを中止して案内します。アンマウント時も中断します。
+  終わったら（中止を含む）結果を toast で伝えます（「12 枚中 9 件を保存、3 件をスキップしました」/「…残りの 8 枚は中止しました」。`batchSummaryMessage`）。
+- 一括読み取りの最中は、1 枚スキャンと同じく撮影・アルバム・手動入力・ドロップを受け付けません（`shortcutReadinessOf` の `scanning`）。キューはメモリ上だけにあり、再読み込みすると消えます（保存済みの記録は残る）。
 
 ### シェアカード（「今月の燃費をシェア」）
 

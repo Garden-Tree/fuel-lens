@@ -34,7 +34,7 @@ type ScanAction = {
 
 const ACTIONS: readonly ScanAction[] = [
   { action: "scan", label: "撮影する", description: "レシートとメーターを1枚に収めて撮影", icon: Camera, requiresSignIn: true },
-  { action: "album", label: "アルバムから選ぶ", description: "撮影済みの写真を読み取る", icon: ImageIcon, requiresSignIn: true },
+  { action: "album", label: "アルバムから選ぶ", description: "撮影済みの写真を読み取る（複数枚も選べます）", icon: ImageIcon, requiresSignIn: true },
   { action: "manual", label: "手動で入力", description: "金額・給油量・距離を入力", icon: Edit2, requiresSignIn: false },
 ];
 

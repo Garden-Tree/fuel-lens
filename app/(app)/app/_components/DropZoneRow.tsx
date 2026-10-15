@@ -30,7 +30,7 @@ export default function DropZoneRow({
         ? "ここに画像をドロップして解析"
         : signedOut
           ? "画像のドロップ・貼り付けによる読み取りはログイン後に使えます"
-          : "ここに画像をドロップ、または Ctrl+V で貼り付け"}
+          : "ここに画像をドロップ（複数枚も可）、または Ctrl+V で貼り付け"}
     </button>
   );
 }
