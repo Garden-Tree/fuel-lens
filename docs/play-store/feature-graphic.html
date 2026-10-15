@@ -1,0 +1,62 @@
+<!doctype html>
+<!-- Google Play のフィーチャーグラフィック（1024x500）のソース。
+     描画: "C:/Program Files/Google/Chrome/Application/chrome.exe" --headless=new --hide-scrollbars --window-size=1024,500 --screenshot=docs/play-store/feature-graphic.png file:///<このファイルの絶対パス>
+     手順は docs/play-store/README.md。 -->
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>FuelLens feature graphic</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 1024px; height: 500px; overflow: hidden; background: #0B0F14; }
+  body {
+    position: relative;
+    font-family: "Yu Gothic UI", "Yu Gothic", "Meiryo", "Segoe UI", sans-serif;
+    color: #F1F5F9;
+    background:
+      radial-gradient(ellipse 520px 420px at 22% 60%, rgba(59, 130, 246, 0.22), transparent 70%),
+      #0B0F14;
+  }
+  .brand {
+    position: absolute; left: 72px; top: 118px;
+    display: flex; align-items: center; gap: 22px;
+  }
+  .brand svg { width: 92px; height: 92px; border-radius: 22px; box-shadow: 0 0 0 1px rgba(96, 165, 250, 0.25); }
+  .wordmark { font-family: "Segoe UI", "Yu Gothic UI", sans-serif; font-size: 76px; font-weight: 700; letter-spacing: -1.5px; line-height: 1; }
+  .tagline {
+    position: absolute; left: 72px; top: 262px;
+    font-size: 42px; font-weight: 700; line-height: 1.3; letter-spacing: 1px;
+  }
+  .tagline em { font-style: normal; color: #60A5FA; }
+  .sub {
+    position: absolute; left: 74px; top: 336px;
+    font-size: 23px; font-weight: 500; color: #94A3B8; letter-spacing: 0.5px;
+  }
+  .phone {
+    position: absolute; right: 78px; top: 44px;
+    width: 250px; height: 520px;
+    border-radius: 34px; overflow: hidden;
+    border: 6px solid #1E293B;
+    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(148, 163, 184, 0.15);
+    transform: rotate(5deg);
+  }
+  .phone img { display: block; width: 100%; height: auto; }
+</style>
+</head>
+<body>
+  <div class="brand">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+      <rect width="64" height="64" fill="#030712"/>
+      <rect x="14" y="14" width="22" height="36" rx="4" fill="none" stroke="#3b82f6" stroke-width="4"/>
+      <rect x="19" y="19" width="12" height="9" rx="2" fill="#3b82f6"/>
+      <path d="M36 24h5a4 4 0 0 1 4 4v12a3 3 0 0 0 6 0V22" fill="none" stroke="#3b82f6" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+      <circle cx="47" cy="47" r="8" fill="#030712" stroke="#60a5fa" stroke-width="3"/>
+      <circle cx="47" cy="47" r="3" fill="#60a5fa"/>
+    </svg>
+    <div class="wordmark">FuelLens</div>
+  </div>
+  <div class="tagline">写真<em>1枚</em>で燃費を記録</div>
+  <div class="sub">レシートとトリップメーターを撮るだけ</div>
+  <div class="phone"><img src="../images/readme/home.png" alt=""></div>
+</body>
+</html>

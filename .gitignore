@@ -55,3 +55,10 @@ supabase/.temp/
 
 # 集客用の下書き（個人の燃費データを含むので公開リポジトリにコミットしない）
 marketing/
+
+# Google Play (TWA) の署名鍵とパッケージ。PWABuilder が作るもの。絶対にコミットしない (docs/play-store/README.md)
+*.keystore
+*.jks
+*.aab
+*.apk
+signing-key-info.txt
