@@ -33,7 +33,7 @@ const MAIN_FIELDS: FieldDef[] = [
     hint: (
       <>
         実燃費がわからなければ、
-        <Link href="/calc" className="text-accent underline-offset-2 hover:underline">
+        <Link href="/calc" className="text-accent underline underline-offset-2 hover:no-underline">
           満タン法の燃費計算ツール
         </Link>
         で測れます

@@ -68,7 +68,7 @@ export default function CalcPage() {
             </p>
             <p className="mt-3 text-sm text-sub">
               距離からガソリン代を見積もるなら{" "}
-              <Link href="/gas-cost" className="text-accent underline-offset-2 hover:underline">
+              <Link href="/gas-cost" className="text-accent underline underline-offset-2 hover:no-underline">
                 ガソリン代計算ツール
               </Link>
               をどうぞ。

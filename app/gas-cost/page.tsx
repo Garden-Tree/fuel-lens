@@ -79,7 +79,7 @@ export default function GasCostPage() {
                 <strong>カタログ燃費より実燃費を使う。</strong>
                 実際の走り方での燃費（実燃費）は、カタログ燃費と異なることが多いです。自分の車の燃費を満タン法で測っておくと、より正確に見積もれます。
                 測り方は
-                <Link href="/calc" className="text-accent underline-offset-2 hover:underline">
+                <Link href="/calc" className="text-accent underline underline-offset-2 hover:no-underline">
                   満タン法 燃費計算ツール
                 </Link>
                 で解説しています。
