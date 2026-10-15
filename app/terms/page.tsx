@@ -3,7 +3,8 @@ import Link from "next/link";
 import { ENACTED_ON, ISSUES_URL, LegalPage } from "@/components/LegalPage";
 
 export const metadata: Metadata = {
-  title: "利用規約 | FuelLens",
+  // 「| FuelLens」はルートの layout.tsx の title.template が付ける
+  title: "利用規約",
   description: "FuelLens の利用条件、禁止事項、免責事項についての規約です。",
 };
 
