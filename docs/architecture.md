@@ -7,7 +7,7 @@ FuelLens の構成、データの流れ、主要なモジュールの役割を�
 
 | パス | 役割 |
 |---|---|
-| `app/page.tsx` | ランディングページ（Server Component）。対話部分は `components/landing/*`。右上のログインボタン（`HeaderAuthButtons`）はページの読み込み完了後に `ClerkHeaderAuth`（`ClerkProvider` + `SignedIn` / `SignedOut` / `SignInButton`）を動的に読み込む（clerk-js を初期表示に載せないため。読み込むまではボタンを出さない） |
+| `app/page.tsx` | ランディングページ（Server Component）。検索向けのタイトル・説明（`title.absolute`。レイアウトのタイトルのテンプレートは使わない）と構造化データ（`WebApplication`）は `lib/landingPage.ts`。対話部分は `components/landing/*`。右上のログインボタン（`HeaderAuthButtons`）はページの読み込み完了後に `ClerkHeaderAuth`（`ClerkProvider` + `SignedIn` / `SignedOut` / `SignInButton`）を動的に読み込む（clerk-js を初期表示に載せないため。読み込むまではボタンを出さない） |
 | `app/(app)/app/page.tsx`、`app/(app)/app/_components/` | ホーム画面（`/app`）。燃費メーターのヒーロー、今月の集計、最近の記録、記録の入口（撮影 / アルバム / 手動）。スキャン（画像の選択・ドロップ・貼り付け）と手動入力・最新記録の編集もここ。ページはフックと部品を組み合わせるだけで、部品は `_components/`（`EfficiencyGauge` / `LatestRecordCard` / `MonthSummarySection` / `RecentRecordsSection` / `ScanEntryList` / `WelcomeCard` / `DropZoneRow` / `ManualEntryCard` / `ScanPanel` / `ScanReadyPrompt` / `RecordCardSkeleton` / `ShortcutActionHandler`）に分割。表示用の純粋関数は `lib/home/`（[メイン画面の構成](#メイン画面の構成app)） |
 | `app/(app)/history/page.tsx`、`app/(app)/history/_components/` | 履歴一覧。年・月・並び順のチップ（`HistoryToolbar`）と CSV 出力、月ごとの見出し付きの一覧（`RecordRow`）、行を開いて明細・編集・別車両への移動・削除（`RecordDetail`）。`/history#record-<id>` でその記録を開く。絞り込み・月ごとのまとめは純粋関数 `lib/history/`（[履歴画面の構成](#履歴画面の構成history)） |
 | `app/(app)/stats/page.tsx`、`app/(app)/stats/_components/` | 統計の平均燃費ヒーロー（推移グラフ付き）・費用・月ごとの給油代・単価の推移（recharts）。ページは車両・期間の状態と `buildStatsModel` の結果を部品に渡すだけで、部品は `_components/` に分割（recharts 用の色は `chartTheme.ts`）。期間フィルタ（3 ヶ月 / 6 ヶ月 / 1 年 / 全期間）。スタンド比較の部品は残してあるが画面には出さない（[11 章](#11-統計)） |
@@ -68,6 +68,7 @@ FuelLens の構成、データの流れ、主要なモジュールの役割を�
 | `lib/importers/csvParse.ts` | CSV 取り込みの共有プリミティブ（`parseCsvRows` / `parseCsvNumber` / `parseFlexibleDate` / `hashString` / `isBlankRow`）。`fuelio.ts` は互換のため再エクスポート |
 | `lib/scan/` | メイン画面のスキャン。`analyzeClient.ts`（`compressToDataUrl` / `requestAnalyze`。React に依存しない I/O）、`shortcuts.ts`（`?action=` の判定 `resolveShortcutAction` / `shortcutReadinessOf`、スキャンメニューの可否 `scanMenuAvailabilityOf`。純粋関数）、フック `useScanPipeline` / `useImageDropPaste` / `useShortcutActions`（[メイン画面の構成](#メイン画面の構成app)） |
 | `lib/useRecordEditing.ts` | 記録の編集・手動入力のフォームの開閉と保存（重複確認・toast・車両切り替えで閉じる）。/app と /history で共用 |
+| `lib/manualPrefill.ts` | 手動入力の事前入力 `/app?action=manual&distance=…&amount=…&cost=…` の組み立て（`buildManualPrefillHref`。`/calc` から）・解析（`parseManualPrefill`。信頼できない入力として検証）・車両の入力方式への当てはめ（`prefillToRecord`）。純粋関数（[燃費計算ページ](#燃費計算ページcalc)） |
 | `lib/shareInbox.ts` | Web Share Target の受け取り箱。Service Worker が IndexedDB に置いた共有画像を、トークン一致かつ 10 分以内のときだけ取り出して削除する（`takeSharedImage` / `clearSharedImage`。[9 章](#9-pwa)） |
 | `public/sw.js` | Service Worker。Web Share Target（POST `/share`）の受け取り専用で、キャッシュはしない（[9 章](#9-pwa)） |
 | `components/ServiceWorkerRegister.tsx` | `public/sw.js` を登録する（本番ビルドのみ。開発中は `NEXT_PUBLIC_ENABLE_SW=1` で有効化）。`app/layout.tsx` にマウント |
@@ -319,7 +320,7 @@ useVehicles / useFuelRecords
 | `useImageDropPaste({ onImage, isBusy, toast })`（`lib/scan/`） | ドロップ先に付ける `dropZoneProps` と `isDragging`、window 全体のペースト（入力欄にフォーカスがあるときは無視）。最新のハンドラは `useEffectEvent` で参照する |
 | `useRecordEditing` | 手動入力・最新記録の編集。確認シートの保存も `addWithDuplicateCheck` を使う |
 | `RegisterScanActions`（`components/ScanActions.tsx`） | 撮影・アルバム・手動入力の処理と可否（`canScan` / `canManual` / `disabledReason`。`scanMenuAvailabilityOf`）をスキャンメニューに登録する（マウント中だけ）。メニューは項目のクリックの中でこれを直接呼ぶ |
-| `ShortcutActionHandler`（`useShortcutActions`） | `?action=scan` / `album` / `manual` / `shared` / `share-unavailable` を `action` が付くたびに 1 回だけ処理し、`router.replace("/app")` で消す（他の画面のスキャンメニュー・PWA ショートカット・共有から来たとき。`album` は capture なしのファイル選択）。撮影・アルバム・手動入力は判定できる（マウント済み・読み込み完了）まで待ち、そのとき解析中・確認中・閲覧専用なら**実行せずに取り下げ**、理由を toast で伝える（例「読み取り中のため撮影を開始できません」「閲覧専用のため手動入力はできません」。後から勝手に開かない）。共有画像は条件がそろうまで待つ。判定は `shortcutReadinessOf` / `resolveShortcutAction`。`useSearchParams` を使うので `<Suspense>` の内側に置き、/app の静的プリレンダーを保つ |
+| `ShortcutActionHandler`（`useShortcutActions`） | `?action=scan` / `album` / `manual` / `shared` / `share-unavailable` を `action` が付くたびに 1 回だけ処理し、`router.replace("/app")` でクエリごと消す（他の画面のスキャンメニュー・PWA ショートカット・共有・燃費計算ページから来たとき。`album` は capture なしのファイル選択。`manual` に `distance` / `amount` / `cost` が付いていれば、検証した値を手動入力に入れて開く。[燃費計算ページ](#燃費計算ページcalc)）。撮影・アルバム・手動入力は判定できる（マウント済み・読み込み完了）まで待ち、そのとき解析中・確認中・閲覧専用なら**実行せずに取り下げ**、理由を toast で伝える（例「読み取り中のため撮影を開始できません」「閲覧専用のため手動入力はできません」。後から勝手に開かない）。共有画像は条件がそろうまで待つ。判定は `shortcutReadinessOf` / `resolveShortcutAction`。`useSearchParams` を使うので `<Suspense>` の内側に置き、/app の静的プリレンダーを保つ |
 | `ScanReadyPrompt` | `?action=scan` / `album` で来たときにヘッダーの下（全幅）に出す案内「撮影の準備ができました」（撮影する / アルバムから選ぶ / 閉じる）。遷移後はタップの扱いが切れてファイル選択が開かないことがあるため、ボタンのタップの中で開き直せるようにする。画像を選んだ・スキャンが始まった・閉じたら消す |
 | `LatestRecordCard` / `EfficiencyGauge` | ヒーローカード。直前に保存した記録（なければ最新）の燃費を半円メーターで表示し、平均の目盛り・前回比と平均のチップを添える（見出しは「前回の燃費」、スキャンで保存した直後は「スキャンした記録」）。**最新の記録（`records[0]`）の燃費が無く（部分給油・記録漏れなど）、かつこの画面で保存した直後の記録でないときだけ**、燃費の出ている最も新しい記録をメーターに出し、最新の記録は注記で知らせる（`heroDisplayOf`。保存した直後の記録はスキャン・手動入力とも差し替えない）。「編集」を押すとその場で入力フォームのカード（`RecordFormCard`）に切り替わる。燃費が無い記録（部分給油など）は数値の代わりに理由（`efficiencyNullReason`）を出す。モデルは `lib/home/hero.ts`（前回比・平均は `summarize`、目盛りは `lib/home/gauge.ts` の `gaugeScaleOf`。元にするのは直近 10 回の燃費から外れ値（四分位範囲の 1.5 倍の外）を除いた値 `gaugeBasisOf` で、表示中の値と平均は必ず含める） |
 | `ManualEntryCard` | 手動入力のカード（見出し「手動で記録を追加」。`RecordFormCard` を共用） |
@@ -383,7 +384,20 @@ useVehicles / useFuelRecords
 計算機 `app/calc/_components/FuelCalculator.tsx`（クライアント）は走行距離（区間距離）・給油量・任意の支払総額から燃費・単価・1km あたりの燃料費を出し、入力は state にだけ持って保存しません。
 検証と計算は `lib/calcPage.ts` の `computeCalc`（数値の読み取りは `parseDraftNumber`、燃費と単価は `calculateFuelMetrics`、オドメーターらしい値の注意は `PLAUSIBILITY_LIMITS`）。
 FAQ（`CALC_FAQS`）はページと構造化データで共有し、`buildCalcJsonLd`（`WebApplication` + `FAQPage`、固定文言のみ・`<` をエスケープ）を `<script type="application/ld+json">` で出します。
-説明の下の CTA から `/app` へ誘導し、ランディングのフッターと機能紹介からリンクしています。テストは `tests/calcPage.test.ts` と `tests/components/FuelCalculator.test.tsx`。
+説明の下の CTA から `/app` へ誘導し、ランディングのフッターと機能紹介からリンクしています。
+
+**この内容で FuelLens に記録する**: 走行距離と給油量が正しく入り、どの欄にもエラーが無いとき、結果の下にリンクを出します（`calcRecordHref`）。
+リンク先は `/app?action=manual&distance=<区間距離 km>&amount=<給油量 L>&cost=<支払総額 円>`（`cost` は 0 より大きいときだけ。値は読み取り済みの数値で、全角・桁区切りは正規化済み）。
+ただの `<Link prefetch={false}>` なので、`/calc` はアプリのコード・Clerk・Supabase を読み込まず静的なままです。何も保存しません。
+
+- /app 側は `useShortcutActions` が `?action=manual` を処理するときに `parseManualPrefill`（`lib/manualPrefill.ts`）で読みます。URL は信頼できない入力として `parseDraftNumber` で読み、0 以下・上限（`PREFILL_MAX`）超え・20 文字超・数値でない値はその欄だけ捨て、知らないキー（`date` / `memo` / `vehicle` など）は無視します。
+- ホームは選択中の車両で手動入力を開き（`useRecordEditing.startManualEntry(initial)`。日付は今日）、toast で「日付と車両を確認して保存してください」と伝えます。保存は利用者が通常のフォームで行い、`RecordStore` を通ります（未ログインは localStorage、ログイン中はクラウド）。
+- 走行距離は区間距離（トリップメーター）なので、記録の `total_distance`（区間距離）に入れます。選択中の車両が**オドメーターモード**なら区間距離は入れません（その方式のフォームに区間距離の欄は無く、区間はオドメーターの差分から連鎖計算で導出するため）。給油量・支払総額だけを入れ、オドメーターの入力を toast で案内します（`prefillToRecord` / `prefillAppliedMessage`）。
+- 判定は通常の `?action=manual` と同じです（`resolveShortcutAction`）。読み込み中・キャッシュの先行表示中（`previewing`）は待ち、閲覧専用・解析中・確認中なら開かずに取り下げて理由を toast で伝えます（事前入力の値は使わない）。手動入力・編集のフォームを開いていれば破棄の確認をします。
+- 処理後は `router.replace("/app")` でクエリごと消すので、再読み込みで開き直しません。アクセス解析（`scrubAnalyticsUrl` は utm_* だけ残す）と Sentry（クエリを落とす）には値が送られません。
+- 車両を切り替えるとフォームは閉じます（`useRecordEditing` の既存の動作）。
+
+テストは `tests/calcPage.test.ts`・`tests/manualPrefill.test.ts`・`tests/components/FuelCalculator.test.tsx`・`tests/components/useShortcutActions.test.tsx`・`tests/components/HomePage.test.tsx`。
 
 ### ガソリン代計算ページ（`/gas-cost`）
 
@@ -614,6 +628,7 @@ CSV を `lib/importers/` の純粋関数でバックアップ形式（`FuelLensB
   iOS 用の `public/apple-touch-icon.png`（180x180。`metadata.icons.apple`）です。
 - ショートカット（アイコンの長押しメニュー）は「スキャン」`/app?action=scan` と「手動で入力」`/app?action=manual` の 2 つです（アプリ内のスキャンメニューにある「アルバムから選ぶ」`?action=album` はマニフェストには載せていない）。
   `lib/scan/useShortcutActions.ts`（`app/(app)/app/page.tsx` の `ShortcutActionHandler`）が `action` パラメータを 1 回だけ処理し、処理後にパラメータを URL から取り除きます（再読み込みで繰り返し開かないため）。
+  `?action=manual` は燃費計算ページ（`/calc`）からの事前入力（`&distance=…&amount=…&cost=…`）も受け付けます（[燃費計算ページ](#燃費計算ページcalc)）。
 - **Web Share Target（共有から読み取り）**: `manifest` の `share_target` は `POST /share`（`multipart/form-data`、画像は `image` フィールド、`accept: image/*`）です。
   `params` は `files` だけを宣言し（`title` / `text` / `url` は無し）、テキストやリンクの共有先には FuelLens を出しません。
   **SW が有効なら** 画像はサーバーへ送らず端末内だけで受け渡すので、サイズの上限もサーバー保存もありません。

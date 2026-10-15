@@ -63,4 +63,25 @@ describe("FuelCalculator", () => {
     expect(resultValue("燃費")).toBe("--");
     expect(reset).toBeDisabled();
   });
+
+  it("結果が出たら「この内容で FuelLens に記録する」で手動入力を事前入力つきで開ける", async () => {
+    const { user, distance, amount, cost } = setup();
+    const name = "この内容で FuelLens に記録する";
+    expect(screen.queryByRole("link", { name })).not.toBeInTheDocument();
+
+    await user.type(distance, "400");
+    expect(screen.queryByRole("link", { name })).not.toBeInTheDocument();
+    await user.type(amount, "25");
+    expect(screen.getByRole("link", { name })).toHaveAttribute("href", "/app?action=manual&distance=400&amount=25");
+
+    await user.type(cost, "4000");
+    expect(screen.getByRole("link", { name })).toHaveAttribute(
+      "href",
+      "/app?action=manual&distance=400&amount=25&cost=4000"
+    );
+
+    // エラーがあるときは出さない
+    await user.type(cost, "x");
+    expect(screen.queryByRole("link", { name })).not.toBeInTheDocument();
+  });
 });

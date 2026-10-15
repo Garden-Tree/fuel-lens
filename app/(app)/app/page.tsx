@@ -20,6 +20,7 @@ import {
   shortcutReadinessOf,
 } from "@/lib/scan/shortcuts";
 import { RegisterScanActions } from "@/components/ScanActions";
+import { prefillAppliedMessage, prefillToRecord, type ManualPrefill } from "@/lib/manualPrefill";
 import ScanPanel, { type ScanPanelHandle } from "./_components/ScanPanel";
 import LatestRecordCard from "./_components/LatestRecordCard";
 import ManualEntryCard from "./_components/ManualEntryCard";
@@ -109,19 +110,24 @@ export default function Home() {
     if (availability.canScan) scanPanelRef.current?.openAlbum();
   };
 
-  const startManualEntry = () => {
-    editing.startManualEntry();
-    setActive(null);
-  };
-
-  // 手動入力を始める。手動入力・編集のフォームを開いていれば、破棄してよいか確認する
-  const requestManualEntry = async () => {
+  // 手動入力を始める。手動入力・編集のフォームを開いていれば、破棄してよいか確認する。
+  // prefill は燃費計算ページ（/calc）から `?action=manual&distance=…` で来たときの事前入力（検証済み。lib/manualPrefill.ts）。
+  // 選択中の車両の入力方式に合わせて入れる（オドメーターモードでは区間距離を入れない。prefillToRecord）。
+  // 保存はしない（利用者が日付・車両を確認して通常どおり保存する）
+  const requestManualEntry = async (prefill: ManualPrefill | null = null) => {
     if (!availability.canManual) return;
     if (editing.isEditing) {
       const ok = await confirm(DISCARD_FORM_CONFIRM_MESSAGE, { confirmLabel: "破棄して入力", danger: true });
       if (!ok) return;
     }
-    startManualEntry();
+    if (prefill) {
+      const { record, distanceOmitted } = prefillToRecord(prefill, distanceMode);
+      editing.startManualEntry(record);
+      toast(prefillAppliedMessage(selectedVehicle?.name, distanceOmitted), { type: "info" });
+    } else {
+      editing.startManualEntry();
+    }
+    setActive(null);
   };
 
   // 確認シートの「保存」（重複確認でキャンセルならシートは開いたまま。失敗は throw してシートを開いたままにする）
@@ -183,7 +189,7 @@ export default function Home() {
             openAlbum();
             setScanPrompt(true);
           }}
-          onManual={() => void requestManualEntry()}
+          onManual={(prefill) => void requestManualEntry(prefill)}
           onShared={(token) => {
             setScanPrompt(false);
             void scan.processSharedImage(token);

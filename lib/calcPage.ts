@@ -6,6 +6,7 @@
 import { calculateFuelMetrics, formatPricePerUnit } from "./calculations";
 import { parseDraftNumber } from "./recordDraft";
 import { PLAUSIBILITY_LIMITS } from "./analyze";
+import { buildManualPrefillHref } from "./manualPrefill";
 
 export const CALC_PATH = "/calc";
 /** 構造化データの url に使う本番の絶対 URL（canonical は metadataBase からの相対 `/calc`） */
@@ -41,8 +42,8 @@ function parseField(field: CalcField, raw: string): { value: number | null; erro
   return { value: parsed.value };
 }
 
-/** 入力中の文字列から計算結果を作る。未入力の欄はエラーにしない（結果が出ないだけ） */
-export function computeCalc(input: CalcInput): CalcResult {
+/** 3 つの欄をまとめて読む（computeCalc と calcRecordHref で共有） */
+function parseCalcInput(input: CalcInput): { values: Record<CalcField, number | null>; errors: CalcResult["errors"] } {
   const errors: CalcResult["errors"] = {};
   const values = {} as Record<CalcField, number | null>;
   for (const field of ["distance", "amount", "cost"] as const) {
@@ -50,7 +51,12 @@ export function computeCalc(input: CalcInput): CalcResult {
     values[field] = value;
     if (error) errors[field] = error;
   }
+  return { values, errors };
+}
 
+/** 入力中の文字列から計算結果を作る。未入力の欄はエラーにしない（結果が出ないだけ） */
+export function computeCalc(input: CalcInput): CalcResult {
+  const { values, errors } = parseCalcInput(input);
   const { distance, amount, cost } = values;
   const { fuel_efficiency, price_per_unit } = calculateFuelMetrics(distance, amount, cost);
 
@@ -66,6 +72,24 @@ export function computeCalc(input: CalcInput): CalcResult {
   }
 
   return { errors, warning, efficiency, pricePerUnit, costPerKm };
+}
+
+/**
+ * 「この内容で FuelLens に記録する」のリンク先（アプリの手動入力を事前入力つきで開く。lib/manualPrefill.ts）。
+ * 走行距離と給油量が正しく入っていて、どの欄にもエラーが無いときだけ作る（支払総額は任意）。それ以外は null（ボタンを出さない）。
+ * 走行距離は区間距離（トリップメーター）で、記録の total_distance（区間距離）に入る。URL には読み取り済みの数値だけを載せる
+ * （全角数字・桁区切りの入力も正規化される）。何も保存しない。保存は利用者がアプリのフォームで日付・車両を確認してから
+ */
+export function calcRecordHref(input: CalcInput): string | null {
+  const { values, errors } = parseCalcInput(input);
+  if (Object.keys(errors).length > 0) return null;
+  const { distance, amount, cost } = values;
+  if (distance == null || amount == null) return null;
+  return buildManualPrefillHref({
+    total_distance: distance,
+    fuel_amount: amount,
+    ...(cost != null && cost > 0 ? { total_cost: cost } : {}),
+  });
 }
 
 export type FaqEntry = { q: string; a: string };
