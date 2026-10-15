@@ -1,32 +1,55 @@
 # FuelLens
 
-FuelLens は、ガソリンスタンドのレシートと車のトリップメーターが写った写真を撮影（またはアップロード）するだけで、
-AI（Google Gemini）が給油量・金額・走行距離などを読み取り、満タン法で燃費を計算・記録する Web アプリです。
+**レシートとトリップメーターを 1 枚に撮るだけで、燃費を記録できる Web アプリ。**
+
+ガソリンスタンドのレシートと車のトリップメーターが写った写真を撮影（またはアップロード）すると、
+AI（Google Gemini）が給油量・金額・走行距離を読み取り、満タン法で燃費を計算して記録します。
 
 - **アプリ**: https://fuel-lens.gadelog.com （無料。手入力ならログインなしで使えます。AI の読み取りはログイン後）
 - **ログイン不要の計算ツール**: [満タン法 燃費計算](https://fuel-lens.gadelog.com/calc)・[ガソリン代計算](https://fuel-lens.gadelog.com/gas-cost)
 
-## 特徴
+<table>
+  <tr>
+    <td align="center"><img src="docs/images/readme/home.png" width="200" alt="ホーム画面。前回の燃費をゲージで表示し、今月の給油代と最近の記録を並べる"></td>
+    <td align="center"><img src="docs/images/readme/history.png" width="200" alt="給油履歴の画面。月ごとに給油の記録と燃費・金額を一覧表示する"></td>
+    <td align="center"><img src="docs/images/readme/stats.png" width="200" alt="統計の画面。平均燃費と燃費の推移グラフ、給油代の合計を表示する"></td>
+    <td align="center"><img src="docs/images/readme/calc.png" width="200" alt="満タン法 燃費計算ツール。走行距離・給油量・支払総額から燃費と単価を計算する"></td>
+  </tr>
+  <tr>
+    <td align="center">ホーム</td>
+    <td align="center">給油履歴</td>
+    <td align="center">統計</td>
+    <td align="center">燃費計算ツール</td>
+  </tr>
+</table>
 
-- **AI 読み取り**: 写真 1 枚からレシートの給油情報とトリップメーターの区間距離を抽出します。
-  保存前に確認シートで内容を確認・修正でき、読み取りに不安がある項目は「要確認」として強調されます。
-- **燃費・単価の自動計算**: 満タン法で燃費（km/L）を、支払総額と給油量から単価（円/L）を算出します。
-- **履歴と統計**: 履歴の一覧・編集・削除・CSV 出力、期間別の統計サマリーとグラフを表示します。
-- **複数車両**: 車・バイクを複数登録し、車両ごとに記録を管理できます。
-- **オドメーター入力方式と部分給油**: 車両ごとに、トリップメーターの区間距離を入力する方式と、オドメーター（積算距離）を入力して前回との差分から区間距離を出す方式を選べます。
-  満タンにしなかった給油は「部分給油」として記録でき、次の満タン給油でまとめて燃費を計算します。給油の記録し忘れを示すと、そこで計算を区切ります。
-- **燃料種別とメモ**: 給油ごとに燃料種別（レギュラー / ハイオク / 軽油 / その他）と 200 文字までのメモを残せます。車両ごとに既定の燃料種別も設定できます。
-- **バックアップと復元**: 設定画面（`/settings`）で全車両・全記録を JSON でバックアップし、同じ JSON から復元できます。
-  復元は追記のみで、既存のデータは削除・上書きしません。全車両の記録を 1 つの CSV に書き出すこともできます。
-- **PWA（ホーム画面に追加）**: ホーム画面から起動でき、アイコンの長押しメニューから「スキャン」「手動で入力」を直接開けます。
-  オフライン動作には未対応です。
-- **共有から読み取り（Android）**: インストールした PWA は写真アプリの「共有」先に表示され、選んだ写真をそのままスキャンできます。
-  画像はサーバーに保存せず端末内で受け渡します（Web Share Target。iOS Safari は未対応）。
-- **未ログインでも使える**: 手動入力・履歴・統計はログインなしで使え、記録はブラウザの localStorage に保存されます。
-  **写真からの AI 解析のみログインが必要**です。
-- **ページビュー計測**: Vercel Web Analytics（Cookie なし・ページビューのみ。URL のクエリとハッシュは送りません。有効化手順は [docs/operations.md](./docs/operations.md#4-2-web-analyticsページビュー計測)）。
-- **クラウド同期**: Clerk でログインすると記録は Supabase に保存され、複数端末で共有できます。ログイン画面も日本語です。
-  ログイン前のローカルの記録はログイン時に自動でクラウドへ移行されます。
+<p align="center">
+  <img src="docs/images/readme/desktop-stats.png" width="820" alt="PC で表示した統計の画面。サイドバーのナビゲーションと、燃費の推移・費用・月ごとの給油代・単価の推移を並べる">
+</p>
+
+<sub>スクリーンショットは架空のデモデータです。</sub>
+
+## 何ができるか
+
+- **写真 1 枚で記録（AI 読み取り）**: レシートの給油量・金額・スタンド名と、トリップメーターの区間距離を読み取ります。
+  保存前に確認シートで内容を確認・修正でき、自信のない項目は「要確認」として強調されます。**AI の読み取りはログインが必要です。**
+- **ログインなしでも使える**: 手動入力・履歴・統計はログインなしで使え、記録はブラウザ（localStorage）に保存されます。
+  ログインすると記録はクラウドに保存され、複数の端末で共有できます（ログイン前の記録は自動で引き継ぎます）。
+- **燃費と単価を自動計算**: 満タン法で燃費（km/L）を、支払総額と給油量から単価（円/L）を計算します。
+- **履歴と統計**: 月ごとの履歴、期間別の平均燃費・費用、燃費や給油代・単価の推移グラフを表示します。
+- **複数の車両**: 車やバイクを複数登録し、車両ごとに記録を分けて管理できます。
+- **部分給油とオドメーター入力**: 満タンにしなかった給油は「部分給油」として記録し、次の満タン給油でまとめて燃費を出します。
+  車両ごとに、トリップメーターの区間距離を入れる方式と、オドメーター（積算距離）の差分から出す方式を選べます。
+- **燃料種別とメモ**: 給油ごとにレギュラー / ハイオク / 軽油などの燃料種別と、短いメモを残せます。
+- **燃費のシェア画像**: 今月の燃費をまとめたカード画像を作り、共有や保存ができます（画像は端末の中で作ります）。
+- **バックアップと CSV**: 全車両・全記録を JSON でバックアップし、復元できます（復元は追記のみで、既存のデータは消しません）。
+  記録は CSV でも書き出せます。
+- **ホーム画面に追加（PWA）**: スマホのホーム画面から起動できます。Android では写真アプリの「共有」から直接読み取れます。
+  オフラインでの動作には対応していません。
+
+<p align="center">
+  <img src="docs/images/readme/share-card.png" width="600" alt="シェア用のカード画像の例。2026年10月の燃費 16.12 km/L をゲージで表示している">
+</p>
 
 ## 燃費の計算について（満タン法）
 
@@ -41,69 +64,19 @@ AI（Google Gemini）が給油量・金額・走行距離などを読み取り�
 - 正確な燃費を出すには、**満タン給油を基準**にしてください。トリップメーターの車両は給油のたびにリセットします。
   計算の詳細は [docs/design-fill-chain.md](./docs/design-fill-chain.md) を参照してください。
 
-## クイックスタート
+## 使っている技術
 
-```bash
-git clone https://github.com/Garden-Tree/fuel-lens.git
-cd fuel-lens
-npm install
-cp .env.example .env.local   # 下表を参考に値を設定する
-npm run dev                  # http://localhost:3000
-```
+- **フロントエンド**: Next.js 16（App Router）/ React 19 / TypeScript / Tailwind CSS v4 / Recharts
+- **AI**: Google Gemini（`@google/genai`。サーバー側だけで呼び出します）
+- **認証・データベース**: Clerk / Supabase（PostgreSQL + 行レベルセキュリティ）
+- **ホスティング**: Vercel（ページビューは Cookie を使わない Vercel Web Analytics で計測）
 
-ログイン後のクラウド保存を使うには、Supabase へのスキーマ適用と Clerk の JWT テンプレート設定が必要です
-（[supabase/README.md](./supabase/README.md)）。
-未ログインでの手動入力・履歴・統計は、Supabase と Gemini の設定がなくても動作します。
+選定理由は [docs/tech_stack.md](./docs/tech_stack.md) にまとめています。
 
-## 環境変数
+## 開発者向け
 
-| 変数名 | 必須 | 用途 |
-|---|---|---|
-| `GEMINI_API_KEY` | 必須 | Gemini API（AI 解析）のキー。サーバー専用 |
-| `GEMINI_MODEL` | 任意 | 使用モデル。未設定時は `gemini-3.1-flash-lite` |
-| `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` | 必須 | Clerk（認証）の公開キー |
-| `CLERK_SECRET_KEY` | 必須 | Clerk のシークレットキー |
-| `NEXT_PUBLIC_CLERK_SUPABASE_JWT_TEMPLATE` | 任意 | Supabase に渡す Clerk トークンの取得方法。`supabase` を設定すると JWT テンプレート方式（開発インスタンス用）、空なら `getToken()` のネイティブ Third-Party Auth（本番インスタンス用） |
-| `NEXT_PUBLIC_SUPABASE_URL` | 必須 | Supabase プロジェクトの URL |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | 必須 | Supabase の anon キー（RLS 前提） |
-| `NEXT_PUBLIC_APP_URL` | 任意 | アプリの公開 URL。`/api/analyze` の Origin 許可ホストと `metadataBase` に使う |
-| `NEXT_PUBLIC_ENABLE_SW` | 任意 | `1` で開発ビルドでも Service Worker（Web Share Target の受け取り）を登録する。本番ビルドでは常に登録 |
-| `ALLOW_ANONYMOUS_SCAN` | 任意 | `true` で未ログインの AI 解析を IP ごとに 3 回まで許可（開発・デモ専用）。既定はログイン必須 |
-| `CRON_SECRET` | 本番で必須 | Vercel Cron → `/api/keepalive` の認証用シークレット |
-| `SUPABASE_SERVICE_ROLE_KEY` | 任意 | `/api/keepalive` で件数取得まで行う場合に設定。サーバー専用（`NEXT_PUBLIC_` を付けない） |
-| `NEXT_PUBLIC_SENTRY_DSN` | 任意 | Sentry（エラー監視）の DSN。未設定なら Sentry は完全に無効。本番では設定を推奨（[docs/operations.md](./docs/operations.md#4-3-sentryエラー監視)） |
-| `SENTRY_ORG` / `SENTRY_PROJECT` | 任意 | Sentry の組織・プロジェクトのスラッグ。ソースマップのアップロード用（ビルド時のみ） |
-| `SENTRY_AUTH_TOKEN` | 任意 | ソースマップのアップロード用トークン。ビルド時のみ・サーバー専用（`NEXT_PUBLIC_` を付けない）。未設定でもビルドは通る |
-
-各変数の詳細は [.env.example](./.env.example)、`/api/analyze` 関連は [docs/api-analyze.md](./docs/api-analyze.md)、
-keepalive 関連は [docs/operations.md](./docs/operations.md) を参照してください。
-
-## 開発コマンド
-
-```bash
-npm run dev          # 開発サーバー (http://localhost:3000)
-npm run lint         # ESLint (eslint-config-next)
-npm run typecheck    # 型チェック (tsc --noEmit)
-npm test             # 単体テスト (Vitest)
-npm run build        # 本番ビルド
-```
-
-変更後は `npm run lint && npm run typecheck` を通してからコミットしてください。
-CI（GitHub Actions）も同じ順序で lint → typecheck → test → build を実行します（[docs/operations.md](./docs/operations.md#4-ci)）。
-
-## ドキュメント
-
-| ドキュメント | 内容 |
-|---|---|
-| [docs/README.md](./docs/README.md) | ドキュメントの索引 |
-| [docs/architecture.md](./docs/architecture.md) | ディレクトリ構成、データフロー、データモデル、フック、移行、障害時の動作、認証、バックアップと復元、PWA、給油の連鎖計算 |
-| [docs/design-fill-chain.md](./docs/design-fill-chain.md) | 設計: オドメーターモード・部分給油・燃料種別・メモと連鎖計算 |
-| [docs/api-analyze.md](./docs/api-analyze.md) | AI 解析 API `/api/analyze` の仕様 |
-| [docs/operations.md](./docs/operations.md) | デプロイ、Supabase 自動停止対策、CI、セットアップ手順、トラブルシューティング |
-| [docs/roadmap.md](./docs/roadmap.md) | 今後の候補と既知の制約 |
-| [docs/tech_stack.md](./docs/tech_stack.md) | 技術スタックと選定理由 |
-| [supabase/README.md](./supabase/README.md) | DB スキーマの適用・RLS 監査・バックアップの手順 |
-| [CLAUDE.md](./CLAUDE.md) | AI エージェント向けの作業ルール |
+ローカルでの起動手順・環境変数・開発コマンドは [docs/setup.md](./docs/setup.md) を参照してください。
+設計・API・運用のドキュメントは [docs/README.md](./docs/README.md) から辿れます。
 
 ## ライセンス
 

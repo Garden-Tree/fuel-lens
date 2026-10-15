@@ -14,7 +14,7 @@ DB の SQL 手順（マイグレーション適用・RLS 監査・バックア�
 | 認証 | Clerk |
 | 定期実行 | Vercel Cron（本番デプロイのみ）+ GitHub Actions（[3 章](#3-supabase-の自動停止と-keepalive)） |
 
-- 環境変数は Vercel の **Settings → Environment Variables** で Production / Preview ごとに設定します（一覧は [README](../README.md#環境変数)）。
+- 環境変数は Vercel の **Settings → Environment Variables** で Production / Preview ごとに設定します（一覧は [setup.md](./setup.md#環境変数)）。
   変更は次回のデプロイから反映されます。
 - Vercel Cron は本番デプロイでしか実行されないため、`CRON_SECRET` は Production に必須、Preview では任意です。
 - **Clerk のインスタンス**: 本番は現在 Clerk の **開発インスタンス**（`pk_test_` / `sk_test_` キー）で動いています。

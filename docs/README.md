@@ -2,6 +2,7 @@
 
 | ドキュメント | 内容 |
 |---|---|
+| [setup.md](./setup.md) | 開発環境のセットアップ: クイックスタート、環境変数の一覧、開発コマンド |
 | [architecture.md](./architecture.md) | ディレクトリ構成、データフロー、データモデル、フック、ローカル→クラウド移行、障害時の動作、認証、バックアップと復元、PWA、給油の連鎖計算 |
 | [design-fill-chain.md](./design-fill-chain.md) | 設計: オドメーターモード・部分給油・記録漏れ・燃料種別・メモ。追加する列、連鎖計算（fill chain）の規則、UI と周辺機能の仕様 |
 | [api-analyze.md](./api-analyze.md) | AI 解析 API `/api/analyze` の仕様（認証、制限、検証、レスポンスコード） |
