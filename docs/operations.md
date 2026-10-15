@@ -236,6 +236,12 @@ curl -i -X POST "https://<project-ref>.supabase.co/rest/v1/rpc/keepalive_ping" \
 - 全体の件数（ユーザー・車両・記録）
 - 直近 12 週の新規ユーザー・記録したユーザー・追加された記録
 - 定着（記録が 2 回以上・5 回以上のユーザーの割合）
+- 記録の入口（`fuel_records.source`）: 直近 12 週 × 入口ごとの記録数と、最初の記録の入口ごとのユーザー数（クエリ 4a / 4b）。
+  入口は `scan`（撮影・アルバム）/ `manual`（手動入力）/ `calc`（燃費計算ページから引き継いだ手動入力）/ `import`（Fuelio・CSV の取り込み）/
+  `restore`（バックアップの復元）/ `unknown`（`0005` より前の記録）。どの入口から記録が生まれているか（＝どの集客の入口が効いているか）を見る。
+  取り込み・復元の記録は `created_at` が元の記録の日時のままなので、取り込んだ週ではなく記録した週に入る。
+  `source` は画面に出さず、計算にも使わない。値は `lib/types.ts` の `RecordSource`（今後 `batch` / `pair` / `trial` などが増えることがある）。
+  **`0005_record_source.sql` はこのリリースのデプロイ前に適用する**（未適用だと記録の保存が `PGRST204` で失敗する。[supabase/README.md](../supabase/README.md)）
 
 流入元は Vercel Web Analytics の Referrers、検索語は Search Console（`https://fuel-lens.gadelog.com/`。所有権確認ファイル `public/google9896bbc9767c6e06.html` は消さない）で見る。
 Bing は Bing Webmaster Tools（オーナーの Google アカウント。2026-10-15 に Search Console から取り込み、サイトマップも取り込み済み）で見る。所有権は Search Console 経由で確認しているため、上の確認ファイルが Bing 側の確認も兼ねる。
