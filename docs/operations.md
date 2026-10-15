@@ -215,6 +215,13 @@ curl -i -X POST "https://<project-ref>.supabase.co/rest/v1/rpc/keepalive_ping" \
 - 公開ツールページにも専用の画像があります: `app/calc/` と `app/gas-cost/` の `opengraph-image.tsx` / `twitter-image.tsx`（`lib/og/renderToolOgImage.tsx`）。ツール名・サブタイトル・計算式の例・「登録不要・無料」・ドメインを載せ、デザイントークンとフォント取得（`lib/og/shared.tsx`）はルートの画像と共通です。ページの `metadata.openGraph` に `images` を書かない限り、Next.js がこのファイルを `og:image` / `twitter:image` に自動で入れます（ルートの画像より優先）。画像のルートだけが動的で、`/calc` と `/gas-cost` のページ自体は静的なままです。新しい公開ページに専用画像を足すときは、同じ形で `renderToolOgImage` を呼ぶファイルを置きます。
 - フォントの取得に失敗（5 秒でタイムアウト）した場合は console にエラーを出し、デフォルトフォントで描画します（日本語は表示されない）。クローラーのキャッシュに残らないよう、共有が崩れていたら Vercel のログで `OG 画像のフォント取得に失敗しました` を確認してください。
 
+## 4-5. Google Play 版（TWA）
+
+PWA を Trusted Web Activity として Google Play に出すための準備と手順は [play-store/README.md](./play-store/README.md)、掲載テキストとデータ セーフティの下書きは [play-store/listing.md](./play-store/listing.md) です。
+運用で触るのは Vercel の環境変数 `ANDROID_ASSETLINKS_SHA256`（署名鍵の SHA-256。カンマ区切りで複数可）だけで、`/.well-known/assetlinks.json`（`app/.well-known/assetlinks.json/route.ts`）がそれを返します。
+未設定のあいだは 404 です。値を変えたら再デプロイし、`curl -i https://fuel-lens.gadelog.com/.well-known/assetlinks.json` で 200 と JSON を確認します。
+Play App Signing を使うので、アップロード鍵と Play のアプリ署名鍵の**両方**を入れます。`proxy.ts` の matcher は `/.well-known` を Clerk から除外しています（リダイレクトさせないため）。
+
 ## 5. トラブルシューティング
 
 | 症状 | 原因と対処 |

@@ -34,7 +34,9 @@ export const config = {
     // /_vercel（Vercel Web Analytics の /_vercel/insights/*）も除外する。
     // /share（Web Share Target の受け口）も除外する: SW が無いときにブラウザが送ってくる multipart の POST を
     // Clerk が処理しないようにし、next.config.ts の redirects() で本文を読まずに /app へ 303 で戻す。
-    '/((?!_next|_vercel|share(?:/|$)|[^?]*\\.(?:html?|css|js(?!on)|jpe?g|webp|png|gif|svg|ttf|woff2?|ico|csv|docx?|xlsx?|zip|webmanifest)).*)',
+    // /.well-known（Digital Asset Links: /.well-known/assetlinks.json）も除外する: Google Play の確認が
+    // リダイレクトや Clerk のハンドシェイクを挟まず 200 で JSON を受け取れるようにする（app/.well-known/）。
+    '/((?!_next|_vercel|share(?:/|$)|\\.well-known(?:/|$)|[^?]*\\.(?:html?|css|js(?!on)|jpe?g|webp|png|gif|svg|ttf|woff2?|ico|csv|docx?|xlsx?|zip|webmanifest)).*)',
     // Always run for API routes
     '/(api|trpc)(.*)',
   ],

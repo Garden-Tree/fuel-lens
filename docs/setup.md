@@ -36,6 +36,7 @@ npm run dev                  # http://localhost:3000
 | `NEXT_PUBLIC_SENTRY_DSN` | 任意 | Sentry（エラー監視）の DSN。未設定なら Sentry は完全に無効。本番では設定を推奨（[operations.md](./operations.md#4-3-sentryエラー監視)） |
 | `SENTRY_ORG` / `SENTRY_PROJECT` | 任意 | Sentry の組織・プロジェクトのスラッグ。ソースマップのアップロード用（ビルド時のみ） |
 | `SENTRY_AUTH_TOKEN` | 任意 | ソースマップのアップロード用トークン。ビルド時のみ・サーバー専用（`NEXT_PUBLIC_` を付けない）。未設定でもビルドは通る |
+| `ANDROID_ASSETLINKS_SHA256` | 任意 | Google Play 版（TWA）のアプリ署名鍵の SHA-256 フィンガープリント。カンマ区切りで複数可。`/.well-known/assetlinks.json` に載せる（未設定なら 404）。手順は [play-store/README.md](./play-store/README.md) |
 
 各変数の詳細は [.env.example](../.env.example)、`/api/analyze` 関連は [api-analyze.md](./api-analyze.md)、
 keepalive 関連は [operations.md](./operations.md) を参照してください。

@@ -626,6 +626,9 @@ CSV を `lib/importers/` の純粋関数でバックアップ形式（`FuelLensB
   `orientation` は `portrait`、背景色とテーマ色は `#0B0F14`（`ground` トークン）です。`app/layout.tsx` の `metadata.manifest` から参照し、テーマ色は `viewport.themeColor` にも設定しています。
 - アイコンは `public/icons/` の `icon-192.png` / `icon-512.png`（通常）と `icon-maskable-512.png`（maskable。余白付きの全面塗り）、
   iOS 用の `public/apple-touch-icon.png`（180x180。`metadata.icons.apple`）です。
+- manifest には `id`（`/app`。`start_url` と同じ値で、省略時の既定と同じ）、`dir`、`categories`、`screenshots`（`public/screenshots/` の 1080x1920 を 3 枚、`form_factor: narrow`）も入っています。
+  Google Play 版（TWA）のために `/.well-known/assetlinks.json`（`app/.well-known/assetlinks.json/route.ts`、本体は `lib/assetlinks.ts`）が、環境変数 `ANDROID_ASSETLINKS_SHA256` の署名鍵フィンガープリントを返します（未設定なら 404）。
+  `proxy.ts` の matcher は `/.well-known` を除外します。手順は [play-store/README.md](./play-store/README.md)。
 - ショートカット（アイコンの長押しメニュー）は「スキャン」`/app?action=scan` と「手動で入力」`/app?action=manual` の 2 つです（アプリ内のスキャンメニューにある「アルバムから選ぶ」`?action=album` はマニフェストには載せていない）。
   `lib/scan/useShortcutActions.ts`（`app/(app)/app/page.tsx` の `ShortcutActionHandler`）が `action` パラメータを 1 回だけ処理し、処理後にパラメータを URL から取り除きます（再読み込みで繰り返し開かないため）。
   `?action=manual` は燃費計算ページ（`/calc`）からの事前入力（`&distance=…&amount=…&cost=…`）も受け付けます（[燃費計算ページ](#燃費計算ページcalc)）。
