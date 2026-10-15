@@ -4,6 +4,8 @@ import { Camera, ChevronRight } from "lucide-react";
 import { PublicPageHeader } from "@/components/LegalPage";
 import { CALC_FAQS, CALC_PATH, buildCalcJsonLd } from "@/lib/calcPage";
 import FuelCalculator from "./_components/FuelCalculator";
+import { aiAvailabilityCopy } from "@/lib/landingPage";
+import { isTrialEnabled } from "@/lib/server/analyze/trialCookie";
 
 // ログイン不要の燃費計算ページ（検索からの入口）。計算機だけクライアント部品で、説明と FAQ は静的に描画する。
 
@@ -131,7 +133,7 @@ export default function CalcPage() {
                 アプリを使う（無料）
                 <ChevronRight className="h-4 w-4" aria-hidden="true" />
               </Link>
-              <p className="text-xs text-sub">ログイン不要で手動入力も使えます（AI の読み取りはログイン後）。</p>
+              <p className="text-xs text-sub">{aiAvailabilityCopy(isTrialEnabled()).calcNote}</p>
             </div>
           </section>
 

@@ -20,6 +20,11 @@ export type UseScanPipelineOptions = {
   /** useToast().toast / confirm。lib から components へ依存しないよう、呼び出し側から渡す */
   toast: ToastFn;
   confirm: ConfirmFn;
+  /**
+   * 未ログインのお試しの残り回数をサーバーが返したとき（X-Trial-Remaining。成功・失敗とも）。
+   * 表示用の写し（lib/scan/trialContext.tsx）を更新する。回数の判定はサーバーだけが行う
+   */
+  onTrialRemaining?: (remaining: number) => void;
 };
 
 export type ScanPipeline = {
@@ -59,7 +64,7 @@ const SHARED_CONFIRM_MESSAGE = "共有された画像を読み取りますか？
  * （圧縮 → POST /api/analyze → 確認シート）をまとめるフック。
  * I/O は lib/scan/analyzeClient.ts、エラー文言は lib/analyze.ts の analyzeErrorMessage。
  */
-export function useScanPipeline({ isSignedIn, toast, confirm }: UseScanPipelineOptions): ScanPipeline {
+export function useScanPipeline({ isSignedIn, toast, confirm, onTrialRemaining }: UseScanPipelineOptions): ScanPipeline {
   const [loading, setLoading] = useState(false);
   const [loadingStep, setLoadingStep] = useState<ScanLoadingStep>(null);
   const [preview, setPreview] = useState<string | null>(null);
@@ -113,6 +118,7 @@ export function useScanPipeline({ isSignedIn, toast, confirm }: UseScanPipelineO
     try {
       const res = await requestAnalyze(dataUrl, { signal: controller.signal, timeoutMs: ANALYZE_TIMEOUT_MS });
       if (controller.signal.aborted) return;
+      if (res.trialRemaining !== null) onTrialRemaining?.(res.trialRemaining);
       if (!res.ok) {
         throw new Error(analyzeErrorMessage(res.status, res.body, { isSignedIn, retryAfter: res.retryAfter }));
       }
@@ -195,7 +201,7 @@ export function useScanPipeline({ isSignedIn, toast, confirm }: UseScanPipelineO
   // Web Share Target: Service Worker が IndexedDB に置いた共有画像を取り出し（URL の `t` と一致し、10 分以内のものだけ）、
   // 圧縮してプレビューに出す。/share へは他サイトからも POST できるため、自動では解析せず
   // 「読み取りますか？」の確認後にギャラリーと同じ経路（解析 → 確認シート）へ流す。
-  // 未ログインでもプレビューは表示され、解析の 401 で「ログインが必要」の案内が出る。
+  // 未ログインでもプレビューは表示され、お試しが残っていれば解析し、無ければ 401 の案内が出る。
   const processSharedImage = async (token: string | null) => {
     const file = await takeSharedImage(token ?? undefined);
     if (!file) {

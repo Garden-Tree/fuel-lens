@@ -1,4 +1,5 @@
 import imageCompression, { type Options as CompressionOptions } from "browser-image-compression";
+import { TRIAL_REMAINING_HEADER, parseTrialRemaining } from "@/lib/trial";
 
 /**
  * スキャンのクライアント側 I/O（画像の圧縮と /api/analyze の呼び出し）。
@@ -67,6 +68,8 @@ export type AnalyzeHttpResult = {
   body: unknown;
   /** Retry-After ヘッダー（429 の待ち時間）。無ければ null */
   retryAfter: string | null;
+  /** 未ログインのお試しの残り回数（X-Trial-Remaining）。無い・不正なら null。表示にだけ使う */
+  trialRemaining: number | null;
 };
 
 export type RequestAnalyzeOptions = {
@@ -123,7 +126,13 @@ export async function requestAnalyze(
       if (timedOut || signal?.aborted) rethrow(error, ANALYZE_NETWORK_ERROR_MESSAGE);
       body = null;
     }
-    return { ok: res.ok, status: res.status, body, retryAfter: res.headers.get("Retry-After") };
+    return {
+      ok: res.ok,
+      status: res.status,
+      body,
+      retryAfter: res.headers.get("Retry-After"),
+      trialRemaining: parseTrialRemaining(res.headers.get(TRIAL_REMAINING_HEADER)),
+    };
   } finally {
     clearTimeout(timeoutId);
     signal?.removeEventListener("abort", onAbort);

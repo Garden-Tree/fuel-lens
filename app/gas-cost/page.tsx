@@ -4,6 +4,8 @@ import { Camera, ChevronRight } from "lucide-react";
 import { PublicPageHeader } from "@/components/LegalPage";
 import { GAS_COST_FAQS, GAS_COST_PATH, buildGasCostJsonLd } from "@/lib/gasCostPage";
 import GasCostCalculator from "./_components/GasCostCalculator";
+import { aiAvailabilityCopy } from "@/lib/landingPage";
+import { isTrialEnabled } from "@/lib/server/analyze/trialCookie";
 
 // ログイン不要のガソリン代計算ページ（検索からの入口）。計算機だけクライアント部品で、説明と FAQ は静的に描画する。
 
@@ -114,7 +116,7 @@ export default function GasCostPage() {
                 アプリを使う（無料）
                 <ChevronRight className="h-4 w-4" aria-hidden="true" />
               </Link>
-              <p className="text-xs text-sub">ログイン不要で手動入力も使えます（AI の読み取りはログイン後）。</p>
+              <p className="text-xs text-sub">{aiAvailabilityCopy(isTrialEnabled()).calcNote}</p>
             </div>
           </section>
 

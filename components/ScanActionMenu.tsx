@@ -3,6 +3,8 @@
 import { useId, useRef } from "react";
 import Link from "next/link";
 import { useResolvedAuth } from "@/lib/data/initialAuthContext";
+import { useTrial } from "@/lib/scan/trialContext";
+import { scanAccessOf } from "@/lib/trial";
 import { Camera, ChevronRight, Edit2, Image as ImageIcon, type LucideIcon } from "lucide-react";
 import Modal from "./Modal";
 import { useScanActions, type ScanActionHandlers } from "./ScanActions";
@@ -17,7 +19,8 @@ import { useScanActions, type ScanActionHandlers } from "./ScanActions";
  * - `anchor` なし（スマホ）: 画面下からのボトムシート
  * - `anchor` あり（PC）: ボタンの真下に出すポップオーバー（アンカーの左端・幅に合わせる）
  *
- * 未ログイン時は AI スキャン（撮影・アルバム）を無効にし、手動入力だけ選べるようにする（/api/analyze はログイン必須）。
+ * 未ログイン時は、お試し読み取り（lib/trial.ts）が残っていれば撮影・アルバムも選べ、残り回数を添える。
+ * お試しが無効・使い切ったときは AI スキャンを無効にし、手動入力だけ選べるようにする。
  */
 
 /** ボタンの位置（getBoundingClientRect の一部） */
@@ -28,7 +31,7 @@ type ScanAction = {
   label: string;
   description: string;
   icon: LucideIcon;
-  /** AI スキャン（ログイン必須） */
+  /** AI スキャン（未ログインではお試しが残っているときだけ） */
   requiresSignIn: boolean;
 };
 
@@ -38,7 +41,8 @@ const ACTIONS: readonly ScanAction[] = [
   { action: "manual", label: "手動で入力", description: "金額・給油量・距離を入力", icon: Edit2, requiresSignIn: false },
 ];
 
-export const SIGNED_OUT_SCAN_NOTE = "AIスキャンはログイン後に使えます。手動入力はログインなしでも使えます。";
+/** @deprecated lib/trial.ts から import する（互換のための再エクスポート） */
+export { SIGNED_OUT_SCAN_NOTE } from "@/lib/trial";
 
 export type ScanActionMenuProps = {
   open: boolean;
@@ -58,6 +62,8 @@ export default function ScanActionMenu({ open, onClose, anchor = null }: ScanAct
   // サーバーが未ログインと言っていれば Clerk の読み込みを待たずに確定する（lib/data/initialAuth.ts）
   const { isLoaded, isSignedIn } = useResolvedAuth();
   const signedOut = isLoaded && !isSignedIn;
+  // 未ログインのお試し読み取りの可否と案内
+  const access = scanAccessOf(signedOut, useTrial());
   // /app を表示中ならホームが登録した処理（他の画面では null）
   const handlers = useScanActions();
   const popover = anchor !== null;
@@ -66,13 +72,13 @@ export default function ScanActionMenu({ open, onClose, anchor = null }: ScanAct
   const firstActionRef = useRef<HTMLAnchorElement & HTMLButtonElement>(null);
 
   const isDisabled = (item: ScanAction) => {
-    if (item.requiresSignIn && signedOut) return true;
+    if (item.requiresSignIn && access.locked) return true;
     if (!handlers) return false;
     return item.action === "manual" ? !handlers.canManual : !handlers.canScan;
   };
   const firstEnabled = ACTIONS.find(item => !isDisabled(item))?.action;
   // 未ログイン以外の理由で押せない項目があるときの説明（/app 表示中のみ）
-  const busyReason = handlers && ACTIONS.some(item => isDisabled(item) && !(item.requiresSignIn && signedOut))
+  const busyReason = handlers && ACTIONS.some(item => isDisabled(item) && !(item.requiresSignIn && access.locked))
     ? handlers.disabledReason
     : null;
 
@@ -162,14 +168,14 @@ export default function ScanActionMenu({ open, onClose, anchor = null }: ScanAct
           );
         })}
       </div>
-      {(signedOut || busyReason) && (
+      {(access.note || busyReason) && (
         <div className={`flex flex-col gap-1 text-xs ${popover ? "border-t border-line px-4 py-3" : "mt-3 px-1"}`}>
           {busyReason && (
             <p role="status" className="text-sub">
               {busyReason}
             </p>
           )}
-          {signedOut && <p className="text-warn">{SIGNED_OUT_SCAN_NOTE}</p>}
+          {access.note && <p className={access.warn ? "text-warn" : "text-sub"}>{access.note}</p>}
         </div>
       )}
     </Modal>

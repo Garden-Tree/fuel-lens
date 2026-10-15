@@ -91,15 +91,18 @@ FuelLens の構成、データの流れ、主要なモジュールの役割を�
 
 | 状態 | 保存先 | 備考 |
 |---|---|---|
-| 未ログイン | ブラウザの localStorage（`fuel_lens_vehicles` / `fuel_lens_data`） | その端末・ブラウザのみ。AI 解析は使えない（`ALLOW_ANONYMOUS_SCAN=true` の場合を除く） |
+| 未ログイン | ブラウザの localStorage（`fuel_lens_vehicles` / `fuel_lens_data`） | その端末・ブラウザのみ。AI 解析は `TRIAL_COOKIE_SECRET` が設定されていれば端末ごとに 3 回までのお試しだけ（[api-analyze.md](./api-analyze.md#未ログインのお試し読み取り)） |
 | ログイン中 | Supabase（ブラウザから anon キー + Clerk JWT で PostgREST に直接アクセス） | RLS で自分の行だけに制限。正常に読めた一覧は障害時用に localStorage へキャッシュ |
 
 - 未ログインでも画面は表示・操作できます（`proxy.ts` は全ルートを公開のままにしている）。
-  AI 解析だけは `/api/analyze` がログインを要求します。
+  AI 解析だけは `/api/analyze` がログインを要求します（例外は、`TRIAL_COOKIE_SECRET` が設定されているときの未ログインのお試し読み取り。端末ごとに 3 回まで）。
 - ログインすると、`useVehicles` / `useFuelRecords` の最初の読み込みの前にクラウドの初期化（`lib/data/cloudBootstrap.ts`）が走り、
   `migrateLocalData` でローカルの記録をクラウドへ移してから既定車両を確保します（[5 章](#5-ローカル--クラウド移行)）。
 - スキャンの流れ: 画像を 0.8MB 以下・長辺 1200px の JPEG に圧縮 → `POST /api/analyze` → 確認シートで確認・修正 →
   同じ日付・給油量・支払総額の記録があれば確認ダイアログ → `addRecord`。解析結果を自動保存することはありません。
+  未ログインのお試し読み取りも同じ流れで、保存先はこのブラウザ（`localStore.ts`。ログインすると `migrateLocalData` でアカウントへ移る）。
+  残り回数はレイアウトがサーバーで HttpOnly の Cookie から読んだ初期値（`lib/scan/trialContext.tsx` の `TrialProvider`）を、
+  `/api/analyze` の `X-Trial-Remaining` で更新する表示用の写しです（判定はサーバーだけ）。
 - **最初の描画（初期認証状態とキャッシュの先行表示）**: アプリ画面のレイアウト（`app/(app)/layout.tsx`）がサーバーで Clerk の `auth()` を読み、
   `{ signedIn, userId }` を `InitialAuthProvider`（`lib/data/initialAuthContext.tsx`）でクライアントへ渡します。判定は純粋関数 `resolveAuth`（`lib/data/initialAuth.ts`）で、
   使うのは Clerk（clerk-js、数百 KB + Frontend API の往復）の読み込みが終わるまでの間だけです。読み込み後は常に Clerk の値が優先します。
@@ -379,7 +382,13 @@ useVehicles / useFuelRecords
 
 - ナビ項目は `APP_NAV_ITEMS`（ホーム / 履歴 / 統計 / 設定。`components/AppNav.tsx`）。スマホ（lg 未満）は下部のタブバー（`AppTabBar`。中央にスキャンボタン）、PC（lg 以上）は左のサイドバー（`AppSidebar`。ロゴ・4 項目・「スキャンして記録」・ログイン / ユーザーボタン）。`PageHeader` はスマホではログイン / ユーザーボタンも右端に出します。
 - スキャンボタンは `ScanActionMenu`（`components/ScanActionMenu.tsx`）を開きます。項目は「撮影する」/「アルバムから選ぶ」/「手動で入力」。スマホはボトムシート、PC はボタン直下のポップオーバー（`ScanMenuAnchor` で位置を渡す）。メニューの開閉は `AppFrame` の state です。
-- 未ログインでは撮影・アルバムを無効にし、「AIスキャンはログイン後に使えます。手動入力はログインなしでも使えます。」と案内します（`/api/analyze` がログイン必須のため。手動入力だけ選べる）。
+- 未ログインの撮影・アルバム（とドロップ・貼り付けの案内）は `lib/trial.ts` の `scanAccessOf` で決めます（スキャンメニュー・ホームの記録の入口・`DropZoneRow` で共通）。
+  - お試しが無効（`TRIAL_COOKIE_SECRET` 未設定）: 撮影・アルバムを無効にし、「AIスキャンはログイン後に使えます。手動入力はログインなしでも使えます。」と案内します（従来どおり）。
+  - お試しが残っている: 撮影・アルバムを使え、「お試しであと N 回読み取れます。ログインすると続けて使えます。」と添えます。
+  - 使い切った（または `/api/analyze` が 401 `TRIAL_EXHAUSTED` を返した）: 撮影・アルバムを無効にし、「お試しの読み取りは3回までです。ログインすると続けて使えます。手動入力はログインなしでも使えます。」と案内します。
+    ホームの上にはログインの案内（`app/(app)/app/_components/TrialLoginPrompt.tsx`。Clerk の `SignInButton` のモーダル、確認シートを開いている間は出さない、「閉じる」で消せる）も出し、
+    ログインするとクラウドに保存されること、このブラウザの記録はログイン時に自動でアカウントへ移されること（`migrateLocalData`）を伝えます。
+  - 閲覧専用・キャッシュの先行表示・障害時の扱いはログイン中だけのもので、お試しには関係しません。
 - **/app を表示中**は、ホームが `RegisterScanActions`（`components/ScanActions.tsx`。`AppFrame` が `ScanActionsProvider` を描画する）で登録した `openCamera` / `openAlbum` / `openManual` を、メニューの項目のクリックハンドラの中で同期的に呼びます（ファイル入力の `click()` はユーザーのタップの中でないとブラウザに黙って無視されるため）。解析中・確認中・読み込み中・閲覧専用は `canScan` / `canManual` に従って項目を無効にし、理由を 1 行添えます。「手動で入力」は、手動入力・編集のフォームを開いていれば「入力中の内容を破棄して新しく入力しますか？」を確認してから開きます。
 - **他の画面**では、項目は `/app?action=scan|album|manual` への遷移です。/app の `ShortcutActionHandler`（`useShortcutActions`）が処理し、撮影・アルバムは開くのを試したうえで「撮影の準備ができました」の案内（`ScanReadyPrompt`）を出します。始められない状態なら取り下げて toast で理由を伝えます。
 - `aria-current="page"` で現在の項目を示し、現在の画面の判定は `isNavItemActive`（パスの前方一致）です。
@@ -484,6 +493,8 @@ Supabase Free のプロジェクトが一時停止すると、API は HTTP 540 �
 
 - 認証は Clerk（`@clerk/nextjs`）です。`proxy.ts` の `clerkMiddleware()` は全ルートを公開のままにし、
   `/api/analyze` と `/api/account`（アカウント削除）はルートハンドラ内の `auth()` で未ログインを 401 にします。
+  `/api/analyze` だけは、`TRIAL_COOKIE_SECRET` が設定されていれば未ログインでも署名付き Cookie（`fuel_lens_trial`）で端末ごとに 3 回まで、
+  IP ごとに 1 分 5 回・1 日 10 回の上限つきで受け付けます（[api-analyze.md](./api-analyze.md#未ログインのお試し読み取り)）。
 - Clerk の UI（ログイン・サインアップ・アカウント管理）は `app/(app)/layout.tsx`（アプリ画面）と `components/landing/ClerkHeaderAuth.tsx`（ランディングのログインボタン。読み込み完了後に遅延読み込み）の `<ClerkProvider localization>` で日本語化しています。公開ページ（`/calc`・`/gas-cost`・`/privacy`・`/terms`）は Clerk を読み込みません。`lib/clerkLocalization.ts` が `@clerk/localizations` の `jaJP`（サブパス `/ja-JP` から読み込み）に、メール確認コードの案内（迷惑メールフォルダの確認）を深くマージした設定です。
 - Supabase へは、Clerk のトークンを supabase-js の `accessToken` として渡します。取得方法は公開環境変数
   `NEXT_PUBLIC_CLERK_SUPABASE_JWT_TEMPLATE` で切り替えます（`lib/supabaseClient.ts` の `fetchSupabaseToken`）。
@@ -496,6 +507,7 @@ Supabase Free のプロジェクトが一時停止すると、API は HTTP 540 �
   オフラインによる取得失敗は障害（`unreachable`）として扱います。
 - Supabase クライアントは userId ごとにメモ化し、未ログインでは作成しません。
 - アプリ画面のレイアウトはサーバーで `auth()` を読み、初期認証状態としてクライアントへ渡します（Clerk の読み込み前の描画にだけ使う。[2 章「最初の描画」](#2-データフロー)）。
+  同じレイアウトで、お試しの Cookie から残り回数（`trialStateFromCookie`）も読み、`TrialProvider` に渡します。
   Next.js 内部の例外（動的描画への切り替え）は `unstable_rethrow` で投げ直し、それ以外の失敗は `null`（不明）として従来どおり Clerk を待ちます。
 - **Third-Party Auth（本番）**: JWT Secret の共有が不要で、RLS ポリシーはそのまま使えます。
   Clerk と Supabase の両方でダッシュボード設定が必要です（[auth-production.md](./auth-production.md)）。

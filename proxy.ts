@@ -2,7 +2,8 @@ import { clerkMiddleware } from '@clerk/nextjs/server';
 
 // すべてのルートをパブリックのままにする（未ログインでもトップ／アプリ画面は閲覧でき、
 // クライアント側の SignedIn/SignedOut やローカルストレージ保存がこれに依存している）。
-// /api/analyze はルートハンドラ内で auth() を呼び、未ログインなら 401 を返す（route.ts 参照）。
+// /api/analyze はルートハンドラ内で auth() を呼び、未ログインなら 401 を返す（TRIAL_COOKIE_SECRET があれば
+// 署名付き Cookie で端末ごとに 3 回までのお試しを許可する。lib/server/analyze/handler.ts 参照）。
 // 画面単位で保護したくなった場合は createRouteMatcher + auth.protect() をここに追加する。
 //
 // authorizedParties: セッショントークンの azp（発行元オリジン）を許可リストと照合し、サブドメイン経由の

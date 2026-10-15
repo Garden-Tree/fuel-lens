@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { createAnonymousQuota, createRateLimiter } from "@/lib/server/analyze/rateLimit";
+import {
+  MAX_TRIAL_REQUESTS_PER_IP_PER_DAY,
+  TRIAL_IP_WINDOW_MS,
+  clientIpOf,
+  createRateLimiter,
+} from "@/lib/server/analyze/rateLimit";
 
 function makeLimiter(overrides: Partial<Parameters<typeof createRateLimiter>[0]> = {}) {
   let t = 1_000_000;
@@ -80,27 +85,40 @@ describe("createRateLimiter", () => {
   });
 });
 
-describe("createAnonymousQuota", () => {
-  it("is exceeded only after max recorded scans", () => {
-    const quota = createAnonymousQuota({ max: 3, maxKeys: 100 });
-    expect(quota.max).toBe(3);
-    for (let i = 0; i < 3; i++) {
-      expect(quota.isExceeded("1.1.1.1")).toBe(false);
-      quota.record("1.1.1.1");
-    }
-    expect(quota.isExceeded("1.1.1.1")).toBe(true);
-    expect(quota.isExceeded("2.2.2.2")).toBe(false);
+
+describe("trial IP bucket (24h window, 10 requests)", () => {
+  it("uses the production defaults", () => {
+    expect(TRIAL_IP_WINDOW_MS).toBe(24 * 60 * 60 * 1000);
+    expect(MAX_TRIAL_REQUESTS_PER_IP_PER_DAY).toBe(10);
   });
 
-  it("resets the store once it grows past maxKeys", () => {
-    const store = new Map<string, number>();
-    const quota = createAnonymousQuota({ max: 1, maxKeys: 2, store });
-    quota.record("a");
-    quota.record("b");
-    quota.record("c"); // size 3 > 2 になるのは次の record の冒頭
-    expect(store.size).toBe(3);
-    quota.record("d");
-    expect([...store.keys()]).toEqual(["d"]);
-    expect(quota.isExceeded("a")).toBe(false);
+  it("allows 10 requests per IP per day, then blocks until the window ends", () => {
+    const { limiter, advance } = makeLimiter({ windowMs: TRIAL_IP_WINDOW_MS, max: MAX_TRIAL_REQUESTS_PER_IP_PER_DAY });
+    for (let i = 0; i < 10; i++) {
+      expect(limiter.consume("ip:203.0.113.5").allowed).toBe(true);
+      advance(60_000);
+    }
+    const blocked = limiter.consume("ip:203.0.113.5");
+    expect(blocked.allowed).toBe(false);
+    // 最初のリクエストから 24 時間（ここまでに 10 分経過）
+    expect(blocked.retryAfterSec).toBe(24 * 60 * 60 - 10 * 60);
+    // 別の IP は独立
+    expect(limiter.consume("ip:198.51.100.9").allowed).toBe(true);
+    advance(TRIAL_IP_WINDOW_MS);
+    expect(limiter.consume("ip:203.0.113.5").allowed).toBe(true);
+  });
+});
+
+describe("clientIpOf", () => {
+  const h = (init: Record<string, string>) => new Headers(init);
+
+  it("uses the first X-Forwarded-For entry", () => {
+    expect(clientIpOf(h({ "x-forwarded-for": " 203.0.113.5 , 10.0.0.1, 10.0.0.2" }))).toBe("203.0.113.5");
+  });
+
+  it("falls back to X-Real-IP, then to \"unknown\"", () => {
+    expect(clientIpOf(h({ "x-real-ip": "198.51.100.9" }))).toBe("198.51.100.9");
+    expect(clientIpOf(h({ "x-forwarded-for": " , ", "x-real-ip": "198.51.100.9" }))).toBe("198.51.100.9");
+    expect(clientIpOf(h({}))).toBe("unknown");
   });
 });

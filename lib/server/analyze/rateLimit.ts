@@ -1,5 +1,5 @@
 /**
- * /api/analyze のレートリミットと匿名お試し回数の管理。
+ * /api/analyze のレートリミット（ユーザー / IP ごとの 1 分間の上限と、未ログインのお試しの IP ごとの 1 日の上限）。
  *
  * 注意: 状態はプロセスメモリ上の Map にあるため、サーバーレス環境（Vercel 等）では
  * インスタンスごとに別々の状態を持ち、コールドスタートで消える（ベストエフォート）。
@@ -71,43 +71,27 @@ export function createRateLimiter(options: RateLimiterOptions): RateLimiter {
   };
 }
 
-export type AnonymousQuotaOptions = {
-  /** IP ごとに許可する解析成功回数 */
-  max: number;
-  /** 保持するキー数の上限。超えたら全消去 */
-  maxKeys: number;
-  /** 状態を保持する Map（テストで注入できる） */
-  store?: Map<string, number>;
-};
-
-export type AnonymousQuota = {
-  /** 上限に達していれば true */
-  isExceeded(ip: string): boolean;
-  /** 解析成功時に 1 回加算する */
-  record(ip: string): void;
-  readonly max: number;
-};
-
-/** 匿名お試し回数の制限（ALLOW_ANONYMOUS_SCAN=true のときのみ使う）。IP ベース・ベストエフォート */
-export function createAnonymousQuota(options: AnonymousQuotaOptions): AnonymousQuota {
-  const { max, maxKeys } = options;
-  const scans = options.store ?? new Map<string, number>();
-  return {
-    max,
-    isExceeded(ip) {
-      return (scans.get(ip) || 0) >= max;
-    },
-    record(ip) {
-      if (scans.size > maxKeys) {
-        scans.clear(); // メモリリーク防止のため一定サイズでリセット
-      }
-      scans.set(ip, (scans.get(ip) || 0) + 1);
-    },
-  };
+/**
+ * レートリミットのキーに使うクライアントの IP。`X-Forwarded-For` の先頭（"client, proxy1, proxy2" の client）、
+ * 無ければ `X-Real-IP`、どちらも無ければ "unknown"（すべてのそういうリクエストが同じバケツを共有する）。
+ * IP はこのリミッタのメモリ（Map のキー）にだけ置き、ログ・Sentry には出さない。
+ */
+export function clientIpOf(headers: Headers): string {
+  const forwarded = headers.get("x-forwarded-for")?.split(",")[0]?.trim();
+  if (forwarded) return forwarded;
+  const real = headers.get("x-real-ip")?.trim();
+  return real || "unknown";
 }
 
-/** 本番の既定値（1 分間 5 回、匿名お試し 3 回、キー数上限 1 万） */
+/** 本番の既定値（1 分間 5 回、キー数上限 1 万） */
 export const RATE_LIMIT_WINDOW_MS = 60 * 1000;
 export const MAX_REQUESTS_PER_WINDOW = 5;
-export const MAX_ANONYMOUS_SCANS = 3;
 export const MAX_RATE_LIMIT_KEYS = 10_000;
+
+/**
+ * 未ログインのお試し読み取りの、IP ごとの 1 日の上限（2 つ目のバケツ。createRateLimiter を 24 時間の窓で使う）。
+ * 端末ごとの回数（署名付き Cookie）は Cookie を消せば数え直せるため、乱用の歯止めはこちらが受け持つ。
+ * 窓は最初のリクエストから 24 時間の固定窓。1 分間の上限と同じくインスタンスごと・ベストエフォート。
+ */
+export const TRIAL_IP_WINDOW_MS = 24 * 60 * 60 * 1000;
+export const MAX_TRIAL_REQUESTS_PER_IP_PER_DAY = 10;

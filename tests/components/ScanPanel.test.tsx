@@ -5,6 +5,7 @@ import userEvent from "@testing-library/user-event";
 import ScanPanel, { type ScanPanelHandle, type ScanPanelProps } from "@/app/(app)/app/_components/ScanPanel";
 import ScanEntryList, { type ScanEntryListProps } from "@/app/(app)/app/_components/ScanEntryList";
 import { renderWithProviders } from "../setup/render";
+import { scanAccessOf } from "@/lib/trial";
 
 const PREVIEW = "data:image/jpeg;base64,AAAA";
 
@@ -113,7 +114,7 @@ describe("ScanEntryList", () => {
       onCamera: vi.fn(),
       onAlbum: vi.fn(),
       onManual: vi.fn(),
-      signedOut: false,
+      access: scanAccessOf(false, { enabled: false, remaining: 0 }),
       scanning: false,
       readOnly: false,
       distanceMode: "trip",
@@ -135,12 +136,29 @@ describe("ScanEntryList", () => {
     expect(screen.getByText("メーターはトリップメーター（前回給油からの区間距離）が写るように撮影してください")).toBeInTheDocument();
   });
 
-  it("未ログインでは撮影・アルバムを無効にして案内を出す（手動入力は使える）", () => {
-    setupList({ signedOut: true });
+  it("未ログインでお試しが無効なら撮影・アルバムを無効にして案内を出す（手動入力は使える）", () => {
+    setupList({ access: scanAccessOf(true, { enabled: false, remaining: 0 }) });
     expect(screen.getByRole("button", { name: /撮影する/ })).toBeDisabled();
     expect(screen.getByRole("button", { name: /アルバムから選ぶ/ })).toBeDisabled();
     expect(screen.getByRole("button", { name: /手動で入力/ })).toBeEnabled();
     expect(screen.getByText("AIスキャンはログイン後に使えます。手動入力はログインなしでも使えます。")).toBeInTheDocument();
+  });
+
+  it("未ログインでもお試しが残っていれば撮影・アルバムを使え、残り回数を出す", async () => {
+    const { user, props } = setupList({ access: scanAccessOf(true, { enabled: true, remaining: 2 }) });
+    expect(screen.getByRole("button", { name: /撮影する/ })).toBeEnabled();
+    await user.click(screen.getByRole("button", { name: /アルバムから選ぶ/ }));
+    expect(props.onAlbum).toHaveBeenCalledTimes(1);
+    expect(screen.getByText(/お試しであと 2 回読み取れます/)).toBeInTheDocument();
+    expect(screen.queryByText(/ログイン後に使えます/)).not.toBeInTheDocument();
+  });
+
+  it("お試しを使い切ったら撮影・アルバムを無効にし、3回までと案内する", () => {
+    setupList({ access: scanAccessOf(true, { enabled: true, remaining: 0 }) });
+    expect(screen.getByRole("button", { name: /撮影する/ })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /アルバムから選ぶ/ })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /手動で入力/ })).toBeEnabled();
+    expect(screen.getByText(/お試しの読み取りは3回までです。ログインすると続けて使えます/)).toBeInTheDocument();
   });
 
   it("閲覧専用では手動入力、スキャン中はすべて押せない。オドメーターモードの案内", () => {
