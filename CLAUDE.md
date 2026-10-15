@@ -72,7 +72,7 @@ CI は Node 22 で lint → typecheck → test → build を実行する（[docs
 
 | 知りたいこと | ドキュメント |
 |---|---|
-| 環境変数の一覧 | [README.md](./README.md#環境変数)、[.env.example](./.env.example) |
+| ローカルでの起動・環境変数の一覧・開発コマンド | [docs/setup.md](./docs/setup.md)（[環境変数](./docs/setup.md#環境変数)）、[.env.example](./.env.example) |
 | データフロー・データモデル・フック・移行・障害時の動作・認証 | [docs/architecture.md](./docs/architecture.md) |
 | `/api/analyze` の仕様とエラーコード | [docs/api-analyze.md](./docs/api-analyze.md) |
 | アカウント削除（`/api/account` と設定画面の流れ） | [docs/api-account.md](./docs/api-account.md)、[docs/architecture.md](./docs/architecture.md#アカウント削除) |
