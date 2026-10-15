@@ -100,6 +100,21 @@ describe("useShortcutActions", () => {
     expect(cb.onBlocked).toHaveBeenCalledTimes(1);
   });
 
+  it("manual は事前入力（distance / amount / cost）を検証して渡し、URL からクエリごと消す", () => {
+    const cb = callbacks();
+    nav.params = new URLSearchParams("action=manual&distance=400&amount=25&cost=abc&memo=x");
+    render(<Harness readiness={READY} {...cb} />);
+    expect(cb.onManual).toHaveBeenCalledWith({ total_distance: 400, fuel_amount: 25 });
+    expect(nav.replace).toHaveBeenCalledWith("/app");
+  });
+
+  it("事前入力の無い manual は null を渡す", () => {
+    const cb = callbacks();
+    nav.params = new URLSearchParams("action=manual");
+    render(<Harness readiness={READY} {...cb} />);
+    expect(cb.onManual).toHaveBeenCalledWith(null);
+  });
+
   it("閲覧専用で手動入力が来たら取り下げる", () => {
     const cb = callbacks();
     nav.params = new URLSearchParams("action=manual");

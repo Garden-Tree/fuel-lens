@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { CALC_FAQS, buildCalcJsonLd, computeCalc } from "@/lib/calcPage";
+import { CALC_FAQS, buildCalcJsonLd, calcRecordHref, computeCalc } from "@/lib/calcPage";
+import { parseManualPrefill } from "@/lib/manualPrefill";
 
 describe("computeCalc", () => {
   it("燃費・単価・1km あたりの燃料費を出す", () => {
@@ -34,6 +35,36 @@ describe("computeCalc", () => {
 
   it("オドメーターらしい距離には注意を出す", () => {
     expect(computeCalc({ distance: "45000", amount: "40", cost: "" }).warning).toContain("オドメーター");
+  });
+});
+
+describe("calcRecordHref", () => {
+  it("走行距離（区間距離）・給油量・支払総額をアプリの手動入力の URL にする", () => {
+    expect(calcRecordHref({ distance: "400", amount: "25", cost: "4000" })).toBe(
+      "/app?action=manual&distance=400&amount=25&cost=4000"
+    );
+  });
+
+  it("支払総額は任意（空・0 なら載せない）", () => {
+    expect(calcRecordHref({ distance: "400", amount: "25", cost: "" })).toBe("/app?action=manual&distance=400&amount=25");
+    expect(calcRecordHref({ distance: "400", amount: "25", cost: "0" })).toBe("/app?action=manual&distance=400&amount=25");
+  });
+
+  it("全角数字・カンマは読み取った数値で載せ、アプリ側で同じ値に戻る", () => {
+    const href = calcRecordHref({ distance: "５２３．４", amount: "30.12", cost: "5,120" });
+    expect(href).toBe("/app?action=manual&distance=523.4&amount=30.12&cost=5120");
+    expect(parseManualPrefill(new URL(href!, "https://example.com").searchParams)).toEqual({
+      total_distance: 523.4,
+      fuel_amount: 30.12,
+      total_cost: 5120,
+    });
+  });
+
+  it("走行距離か給油量が無い・どこかにエラーがあれば null", () => {
+    expect(calcRecordHref({ distance: "", amount: "25", cost: "" })).toBeNull();
+    expect(calcRecordHref({ distance: "400", amount: "", cost: "4000" })).toBeNull();
+    expect(calcRecordHref({ distance: "400", amount: "0", cost: "" })).toBeNull();
+    expect(calcRecordHref({ distance: "400", amount: "25", cost: "abc" })).toBeNull();
   });
 });
 

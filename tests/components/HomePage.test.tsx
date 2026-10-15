@@ -40,15 +40,15 @@ const RECORD: FuelRecord = {
   run_fuel: 30,
 };
 
-const state = vi.hoisted(() => ({ readOnly: false }));
+const state = vi.hoisted(() => ({ readOnly: false, mode: "trip" as "trip" | "odometer" }));
 vi.mock("@/lib/useVehicleScope", () => ({
   useVehicleScope: (): VehicleScope =>
     ({
       vehicles: [VEHICLE],
       selectedVehicleId: "v1",
       setSelectedVehicleId: vi.fn(),
-      selectedVehicle: VEHICLE,
-      distanceMode: "trip",
+      selectedVehicle: { ...VEHICLE, distance_mode: state.mode },
+      distanceMode: state.mode,
       defaultVehicleId: "v1",
       records: [RECORD],
       loading: false,
@@ -57,7 +57,7 @@ vi.mock("@/lib/useVehicleScope", () => ({
       error: null,
       readOnly: state.readOnly,
       outage: null,
-      scopeKey: "v1:trip",
+      scopeKey: `v1:${state.mode}`,
       vehicleActions: { addVehicle: vi.fn(), addVehicles: vi.fn(), updateVehicle: vi.fn(), deleteVehicle: vi.fn() },
       recordActions: {
         addRecord: vi.fn(),
@@ -77,6 +77,7 @@ describe("ホーム（/app）のスキャンの入口", () => {
     nav.params = new URLSearchParams();
     nav.replace.mockReset();
     state.readOnly = false;
+    state.mode = "trip";
     inputClick = vi.spyOn(HTMLInputElement.prototype, "click").mockImplementation(() => {});
   });
   afterEach(() => {
@@ -142,5 +143,38 @@ describe("ホーム（/app）のスキャンの入口", () => {
     await user.click(within(confirm).getByRole("button", { name: "破棄して入力" }));
     expect(await screen.findByRole("heading", { name: "手動で記録を追加" })).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "給油記録の編集" })).not.toBeInTheDocument();
+  });
+
+  it("燃費計算ページから ?action=manual&distance=…&amount=…&cost=… で来たら、値を入れた手動入力を開く（保存はしない）", async () => {
+    nav.params = new URLSearchParams("action=manual&distance=400&amount=25&cost=4000");
+    renderWithProviders(<Home />);
+    expect(await screen.findByRole("heading", { name: "手動で記録を追加" })).toBeInTheDocument();
+    expect(screen.getByLabelText(/^走行距離/)).toHaveValue("400");
+    expect(screen.getByLabelText(/^給油量/)).toHaveValue("25");
+    expect(screen.getByLabelText(/^支払総額/)).toHaveValue("4000");
+    expect(
+      screen.getByText("計算した内容を「マイカー」の手動入力に入れました。日付と車両を確認して保存してください")
+    ).toBeInTheDocument();
+    expect(nav.replace).toHaveBeenCalledWith("/app");
+  });
+
+  it("オドメーターモードの車両では区間距離を入れず、オドメーターの入力を案内する", async () => {
+    state.mode = "odometer";
+    nav.params = new URLSearchParams("action=manual&distance=400&amount=25");
+    renderWithProviders(<Home />);
+    expect(await screen.findByRole("heading", { name: "手動で記録を追加" })).toBeInTheDocument();
+    expect(screen.queryByLabelText(/^走行距離/)).not.toBeInTheDocument();
+    expect(screen.getByLabelText(/^オドメーター/)).toHaveValue("");
+    expect(screen.getByLabelText(/^給油量/)).toHaveValue("25");
+    expect(screen.getByText(/走行距離は入れていません/)).toBeInTheDocument();
+  });
+
+  it("閲覧専用なら事前入力つきでもフォームを開かずに取り下げる", async () => {
+    state.readOnly = true;
+    nav.params = new URLSearchParams("action=manual&distance=400&amount=25");
+    renderWithProviders(<Home />);
+    expect(await screen.findByText("閲覧専用のため手動入力はできません")).toBeInTheDocument();
+    expect(nav.replace).toHaveBeenCalledWith("/app");
+    expect(screen.queryByRole("heading", { name: "手動で記録を追加" })).not.toBeInTheDocument();
   });
 });

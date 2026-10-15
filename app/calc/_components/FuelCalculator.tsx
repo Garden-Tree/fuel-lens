@@ -1,8 +1,9 @@
 "use client";
 
 import { useId, useState, type ReactNode } from "react";
-import { RotateCcw } from "lucide-react";
-import { computeCalc, type CalcField, type CalcInput } from "@/lib/calcPage";
+import Link from "next/link";
+import { NotebookPen, RotateCcw } from "lucide-react";
+import { calcRecordHref, computeCalc, type CalcField, type CalcInput } from "@/lib/calcPage";
 
 const EMPTY: CalcInput = { distance: "", amount: "", cost: "" };
 
@@ -12,11 +13,16 @@ const FIELDS: { field: CalcField; label: string; unit: string; placeholder: stri
   { field: "cost", label: "支払総額（任意）", unit: "円", placeholder: "例: 4000", hint: "入れると単価と 1km あたりの燃料費も出ます" },
 ];
 
-/** 満タン法の燃費計算機。入力は state にだけ持ち、どこにも保存しない */
+/**
+ * 満タン法の燃費計算機。入力は state にだけ持ち、どこにも保存しない。
+ * 結果が出たら「この内容で FuelLens に記録する」で、アプリの手動入力を事前入力つきで開ける（calcRecordHref。
+ * ただのリンクなので、このページはアプリのコード・Clerk・Supabase を読み込まない）
+ */
 export default function FuelCalculator() {
   const [input, setInput] = useState<CalcInput>(EMPTY);
   const baseId = useId();
   const result = computeCalc(input);
+  const recordHref = calcRecordHref(input);
   const isEmpty = input.distance === "" && input.amount === "" && input.cost === "";
 
   return (
@@ -68,6 +74,23 @@ export default function FuelCalculator() {
         </dl>
         {result.warning && <p className="mt-3 text-xs leading-relaxed text-warn">{result.warning}</p>}
       </div>
+
+      {recordHref && (
+        <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+          <p className="text-xs leading-relaxed text-sub">
+            アプリの手動入力に入れて、日付と車両を確認してから保存します（登録不要）。
+          </p>
+          {/* 入力のたびに URL が変わるので先読みしない（/app はログイン状態を読む動的な画面） */}
+          <Link
+            href={recordHref}
+            prefetch={false}
+            className="inline-flex h-11 shrink-0 items-center justify-center gap-1.5 rounded-xl border border-accent/50 bg-surface-2 px-4 text-sm font-bold text-accent transition-colors hover:bg-line focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+          >
+            <NotebookPen className="h-4 w-4" aria-hidden="true" />
+            この内容で FuelLens に記録する
+          </Link>
+        </div>
+      )}
 
       <div className="mt-4 flex items-center justify-between gap-3">
         <p className="text-xs text-sub">入力した値は保存されません。</p>

@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import {
   Sparkles,
@@ -15,9 +16,32 @@ import HeaderAuthButtons from "@/components/landing/HeaderAuthButtons";
 import HeroPhonePreview from "@/components/landing/HeroPhonePreview";
 import DemoSimulator from "@/components/landing/DemoSimulator";
 import FaqAccordion, { type FaqItem } from "@/components/landing/FaqAccordion";
+import { LANDING_DESCRIPTION, LANDING_TITLE, buildLandingJsonLd } from "@/lib/landingPage";
 
 // このページは Server Component。インタラクティブな部分（ログインボタン・スマホモック・デモ・FAQ）だけを
 // components/landing/ 配下の小さなクライアントコンポーネントに切り出している。
+
+// 検索向けのタイトルと説明（「燃費管理アプリ」「燃費 記録」「給油記録 アプリ」などで見つけてもらうため。文言は lib/landingPage.ts）。
+// openGraph / twitter はレイアウトの値とマージされず置き換わるので、type などもここで指定する。
+// OG 画像は app/opengraph-image.tsx・app/twitter-image.tsx（ファイル規約）が付く
+export const metadata: Metadata = {
+  title: { absolute: LANDING_TITLE },
+  description: LANDING_DESCRIPTION,
+  alternates: { canonical: "/" },
+  openGraph: {
+    type: "website",
+    siteName: "FuelLens",
+    title: LANDING_TITLE,
+    description: LANDING_DESCRIPTION,
+    url: "/",
+    locale: "ja_JP",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: LANDING_TITLE,
+    description: LANDING_DESCRIPTION,
+  },
+};
 
 const faqs: FaqItem[] = [
   {
@@ -45,6 +69,7 @@ const faqs: FaqItem[] = [
 export default function LandingPage() {
   return (
     <div className="relative min-h-screen overflow-hidden bg-ground font-sans text-ink selection:bg-accent selection:text-ground">
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: buildLandingJsonLd() }} />
 
       {/* ヘッダーナビゲーション */}
       <header className="sticky top-0 z-50 border-b border-line bg-ground/90 pt-[env(safe-area-inset-top)] backdrop-blur-md">
@@ -82,8 +107,9 @@ export default function LandingPage() {
                 </span>
               </h1>
               <p className="text-base sm:text-lg text-sub max-w-xl mx-auto lg:mx-0 leading-relaxed">
-                給油時のレシートと車のトリップメーターが同時に写った写真をスマホで1枚パシャリと撮るだけ。
-                AIが自動的に給油量・金額・区間走行距離を読み取り、満タン法で燃費を即時に計算・記録します。手入力のストレスから解放されましょう。
+                FuelLens は、給油のたびの燃費とガソリン代を記録できる無料の燃費管理アプリです。
+                レシートと車のトリップメーターが同時に写った写真をスマホで1枚パシャリと撮るだけで、
+                AIが給油量・金額・区間走行距離を読み取り、満タン法で燃費を計算・記録します。
               </p>
 
               <div className="pt-4 flex flex-col sm:flex-row items-center justify-center lg:justify-start gap-4">

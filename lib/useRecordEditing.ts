@@ -42,8 +42,11 @@ export type RecordEditing = {
   saving: boolean;
   /** 既存の記録の編集を始める（閲覧専用中は何もしない） */
   startEditing: (record: FuelRecord) => void;
-  /** 手動入力（今日の日付の新規記録）を始める */
-  startManualEntry: () => void;
+  /**
+   * 手動入力（今日の日付の新規記録）を始める。
+   * initial で区間距離・給油量・支払総額の初期値を入れられる（燃費計算ページからの事前入力。lib/manualPrefill.ts の prefillToRecord）
+   */
+  startManualEntry: (initial?: Partial<Pick<FuelRecord, "total_distance" | "fuel_amount" | "total_cost">>) => void;
   /** フォームを閉じる */
   cancel: () => void;
   /** 保存する。手動入力は重複確認付きで追加、編集は更新。成功したらフォームを閉じて toast */
@@ -102,8 +105,8 @@ export function useRecordEditing({
     setMode({ kind: "edit", id: record.id });
   };
 
-  const startManualEntry = () => {
-    form.reset({ date: todayLocalISO() }, { vehicle: selectedVehicle, records });
+  const startManualEntry = (initial?: Partial<Pick<FuelRecord, "total_distance" | "fuel_amount" | "total_cost">>) => {
+    form.reset({ ...initial, date: todayLocalISO() }, { vehicle: selectedVehicle, records });
     setMode({ kind: "manual" });
   };
 
