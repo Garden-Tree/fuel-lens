@@ -1,7 +1,7 @@
 "use client";
 
 import type { LucideIcon } from "lucide-react";
-import { Camera, Edit2, Image as ImageIcon } from "lucide-react";
+import { Camera, Edit2, Image as ImageIcon, Images } from "lucide-react";
 import { GroupedList, ListRow } from "@/components/ui";
 import { SIGNED_OUT_SCAN_NOTE } from "@/components/ScanActionMenu";
 import type { DistanceMode } from "@/lib/types";
@@ -9,6 +9,8 @@ import type { DistanceMode } from "@/lib/types";
 export type ScanEntryListProps = {
   onCamera: () => void;
   onAlbum: () => void;
+  /** レシートとメーターを別々に撮るシートを開く */
+  onPair: () => void;
   onManual: () => void;
   /** 未ログイン（AI スキャンは使えない。撮影・アルバムを無効にして案内を出す） */
   signedOut: boolean;
@@ -32,13 +34,15 @@ function EntryIcon({ icon: Icon, disabled }: { icon: LucideIcon; disabled: boole
 }
 
 /**
- * 記録の入口（撮影する / アルバムから選ぶ / 手動で入力）。スキャンメニュー（components/ScanActionMenu.tsx）と同じ 3 項目を
+ * 記録の入口（撮影する / アルバムから選ぶ / レシートとメーターを別々に撮る / 手動で入力）。
+ * スキャンメニュー（components/ScanActionMenu.tsx）と同じ 4 項目を
  * ホームのグループリストに並べる（記録が無いときの案内と、PC の右カラム）。
  * ボタンから直接ファイル入力を開く（ユーザー操作のうちに開くので、ブラウザにブロックされない）。
  */
 export default function ScanEntryList({
   onCamera,
   onAlbum,
+  onPair,
   onManual,
   signedOut,
   scanning,
@@ -64,6 +68,14 @@ export default function ScanEntryList({
           leading={<EntryIcon icon={ImageIcon} disabled={scanDisabled} />}
           title="アルバムから選ぶ"
           subtitle="撮影済みの写真を読み取る"
+          showChevron={!scanDisabled}
+        />
+        <ListRow
+          onClick={onPair}
+          disabled={scanDisabled}
+          leading={<EntryIcon icon={Images} disabled={scanDisabled} />}
+          title="レシートとメーターを別々に撮る"
+          subtitle="1枚に収まらないときは2枚で読み取る"
           showChevron={!scanDisabled}
         />
         <ListRow

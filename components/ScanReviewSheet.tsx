@@ -45,8 +45,10 @@ const LOW_CONFIDENCE = 0.6;
 interface Props {
   /** /api/analyze の成功レスポンス */
   result: AnalyzeSuccessResponse;
-  /** 解析に使った画像（data URL）。サムネイルとして表示する */
+  /** 解析に使った画像（data URL）。サムネイルとして表示する。2 枚で読み取ったときはレシート */
   imageSrc: string | null;
+  /** 2 枚で読み取ったときのメーターの画像（data URL）。レシートの隣にサムネイルを出す */
+  meterImageSrc?: string | null;
   /** 記録先の車両（距離の入力方式・既定の燃料種別）。省略はトリップモード */
   vehicle?: Pick<Vehicle, "distance_mode" | "default_fuel_type"> | null;
   /**
@@ -73,6 +75,7 @@ interface Props {
 export default function ScanReviewSheet({
   result,
   imageSrc,
+  meterImageSrc = null,
   vehicle = null,
   records,
   readOnly = false,
@@ -167,7 +170,24 @@ export default function ScanReviewSheet({
 
         {/* ヘッダー */}
         <div className="flex items-start gap-3">
-          {imageSrc ? (
+          {imageSrc && meterImageSrc ? (
+            <div className="flex shrink-0 flex-col gap-1.5 sm:flex-row">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={imageSrc}
+                alt="解析したレシートのサムネイル"
+                className="h-16 w-16 shrink-0 rounded-xl border border-border object-cover"
+                draggable={false}
+              />
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={meterImageSrc}
+                alt="解析したメーターのサムネイル"
+                className="h-16 w-16 shrink-0 rounded-xl border border-border object-cover"
+                draggable={false}
+              />
+            </div>
+          ) : imageSrc ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img
               src={imageSrc}

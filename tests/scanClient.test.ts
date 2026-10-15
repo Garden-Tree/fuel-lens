@@ -6,8 +6,12 @@ vi.mock("browser-image-compression", () => ({ default: vi.fn() }));
 import {
   ANALYZE_NETWORK_ERROR_MESSAGE,
   ANALYZE_TIMEOUT_MESSAGE,
+  IMAGE_COMPRESSION_OPTIONS,
+  PAIR_IMAGE_COMPRESSION_OPTIONS,
+  buildAnalyzeRequestBody,
   requestAnalyze,
 } from "@/lib/scan/analyzeClient";
+import { MAX_PAIR_IMAGE_BYTES, MAX_PAIR_TOTAL_BASE64_LENGTH } from "@/lib/analyze";
 
 const DATA_URL = "data:image/jpeg;base64,AAAA";
 
@@ -60,6 +64,21 @@ describe("requestAnalyze", () => {
     expect(init.method).toBe("POST");
     expect(init.headers).toEqual({ "Content-Type": "application/json" });
     expect(JSON.parse(String(init.body))).toEqual({ image: DATA_URL });
+  });
+
+  it("レシートとメーターの 2 枚は images（役割付き、レシート → メーター）で 1 回だけ POST する", async () => {
+    const fetchMock = vi.fn(async () => jsonResponse({ requestId: "r3" }));
+    vi.stubGlobal("fetch", fetchMock);
+    const meter = "data:image/jpeg;base64,BBBB";
+    await requestAnalyze({ receipt: DATA_URL, meter });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(JSON.parse(String(init.body))).toEqual({
+      images: [
+        { role: "receipt", image: DATA_URL },
+        { role: "meter", image: meter },
+      ],
+    });
   });
 
   it("HTTP エラーは投げずにステータス・本文・Retry-After を返す", async () => {
@@ -119,5 +138,32 @@ describe("requestAnalyze", () => {
     const init = fetchMock.mock.calls[0][1] as RequestInit;
     expect(init.signal?.aborted).toBe(true);
     await expect(promise).rejects.toMatchObject({ name: "AbortError" });
+  });
+});
+
+describe("buildAnalyzeRequestBody", () => {
+  it("1 枚は従来どおり { image }", () => {
+    expect(buildAnalyzeRequestBody(DATA_URL)).toEqual({ image: DATA_URL });
+  });
+
+  it("2 枚は { images: [receipt, meter] }", () => {
+    expect(buildAnalyzeRequestBody({ receipt: "r", meter: "m" })).toEqual({
+      images: [
+        { role: "receipt", image: "r" },
+        { role: "meter", image: "m" },
+      ],
+    });
+  });
+});
+
+describe("圧縮設定", () => {
+  it("2 枚のときは 1 枚あたりの目標を小さくし、サーバーの上限に収める", () => {
+    const perImage = PAIR_IMAGE_COMPRESSION_OPTIONS.maxSizeMB ?? Infinity;
+    expect(perImage).toBeLessThan(IMAGE_COMPRESSION_OPTIONS.maxSizeMB ?? Infinity);
+    // 1 枚の上限（デコード後）より小さい
+    expect(perImage * 1024 * 1024).toBeLessThan(MAX_PAIR_IMAGE_BYTES);
+    // 2 枚を Base64（4/3 倍）にしても合計の上限より小さい
+    expect(((perImage * 1024 * 1024 * 4) / 3) * 2).toBeLessThan(MAX_PAIR_TOTAL_BASE64_LENGTH);
+    expect(PAIR_IMAGE_COMPRESSION_OPTIONS.fileType).toBe("image/jpeg");
   });
 });

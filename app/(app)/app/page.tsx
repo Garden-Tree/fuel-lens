@@ -32,6 +32,7 @@ import ScanEntryList from "./_components/ScanEntryList";
 import WelcomeCard from "./_components/WelcomeCard";
 import DropZoneRow from "./_components/DropZoneRow";
 import ScanReadyPrompt from "./_components/ScanReadyPrompt";
+import TwoPhotoScanSheet from "./_components/TwoPhotoScanSheet";
 
 const subscribeNothing = () => () => {};
 
@@ -40,9 +41,10 @@ const subscribeNothing = () => () => {};
  * 状態と処理はフックに、描画は ./_components に分けている（docs/architecture.md「メイン画面の構成」）。
  * - useVehicleScope: 選択中の車両とその記録（連鎖計算済み・日付の降順）
  * - useScanPipeline: 圧縮 → /api/analyze → 確認シート（ScanReviewSheet）。保存は確認シートの「保存」のみ
- * - useImageDropPaste: 画像のドロップ（ページ全体）・ペースト
+ * - useImageDropPaste: 画像のドロップ（ページ全体）・ペースト（ちょうど 2 枚のドロップは 2 枚で読み取るシートへ）
+ * - TwoPhotoScanSheet: レシートとメーターを別々に撮る（2 枚を 1 回の解析に送る。scan.processImagePair）
  * - useRecordEditing: 手動入力・最新記録の編集（重複確認付きの保存）
- * - RegisterScanActions: スキャンメニュー（AppFrame）に撮影・アルバム・手動入力の処理を登録する（メニューがタップの中で直接呼ぶ）
+ * - RegisterScanActions: スキャンメニュー（AppFrame）に撮影・アルバム・2 枚で撮る・手動入力の処理を登録する（メニューがタップの中で直接呼ぶ）
  * - ShortcutActionHandler（Suspense の内側）: `?action=` の PWA ショートカット・他の画面のスキャンメニュー・共有。
  *   撮影・アルバムで来たときは「撮影の準備ができました」の案内（ScanReadyPrompt）も出す（遷移後はファイル選択が開かないことがあるため）
  *
@@ -67,8 +69,20 @@ export default function Home() {
     setScanPrompt(false);
     return scan.processImageFile(file);
   };
+  // レシートとメーターを別々に撮るシート（key は開くたびに増やし、前回の選択を残さない）。
+  // initial は PC で 2 枚をドロップしたとき（ドロップした順に レシート / メーター の候補にする。シートで入れ替えられる）
+  const [pairSheet, setPairSheet] = useState<{ key: number; initial?: { receipt: File; meter: File } } | null>(null);
+  const pairSheetKey = useRef(0);
+  const openPairSheet = (initial?: { receipt: File; meter: File }) => {
+    setScanPrompt(false);
+    pairSheetKey.current += 1;
+    setPairSheet({ key: pairSheetKey.current, initial });
+  };
   const { isDragging, dropZoneProps } = useImageDropPaste({
     onImage: processFile,
+    onImagePair: (first, second) => {
+      if (availability.canScan) openPairSheet({ receipt: first, meter: second });
+    },
     isBusy: scan.isScanning,
     toast,
   });
@@ -108,6 +122,9 @@ export default function Home() {
   };
   const openAlbum = () => {
     if (availability.canScan) scanPanelRef.current?.openAlbum();
+  };
+  const openPair = () => {
+    if (availability.canScan) openPairSheet();
   };
 
   // 手動入力を始める。手動入力・編集のフォームを開いていれば、破棄してよいか確認する。
@@ -158,6 +175,7 @@ export default function Home() {
       <ScanEntryList
         onCamera={openCamera}
         onAlbum={openAlbum}
+        onPair={openPair}
         onManual={() => void requestManualEntry()}
         signedOut={signedOut}
         scanning={scan.loading}
@@ -172,6 +190,7 @@ export default function Home() {
       <RegisterScanActions
         openCamera={openCamera}
         openAlbum={openAlbum}
+        openPair={openPair}
         openManual={() => void requestManualEntry()}
         canScan={availability.canScan}
         canManual={availability.canManual}
@@ -189,6 +208,8 @@ export default function Home() {
             openAlbum();
             setScanPrompt(true);
           }}
+          // シートを開くだけなのでタップの扱いは要らない（ファイル選択はシートのボタンで開く）
+          onPair={openPair}
           onManual={(prefill) => void requestManualEntry(prefill)}
           onShared={(token) => {
             setScanPrompt(false);
@@ -243,6 +264,7 @@ export default function Home() {
             scanning={scan.loading}
             loadingStep={scan.loadingStep}
             preview={scan.preview}
+            previewMeter={scan.previewMeter}
             sharedPending={scan.sharedPending}
             readOnly={readOnly}
             onSelectFile={(file) => void processFile(file)}
@@ -309,12 +331,27 @@ export default function Home() {
         </div>
       </div>
 
+      {/* レシートとメーターを別々に撮る（2 枚で読み取る）。読み取りを始めたら閉じ、結果は下の確認シートに出す */}
+      {pairSheet && (
+        <TwoPhotoScanSheet
+          key={pairSheet.key}
+          distanceMode={distanceMode}
+          initialFiles={pairSheet.initial}
+          onClose={() => setPairSheet(null)}
+          onSubmit={(receipt, meter) => {
+            setPairSheet(null);
+            void scan.processImagePair(receipt, meter);
+          }}
+        />
+      )}
+
       {/* スキャン結果の確認シート（保存は「保存」を押したときのみ） */}
       {scan.scanResult && (
         <ScanReviewSheet
           key={scan.scanResult.key}
           result={scan.scanResult.data}
           imageSrc={scan.scanResult.image}
+          meterImageSrc={scan.scanResult.meterImage}
           vehicle={selectedVehicle}
           records={records}
           readOnly={readOnly}

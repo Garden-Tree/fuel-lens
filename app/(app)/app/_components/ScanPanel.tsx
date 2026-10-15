@@ -17,8 +17,10 @@ export type ScanPanelProps = {
   /** スキャン（圧縮・解析）中 */
   scanning: boolean;
   loadingStep: ScanLoadingStep;
-  /** プレビュー中の画像（data URL） */
+  /** プレビュー中の画像（data URL）。2 枚で読み取るときはレシート */
   preview: string | null;
+  /** 2 枚で読み取るときのメーターの画像（data URL）。1 枚なら null / 省略 */
+  previewMeter?: string | null;
   /** 共有で受け取り、確認ダイアログで読み取らなかった画像（「読み取る」「手動で入力」を出す） */
   sharedPending: string | null;
   readOnly: boolean;
@@ -34,12 +36,12 @@ export type ScanPanelProps = {
 const SMALL_BUTTON =
   "inline-flex h-10 items-center gap-1.5 rounded-xl px-3 text-sm font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-50";
 
-function Thumbnail({ src }: { src: string }) {
+function Thumbnail({ src, alt = "読み取る画像のプレビュー" }: { src: string; alt?: string }) {
   return (
     // eslint-disable-next-line @next/next/no-img-element
     <img
       src={src}
-      alt="読み取る画像のプレビュー"
+      alt={alt}
       className="h-16 w-16 shrink-0 rounded-xl bg-surface-2 object-cover"
       draggable="false"
     />
@@ -69,6 +71,7 @@ export default function ScanPanel({
   scanning,
   loadingStep,
   preview,
+  previewMeter = null,
   sharedPending,
   readOnly,
   onSelectFile,
@@ -96,11 +99,23 @@ export default function ScanPanel({
     onSelectFile(file);
   };
 
+  // 2 枚で読み取るときはレシートとメーターを並べる
+  const thumbnails = preview ? (
+    previewMeter ? (
+      <div className="flex shrink-0 gap-1.5">
+        <Thumbnail src={preview} alt="読み取るレシートのプレビュー" />
+        <Thumbnail src={previewMeter} alt="読み取るメーターのプレビュー" />
+      </div>
+    ) : (
+      <Thumbnail src={preview} />
+    )
+  ) : null;
+
   let card: ReactNode = null;
   if (scanning) {
     card = (
       <StatusCard live>
-        {preview && <Thumbnail src={preview} />}
+        {thumbnails}
         <div className="flex min-w-0 flex-1 flex-col gap-0.5">
           <p className="flex items-center gap-2 text-[15px] font-bold text-ink">
             <Loader2 className="h-4 w-4 shrink-0 animate-spin text-accent" aria-hidden="true" />
@@ -124,7 +139,7 @@ export default function ScanPanel({
   } else if (preview) {
     card = (
       <StatusCard>
-        <Thumbnail src={preview} />
+        {thumbnails}
         <div className="flex min-w-0 flex-1 flex-col gap-2">
           <p className="truncate text-[15px] font-medium text-ink">{sharedPending ? "共有された画像" : "読み取った画像"}</p>
           <div className="flex flex-wrap gap-2">

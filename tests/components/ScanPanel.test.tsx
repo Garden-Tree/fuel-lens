@@ -107,11 +107,26 @@ describe("ScanPanel", () => {
   });
 });
 
+describe("ScanPanel（2 枚で読み取る）", () => {
+  it("解析中・プレビューでレシートとメーターのサムネイルを並べる", () => {
+    const meter = "data:image/jpeg;base64,BBBB";
+    const { rerender, props } = setup({ scanning: true, loadingStep: "analyze", preview: PREVIEW, previewMeter: meter });
+    expect(screen.getByRole("img", { name: "読み取るレシートのプレビュー" })).toHaveAttribute("src", PREVIEW);
+    expect(screen.getByRole("img", { name: "読み取るメーターのプレビュー" })).toHaveAttribute("src", meter);
+    rerender(<ScanPanel {...props} scanning={false} loadingStep={null} preview={PREVIEW} previewMeter={meter} />);
+    expect(screen.getByRole("img", { name: "読み取るメーターのプレビュー" })).toBeInTheDocument();
+    rerender(<ScanPanel {...props} scanning={false} loadingStep={null} preview={PREVIEW} previewMeter={null} />);
+    expect(screen.queryByRole("img", { name: "読み取るメーターのプレビュー" })).not.toBeInTheDocument();
+    expect(screen.getByRole("img", { name: "読み取る画像のプレビュー" })).toBeInTheDocument();
+  });
+});
+
 describe("ScanEntryList", () => {
   function setupList(overrides: Partial<ScanEntryListProps> = {}) {
     const props: ScanEntryListProps = {
       onCamera: vi.fn(),
       onAlbum: vi.fn(),
+      onPair: vi.fn(),
       onManual: vi.fn(),
       signedOut: false,
       scanning: false,
@@ -128,9 +143,11 @@ describe("ScanEntryList", () => {
     const { user, props } = setupList();
     await user.click(screen.getByRole("button", { name: /撮影する/ }));
     await user.click(screen.getByRole("button", { name: /アルバムから選ぶ/ }));
+    await user.click(screen.getByRole("button", { name: /レシートとメーターを別々に撮る/ }));
     await user.click(screen.getByRole("button", { name: /手動で入力/ }));
     expect(props.onCamera).toHaveBeenCalledTimes(1);
     expect(props.onAlbum).toHaveBeenCalledTimes(1);
+    expect(props.onPair).toHaveBeenCalledTimes(1);
     expect(props.onManual).toHaveBeenCalledTimes(1);
     expect(screen.getByText("メーターはトリップメーター（前回給油からの区間距離）が写るように撮影してください")).toBeInTheDocument();
   });
@@ -139,6 +156,7 @@ describe("ScanEntryList", () => {
     setupList({ signedOut: true });
     expect(screen.getByRole("button", { name: /撮影する/ })).toBeDisabled();
     expect(screen.getByRole("button", { name: /アルバムから選ぶ/ })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /レシートとメーターを別々に撮る/ })).toBeDisabled();
     expect(screen.getByRole("button", { name: /手動で入力/ })).toBeEnabled();
     expect(screen.getByText("AIスキャンはログイン後に使えます。手動入力はログインなしでも使えます。")).toBeInTheDocument();
   });
@@ -149,7 +167,7 @@ describe("ScanEntryList", () => {
     expect(screen.getByRole("button", { name: /撮影する/ })).toBeEnabled();
     expect(screen.getByText("メーターはオドメーター（積算距離）が写るように撮影してください")).toBeInTheDocument();
     rerender(<ScanEntryList {...props} readOnly={false} scanning />);
-    for (const name of [/撮影する/, /アルバムから選ぶ/, /手動で入力/]) {
+    for (const name of [/撮影する/, /アルバムから選ぶ/, /レシートとメーターを別々に撮る/, /手動で入力/]) {
       expect(screen.getByRole("button", { name })).toBeDisabled();
     }
   });

@@ -22,6 +22,7 @@ function handlers(overrides: Partial<ScanActionHandlers> = {}): ScanActionHandle
   return {
     openCamera: vi.fn(),
     openAlbum: vi.fn(),
+    openPair: vi.fn(),
     openManual: vi.fn(),
     canScan: true,
     canManual: true,
@@ -62,6 +63,11 @@ describe("ScanActionMenu と ScanActions（/app 表示中の直接呼び出し�
     expect(h.openAlbum).toHaveBeenCalledTimes(1);
 
     dialog = await openMenu(user);
+    await user.click(within(dialog).getByRole("button", { name: /レシートとメーターを別々に撮る/ }));
+    expect(h.openPair).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+
+    dialog = await openMenu(user);
     await user.click(within(dialog).getByRole("button", { name: /手動で入力/ }));
     expect(h.openManual).toHaveBeenCalledTimes(1);
   });
@@ -85,6 +91,7 @@ describe("ScanActionMenu と ScanActions（/app 表示中の直接呼び出し�
     const dialog = await openMenu(user);
     expect(within(dialog).getByRole("button", { name: /撮影する/ })).toBeDisabled();
     expect(within(dialog).getByRole("button", { name: /アルバムから選ぶ/ })).toBeDisabled();
+    expect(within(dialog).getByRole("button", { name: /レシートとメーターを別々に撮る/ })).toBeDisabled();
     expect(within(dialog).getByRole("button", { name: /手動で入力/ })).toBeDisabled();
     expect(within(dialog).getByText("読み取り中です。終わるまで新しい記録は始められません")).toBeInTheDocument();
   });
@@ -105,6 +112,10 @@ describe("ScanActionMenu と ScanActions（/app 表示中の直接呼び出し�
     const dialog = await openMenu(user);
     expect(within(dialog).getByRole("link", { name: /撮影する/ })).toHaveAttribute("href", "/app?action=scan");
     expect(within(dialog).getByRole("link", { name: /アルバムから選ぶ/ })).toHaveAttribute("href", "/app?action=album");
+    expect(within(dialog).getByRole("link", { name: /レシートとメーターを別々に撮る/ })).toHaveAttribute(
+      "href",
+      "/app?action=pair"
+    );
     expect(within(dialog).getByRole("link", { name: /手動で入力/ })).toHaveAttribute("href", "/app?action=manual");
   });
 
