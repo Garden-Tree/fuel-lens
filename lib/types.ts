@@ -60,6 +60,11 @@ export type FuelRecord = {
   /** メモ（200 文字まで）。null / 省略はなし（0004 で追加） */
   memo?: string | null;
   /**
+   * 記録の入口（どの経路で作られたか）。利用状況の計測用で、画面には出さず、計算（applyFillChain）にも使わない。
+   * null / 省略は不明（0005 で追加。それ以前の記録）。作成時に決まり、更新では変えない
+   */
+  source?: RecordSource | null;
+  /**
    * 導出値（保存しない。DB・localStorage・バックアップ・CSV には書かない）: この記録が満タン給油で閉じた走行区間（run）の
    * Σ区間距離 (km)。applyFillChain が燃費の出た記録にだけ付ける。統計（lib/stats.ts の summarize）が run 単位で集計するのに使う
    */
@@ -70,8 +75,22 @@ export type FuelRecord = {
   run_cost?: number | null;
 };
 
-/** fuel_records に 0004 で追加した列 */
-export type NewRecordField = "odometer" | "is_full" | "missed_previous" | "fuel_type" | "memo";
+/**
+ * 記録の入口（FuelRecord.source）。
+ * scan = 撮影・アルバムの読み取り結果の保存、manual = 手動入力、calc = 燃費計算ページから引き継いだ手動入力、
+ * import = Fuelio / FuelLens CSV の取り込み、restore = バックアップ JSON の復元（元の値が無いとき）。
+ *
+ * 値は今後ほかのブランチで増えることがある（"batch" / "pair" / "trial" など）。増やすときは RECORD_SOURCES に足す。
+ * 型を知らない値（古いアプリが新しいアプリのバックアップを読む場合など）は sanitizeRecordSource が null にする。
+ * DB の列は text（0005 の CHECK は null か 20 文字以下）なので、値の追加でマイグレーションは要らない
+ */
+export type RecordSource = "scan" | "manual" | "calc" | "import" | "restore";
+
+/** RecordSource の一覧 */
+export const RECORD_SOURCES: readonly RecordSource[] = ["scan", "manual", "calc", "import", "restore"];
+
+/** fuel_records に 0004 / 0005 で追加した列 */
+export type NewRecordField = "odometer" | "is_full" | "missed_previous" | "fuel_type" | "memo" | "source";
 
 /** 保存時に addRecord / updateRecord へ渡す形（フォームの toRecord の戻り値） */
 export type RecordInput = Omit<FuelRecord, "id" | "vehicle_id" | "created_at">;

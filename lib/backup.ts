@@ -16,7 +16,7 @@
  */
 
 import { isValidCalendarDate, localDateString, normalizeTimestamp } from "./dates";
-import { MEMO_MAX_LENGTH, isFuelType, sanitizeMemo } from "./fillChain";
+import { MEMO_MAX_LENGTH, isFuelType, sanitizeMemo, sanitizeRecordSource } from "./fillChain";
 import { isUnclassifiedRecord } from "./recordFilters";
 import type { FuelRecord, Vehicle, VehicleType } from "./types";
 
@@ -147,6 +147,7 @@ export function buildBackup(
       missed_previous: r.missed_previous === true,
       fuel_type: isFuelType(r.fuel_type) ? r.fuel_type : null,
       memo: sanitizeMemo(r.memo),
+      source: sanitizeRecordSource(r.source),
     });
   }
 
@@ -272,6 +273,9 @@ function parseRecord(r: unknown, index: number): BackupRecord | string {
     fuel_type: fuelType,
     // 空白だけのメモは null（buildBackup・保存時と同じ正規化）
     memo: sanitizeMemo(memo),
+    // 記録の入口は計測用の付随情報なので、無い・知らない値でもファイルは拒否しない（null）。
+    // 古いアプリが書いたバックアップ（キー無し）も、新しい値を足したアプリのバックアップも読める
+    source: sanitizeRecordSource(r.source),
   };
 }
 
@@ -518,6 +522,8 @@ export function planRestore(
       missed_previous: r.missed_previous,
       fuel_type: r.fuel_type,
       memo: r.memo,
+      // 元の入口を残す。無い・知らない値なら「復元」
+      source: sanitizeRecordSource(r.source) ?? "restore",
       backupVehicleId,
     });
   }

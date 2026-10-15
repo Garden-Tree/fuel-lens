@@ -2,7 +2,15 @@
  * 保存する列の検証とパッチの適用（純粋関数）。ローカル・クラウドのストア、キャッシュ、フックの楽観更新で共有する。
  */
 
-import { isDistanceMode, isFuelType, normalizeRecord, normalizeVehicle, sanitizeMemo, sanitizeOdometer } from "../fillChain";
+import {
+  isDistanceMode,
+  isFuelType,
+  normalizeRecord,
+  normalizeVehicle,
+  sanitizeMemo,
+  sanitizeOdometer,
+  sanitizeRecordSource,
+} from "../fillChain";
 import type { FuelRecord, Vehicle, VehicleSettings } from "../types";
 import type { RecordPatch, VehiclePatch } from "./types";
 
@@ -25,6 +33,7 @@ const RECORD_COLUMNS = [
   "missed_previous",
   "fuel_type",
   "memo",
+  "source",
 ] as const satisfies readonly (keyof FuelRecord)[];
 
 type RecordColumn = (typeof RECORD_COLUMNS)[number];
@@ -35,6 +44,7 @@ type RecordColumn = (typeof RECORD_COLUMNS)[number];
  *   （0004 適用前の DB でも、新しい列を指定しない保存は従来どおり成功する）
  * - is_full / missed_previous は真偽値以外なら捨てる（DB の既定値 true / false）
  * - odometer は 0 以上の有限数、fuel_type は 4 値、memo は 200 文字まで（空は null）に正規化する
+ * - source は既知の RecordSource 以外なら null（add / addMany だけが使う。更新では保存しない: pickUpdateColumns）
  */
 export function pickRecordColumns(input: Partial<FuelRecord>): Partial<Pick<FuelRecord, RecordColumn>> {
   const out: Partial<Record<RecordColumn, unknown>> = {};
@@ -55,6 +65,9 @@ export function pickRecordColumns(input: Partial<FuelRecord>): Partial<Pick<Fuel
       case "memo":
         out.memo = sanitizeMemo(value);
         break;
+      case "source":
+        out.source = sanitizeRecordSource(value);
+        break;
       default:
         out[key] = value;
     }
@@ -62,9 +75,19 @@ export function pickRecordColumns(input: Partial<FuelRecord>): Partial<Pick<Fuel
   return out as Partial<Pick<FuelRecord, RecordColumn>>;
 }
 
-/** 記録に変更を適用した新しい記録（既知の列だけ。新しい列は既定値で補完） */
+/**
+ * 更新（update）で保存する列。pickRecordColumns から source を除いたもの。
+ * source は記録を作った入口で、作成時に決まり更新では変えない（編集で消えない・書き換わらない）
+ */
+export function pickUpdateColumns(patch: Partial<FuelRecord>): Partial<Pick<FuelRecord, RecordColumn>> {
+  const columns = pickRecordColumns(patch);
+  delete columns.source;
+  return columns;
+}
+
+/** 記録に変更を適用した新しい記録（既知の列だけ。新しい列は既定値で補完。source は変えない） */
 export function applyRecordPatch<T extends FuelRecord>(record: T, patch: RecordPatch): T {
-  return normalizeRecord({ ...record, ...pickRecordColumns(patch) });
+  return normalizeRecord({ ...record, ...pickUpdateColumns(patch) });
 }
 
 /**

@@ -25,7 +25,15 @@
  */
 
 import { roundFuelEfficiency } from "./calculations";
-import type { DistanceMode, FuelRecord, FuelType, NewRecordField, Vehicle } from "./types";
+import {
+  RECORD_SOURCES,
+  type DistanceMode,
+  type FuelRecord,
+  type FuelType,
+  type NewRecordField,
+  type RecordSource,
+  type Vehicle,
+} from "./types";
 
 // ------------------------------------------------------------------
 // 燃料種別・距離の入力方式（型と FUEL_TYPES / FUEL_TYPE_LABELS は lib/types.ts）
@@ -39,6 +47,16 @@ export const DEFAULT_DISTANCE_MODE: DistanceMode = "trip";
 
 export function isDistanceMode(v: unknown): v is DistanceMode {
   return v === "trip" || v === "odometer";
+}
+
+/** 記録の入口（RecordSource）か。知らない値は false */
+export function isRecordSource(v: unknown): v is RecordSource {
+  return typeof v === "string" && (RECORD_SOURCES as readonly string[]).includes(v);
+}
+
+/** 記録の入口: 既知の値ならそのまま、それ以外（未知の文字列・文字列以外）は null。例外は投げない */
+export function sanitizeRecordSource(v: unknown): RecordSource | null {
+  return isRecordSource(v) ? v : null;
 }
 
 /** メモの最大文字数（DB の CHECK 制約 fuel_records_memo_length_check と同じ） */
@@ -69,6 +87,7 @@ export function sanitizeMemo(v: unknown): string | null {
  * - odometer: 0 以上の有限数以外は null
  * - fuel_type: 既知の 4 値以外は null
  * - memo: sanitizeMemo
+ * - source: 既知の RecordSource 以外は null（計測用。連鎖計算では読まない）
  * 古いローカルデータ・0004 適用前の DB の行・バックアップ version 1 の記録はこれで新しい形になる。
  */
 export function normalizeRecord<T extends FuelRecord>(r: T): T & Required<Pick<FuelRecord, NewRecordField>> {
@@ -79,6 +98,7 @@ export function normalizeRecord<T extends FuelRecord>(r: T): T & Required<Pick<F
     missed_previous: r.missed_previous === true,
     fuel_type: isFuelType(r.fuel_type) ? r.fuel_type : null,
     memo: sanitizeMemo(r.memo),
+    source: sanitizeRecordSource(r.source),
   };
 }
 

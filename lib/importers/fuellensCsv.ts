@@ -273,6 +273,7 @@ export function fuelLensCsvToBackup(
       missed_previous: r.missed_previous,
       fuel_type: r.fuel_type,
       memo: r.memo,
+      source: "import",
     })),
   };
 }

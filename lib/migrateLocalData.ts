@@ -3,7 +3,7 @@ import type { Vehicle, VehicleType } from "./types";
 import { isValidCalendarDate, localDateString } from "./dates";
 import { isUuid } from "./recordFilters";
 import { PERMISSION_DENIED_MESSAGE, isPermissionDeniedError } from "./supabase/errors";
-import { isFuelType, sanitizeMemo, sanitizeOdometer } from "./fillChain";
+import { isFuelType, sanitizeMemo, sanitizeOdometer, sanitizeRecordSource } from "./fillChain";
 import { CrossTabLockError, withCrossTabLock } from "./crossTabLock";
 import {
   DEFAULT_VEHICLE_NAME,
@@ -122,7 +122,7 @@ function toLocalVehicles(items: unknown[]): LocalVehicle[] {
 }
 
 /**
- * ローカル記録の 0004 の列（odometer / is_full / missed_previous / fuel_type / memo）のうち、
+ * ローカル記録の 0004 / 0005 の列（odometer / is_full / missed_previous / fuel_type / memo / source）のうち、
  * 有効な値を持つものだけを返す。無いキーは送らず、列の既定値（満タン・記録漏れなし・null）に任せる
  * （insert は defaultToNull: false）。
  */
@@ -135,6 +135,9 @@ function recordFillChainColumns(r: LocalRecordRaw): Record<string, unknown> {
   if (isFuelType(r.fuel_type)) out.fuel_type = r.fuel_type;
   const memo = sanitizeMemo(r.memo);
   if (memo !== null) out.memo = memo;
+  // 記録の入口（0005）。未設定・未知の値は送らず列の既定値（null）に任せる
+  const source = sanitizeRecordSource(r.source);
+  if (source !== null) out.source = source;
   return out;
 }
 

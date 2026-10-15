@@ -76,7 +76,7 @@ FuelLens の構成、データの流れ、主要なモジュールの役割を�
 | `scripts/generate-icons.mjs` | `app/icon.svg` から PWA アイコンを生成するスクリプト（`node scripts/generate-icons.mjs`） |
 | `tests/*.test.ts`、`tests/data/*.test.ts` | Vitest の単体テスト（`node` プロジェクト、`environment: "node"`。対象は `lib/` の関数。`tests/data/` はデータアダプタ層で、偽の Supabase クライアントと Map の Storage は `tests/data/fakeSupabase.ts`） |
 | `tests/components/*.test.tsx`、`tests/setup/` | Vitest のコンポーネントテスト（`dom` プロジェクト、jsdom + Testing Library。セットアップは `tests/setup/dom.ts`） |
-| `supabase/migrations/*.sql` | スキーマ・RLS・keepalive・給油の連鎖計算用の列（`0004_fill_chain.sql`）（冪等）。手順は [supabase/README.md](../supabase/README.md) |
+| `supabase/migrations/*.sql` | スキーマ・RLS・keepalive・給油の連鎖計算用の列（`0004_fill_chain.sql`）・記録の入口（`0005_record_source.sql`）（冪等）。手順は [supabase/README.md](../supabase/README.md) |
 | `docs/` | このドキュメント群。連鎖計算の仕様は [design-fill-chain.md](./design-fill-chain.md) |
 | `.github/workflows/` | `ci.yml`（CI）と `supabase-keepalive.yml`（keepalive の予備経路） |
 | `proxy.ts` | Clerk ミドルウェア。Next.js 16 ではファイル名が `proxy.ts`。全ルートを公開のままにしている |
@@ -155,13 +155,13 @@ useVehicles / useFuelRecords
 
 ## 3. データモデル
 
-定義は `supabase/migrations/0001_schema_and_rls.sql` にあり、連鎖計算用の列は `0004_fill_chain.sql` で追加しています。
+定義は `supabase/migrations/0001_schema_and_rls.sql` にあり、連鎖計算用の列は `0004_fill_chain.sql`、記録の入口（`source`）は `0005_record_source.sql` で追加しています。
 
 | テーブル | 主な列 | 備考 |
 |---|---|---|
 | `users` | `id`（text、Clerk userId）, `email`（null 可）, `updated_at` | Clerk ユーザーのミラー。`UserSync` が upsert する |
 | `vehicles` | `id`（uuid）, `user_id`, `name`, `type`（`car` / `bike`）, `created_at`, `distance_mode`, `default_fuel_type` | `type` は CHECK 制約。`distance_mode` / `default_fuel_type` は `0004` で追加（下表） |
-| `fuel_records` | `id`（uuid）, `user_id`, `vehicle_id`（uuid、null 可）, `date`, `total_distance`, `fuel_amount`, `total_cost`, `price_per_unit`, `fuel_efficiency`, `gas_station`, `created_at`, `odometer`, `is_full`, `missed_previous`, `fuel_type`, `memo` | `total_distance` は区間距離（トリップモードは入力値、オドメーターモードは導出値）。後ろの 5 列は `0004` で追加（下表） |
+| `fuel_records` | `id`（uuid）, `user_id`, `vehicle_id`（uuid、null 可）, `date`, `total_distance`, `fuel_amount`, `total_cost`, `price_per_unit`, `fuel_efficiency`, `gas_station`, `created_at`, `odometer`, `is_full`, `missed_previous`, `fuel_type`, `memo`, `source` | `total_distance` は区間距離（トリップモードは入力値、オドメーターモードは導出値）。`odometer` 〜 `memo` の 5 列は `0004`、`source` は `0005` で追加（下表） |
 | `keepalive` | `id`（常に 1）, `last_ping`, `source` | 自動停止対策のハートビート（`0002`）。アプリからは触らない |
 
 `0004` で追加した列（すべて冪等な `add column if not exists`。既存行は書き換えず、既定値として読まれる）:
@@ -173,12 +173,18 @@ useVehicles / useFuelRecords
 | `fuel_records` | `missed_previous` | boolean | `false` | この給油の前に記録し忘れた給油がある。`true` なら連鎖を切る |
 | `fuel_records` | `fuel_type` | text null | null | `regular` / `premium` / `diesel` / `other`。null は未指定 |
 | `fuel_records` | `memo` | text null | null | 自由記述（200 文字まで） |
+| `fuel_records` | `source` | text null | null | 記録の入口（`0005`）: `scan` / `manual` / `calc` / `import` / `restore`。null は不明（`0005` より前の記録）。利用状況の計測用で、**画面に出さず、計算（`applyFillChain`）にも使わない** |
 | `vehicles` | `distance_mode` | text | `'trip'` | `trip`（トリップメーターの区間距離を入力）/ `odometer`（積算距離を入力し差分で区間を出す） |
 | `vehicles` | `default_fuel_type` | text null | null | 新規記録の燃料種別の初期値 |
 
 - `fuel_type` / `memo` の長さ / `distance_mode` / `default_fuel_type` は CHECK 制約です（`NOT VALID` で追加するので、新規行・更新行のみ検証）。
   `0004` を適用する前の DB に新しい列を送ると PostgREST が「列が無い」エラー（PGRST204）を返すため、アプリより先に適用します。
   アプリは読み込んだ行の新しい列を既定値で補います（`normalizeRecord` / `normalizeVehicle`）。
+- `source` は `RecordSource`（`lib/types.ts`）。CHECK 制約は「null か 20 文字以下」だけなので、値を増やしても DB の変更は要りません。
+  アプリは知らない値を `sanitizeRecordSource` で null にします（読み込み・保存・バックアップの検証で共通）。**`0005` はアプリが `source` を送るリリースより前に適用します**。
+  `source` を設定する入口: スキャン確認シートの保存 = `scan`、手動入力 = `manual`、燃費計算ページから引き継いだ手動入力 = `calc`
+  （`useRecordEditing.startManualEntry(initial, { source })`）、Fuelio / FuelLens CSV の取り込み = `import`、バックアップの復元 = 元の値（無い・不明なら `restore`）。
+  `source` は作成時に決まり、更新（`pickUpdateColumns` / `applyRecordPatch`）では変えません（編集で消えない）。CSV 出力には含めません（利用者向けの出力で、取り込み時は `import` になるため）。
 - `total_distance`（オドメーターモード）と `fuel_efficiency` の保存値は信頼しません。読み取り時に必ず再計算して上書きします（[10 章](#10-給油の連鎖計算fill-chain)）。
 - 外部キーはすべて `ON DELETE CASCADE` です（`fuel_records.vehicle_id` → `vehicles`、`vehicles.user_id` / `fuel_records.user_id` → `users`）。
 - `fuel_efficiency` と `price_per_unit` は、保存時にクライアントが `calculateFuelMetrics` で計算した値です
@@ -435,7 +441,7 @@ localStorage から Supabase へのコピーは、`lib/migrateLocalData.ts` の 
 6. **記録のチャンク挿入**: 記録は 100 件ずつ挿入し、挿入済みのチャンクを退避データから取り除きます。
    `vehicle_id` は対応表で変換し、`default-car`・不明な ID・未設定はクラウドの既定車両に割り当てます。
    `date` / `created_at` は Postgres が受け付ける値に正規化します。
-   `0004` の列（記録の `odometer` / `is_full` / `missed_previous` / `fuel_type` / `memo`、車両の `distance_mode` / `default_fuel_type`）は、ローカルに有効な値があるものだけを送ります（無ければ DB の既定値）。
+   `0004` / `0005` の列（記録の `odometer` / `is_full` / `missed_previous` / `fuel_type` / `memo` / `source`、車両の `distance_mode` / `default_fuel_type`）は、ローカルに有効な値があるものだけを送ります（無ければ DB の既定値）。
 7. **失敗時**: 退避データを元キーへマージして戻し、次回の読み込みで再試行します。
    障害以外の失敗では、データがブラウザに残っていることを `error` で利用者に伝えます。
 
@@ -528,7 +534,8 @@ DB のデータは利用者自身の Supabase クライアント（RLS）で消�
 
 - JSON は `{ app: "fuel-lens", version: 2, exportedAt, vehicles, records }` の形式です（スキーマバージョン 2。読み込みは 1 も受け付ける）。
   `vehicles` は `id` / `name` / `type` / `created_at` / `distance_mode` / `default_fuel_type` で、**`user_id` は含めません**。`records` は `FuelRecord` の列
-  （`id` / `date` / `total_distance` / `fuel_amount` / `gas_station` / `price_per_unit` / `total_cost` / `fuel_efficiency` / `vehicle_id` / `created_at` / `odometer` / `is_full` / `missed_previous` / `fuel_type` / `memo`）です。
+  （`id` / `date` / `total_distance` / `fuel_amount` / `gas_station` / `price_per_unit` / `total_cost` / `fuel_efficiency` / `vehicle_id` / `created_at` / `odometer` / `is_full` / `missed_previous` / `fuel_type` / `memo` / `source`）です。
+  `source` は任意の付随情報で、バックアップのバージョンは上げません（無い・知らない値は null として読み、ファイルは拒否しません。古いアプリは無視します）。
   version 1 との違いは、車両の `distance_mode` / `default_fuel_type` と、記録の `odometer` / `is_full` / `missed_previous` / `fuel_type` / `memo` が増えたことです。
 - 書き出し時に `buildBackup` が値を正規化します（不正な数値は null、不正な日付は `created_at` の日付か書き出し日、id の重複は先勝ち）。
   古いローカルデータの欠損で、自分のバックアップが復元できなくなるのを防ぐためです。記録は日付の昇順に並べます。
