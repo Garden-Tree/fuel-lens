@@ -188,6 +188,7 @@ export function createLocalStores(storage?: Storage): LocalStores {
           missed_previous: item.missed_previous,
           fuel_type: item.fuel_type,
           memo: item.memo,
+          source: item.source,
         })
       );
       try {

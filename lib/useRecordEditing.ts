@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useState } from "react";
-import type { FuelRecord, RecordInput } from "./types";
+import type { FuelRecord, RecordInput, RecordSource } from "./types";
 import { todayLocalISO } from "./dates";
 import { findDuplicateRecord } from "./recordDraft";
 import type { UseRecordFormReturn } from "./useRecordForm";
@@ -44,9 +44,13 @@ export type RecordEditing = {
   startEditing: (record: FuelRecord) => void;
   /**
    * 手動入力（今日の日付の新規記録）を始める。
-   * initial で区間距離・給油量・支払総額の初期値を入れられる（燃費計算ページからの事前入力。lib/manualPrefill.ts の prefillToRecord）
+   * initial で区間距離・給油量・支払総額の初期値を入れられる（燃費計算ページからの事前入力。lib/manualPrefill.ts の prefillToRecord）。
+   * options.source は保存する記録の入口（既定 "manual"。燃費計算ページから引き継いだときは "calc"）。画面の挙動には影響しない
    */
-  startManualEntry: (initial?: Partial<Pick<FuelRecord, "total_distance" | "fuel_amount" | "total_cost">>) => void;
+  startManualEntry: (
+    initial?: Partial<Pick<FuelRecord, "total_distance" | "fuel_amount" | "total_cost">>,
+    options?: { source?: RecordSource }
+  ) => void;
   /** フォームを閉じる */
   cancel: () => void;
   /** 保存する。手動入力は重複確認付きで追加、編集は更新。成功したらフォームを閉じて toast */
@@ -58,7 +62,8 @@ export type RecordEditing = {
   addWithDuplicateCheck: (record: RecordInput) => Promise<FuelRecord | null>;
 };
 
-type Mode = { kind: "closed" } | { kind: "edit"; id: string } | { kind: "manual" };
+/** manual は手動入力。source は保存時に記録へ付ける入口（計測用。更新では付けない） */
+type Mode = { kind: "closed" } | { kind: "edit"; id: string } | { kind: "manual"; source: RecordSource };
 
 const CLOSED: Mode = { kind: "closed" };
 
@@ -105,9 +110,12 @@ export function useRecordEditing({
     setMode({ kind: "edit", id: record.id });
   };
 
-  const startManualEntry = (initial?: Partial<Pick<FuelRecord, "total_distance" | "fuel_amount" | "total_cost">>) => {
+  const startManualEntry = (
+    initial?: Partial<Pick<FuelRecord, "total_distance" | "fuel_amount" | "total_cost">>,
+    options: { source?: RecordSource } = {}
+  ) => {
     form.reset({ ...initial, date: todayLocalISO() }, { vehicle: selectedVehicle, records });
-    setMode({ kind: "manual" });
+    setMode({ kind: "manual", source: options.source ?? "manual" });
   };
 
   const cancel = () => setMode(CLOSED);
@@ -120,7 +128,7 @@ export function useRecordEditing({
     setSaving(true);
     try {
       if (mode.kind === "manual") {
-        const added = await addWithDuplicateCheck(record);
+        const added = await addWithDuplicateCheck({ ...record, source: mode.source });
         if (!added) return; // 重複確認でキャンセル。フォームは開いたまま
         onAdded?.(added);
         toast("給油記録を保存しました", { type: "success" });

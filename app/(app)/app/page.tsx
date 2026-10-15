@@ -122,7 +122,8 @@ export default function Home() {
     }
     if (prefill) {
       const { record, distanceOmitted } = prefillToRecord(prefill, distanceMode);
-      editing.startManualEntry(record);
+      // 燃費計算ページからの引き継ぎは入口を "calc" として記録する（計測用。画面・計算には影響しない）
+      editing.startManualEntry(record, { source: "calc" });
       toast(prefillAppliedMessage(selectedVehicle?.name, distanceOmitted), { type: "info" });
     } else {
       editing.startManualEntry();
@@ -133,7 +134,7 @@ export default function Home() {
   // 確認シートの「保存」（重複確認でキャンセルならシートは開いたまま。失敗は throw してシートを開いたままにする）
   const handleScanSave = async (record: RecordInput) => {
     try {
-      const added = await editing.addWithDuplicateCheck(record);
+      const added = await editing.addWithDuplicateCheck({ ...record, source: "scan" });
       if (!added) return;
       setActive({ id: added.id, fromScan: true });
       scan.discardResult();

@@ -576,3 +576,29 @@ describe("migrateLocalData — fill chain columns (0004)", () => {
     expect(op(recordInsert, "insert")!.args[1]).toEqual({ defaultToNull: false });
   });
 });
+
+describe("migrateLocalData — record source (0005)", () => {
+  it("sends source only when it is a known value", async () => {
+    const base = { vehicle_id: LOCAL_DEFAULT_VEHICLE_ID, fuel_amount: 10 };
+    localStorageStub.setItem(
+      LOCAL_RECORDS_KEY,
+      JSON.stringify([
+        { ...base, date: "2026-09-01", source: "scan", created_at: "2026-09-01T10:00:00.000Z" },
+        { ...base, date: "2026-09-02", source: "calc", created_at: "2026-09-02T10:00:00.000Z" },
+        // 旧データ（source なし）・未知の値・文字列以外: キーを送らず列の既定値（null）に任せる
+        { ...base, date: "2026-09-03", created_at: "2026-09-03T10:00:00.000Z" },
+        { ...base, date: "2026-09-04", source: "batch", created_at: "2026-09-04T10:00:00.000Z" },
+        { ...base, date: "2026-09-05", source: 7, created_at: "2026-09-05T10:00:00.000Z" },
+      ])
+    );
+
+    const { handler, insertedRecords } = cloudEmptyHandler();
+    const { client, queries } = makeSupabase(handler);
+    await migrateLocalData(client, nextUser());
+
+    expect(insertedRecords.map((r) => r.source)).toEqual(["scan", "calc", undefined, undefined, undefined]);
+    for (const i of [2, 3, 4]) expect(insertedRecords[i]).not.toHaveProperty("source");
+    const recordInsert = queries.find((q) => q.table === "fuel_records")!;
+    expect(op(recordInsert, "insert")!.args[1]).toEqual({ defaultToNull: false });
+  });
+});

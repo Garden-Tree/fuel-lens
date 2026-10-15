@@ -174,6 +174,7 @@ describe("parseBackup", () => {
       missed_previous: false,
       fuel_type: null,
       memo: null,
+      source: null,
     });
   });
 

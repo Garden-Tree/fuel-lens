@@ -15,7 +15,7 @@ import { normalizeTimestamp } from "../dates";
 import { isDistanceMode, isFuelType, normalizeRecord, normalizeVehicle } from "../fillChain";
 import { isUuid } from "../recordFilters";
 import type { DistanceMode, FuelRecord, FuelType, Vehicle, VehicleType } from "../types";
-import { pickRecordColumns, sanitizeVehicleSettings, vehiclePatchColumns } from "./columns";
+import { pickRecordColumns, pickUpdateColumns, sanitizeVehicleSettings, vehiclePatchColumns } from "./columns";
 import { DEFAULT_VEHICLE_NAME } from "./localStore";
 import {
   DataError,
@@ -250,7 +250,7 @@ export function createCloudStores(supabase: SupabaseClient, userId: string): Clo
         // insert(配列) は全行のキーの和集合を送るため、created_at は全行に必ず入れる。
         // Postgres が拒否・誤読しない ISO 文字列に正規化し、無効なら現在時刻にする
         created_at: normalizeTimestamp(item.created_at) ?? nowIso,
-        // 0004 の列は値があるものだけ送る。キーの無い行には defaultToNull: false により列の既定値
+        // 0004 / 0005 の列は値があるものだけ送る。キーの無い行には defaultToNull: false により列の既定値
         // （満タン・記録漏れなし・null）が入る
         ...pickRecordColumns({
           odometer: item.odometer,
@@ -258,6 +258,7 @@ export function createCloudStores(supabase: SupabaseClient, userId: string): Clo
           missed_previous: item.missed_previous,
           fuel_type: item.fuel_type,
           memo: item.memo,
+          source: item.source,
         }),
       }));
 
@@ -277,7 +278,7 @@ export function createCloudStores(supabase: SupabaseClient, userId: string): Clo
     },
 
     async update(id, patch) {
-      const columns = pickRecordColumns(patch);
+      const columns = pickUpdateColumns(patch);
       if (Object.keys(columns).length === 0) return;
       const { error, status } = await supabase.from("fuel_records").update(columns).eq("id", id);
       if (error) throw withStatus(error, status);

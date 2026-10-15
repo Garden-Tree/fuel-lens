@@ -33,11 +33,11 @@ import { hashString, isBlankRow, parseCsvNumber, parseCsvRows, parseFlexibleDate
 export { hashString, isBlankRow, parseCsvNumber, parseCsvRows, parseFlexibleDate, type ParsedDate } from "./csvParse";
 
 /**
- * 取り込む記録。0004 で追加した列は必ず入れる。
+ * 取り込む記録。0004 で追加した列は必ず入れる（source は fuelioToBackup が "import" にする）。
  * total_distance / fuel_efficiency は常に null（applyFillChain が積算距離から計算する）。
  */
 export type ImportedRecord = Omit<FuelRecord, "vehicle_id" | "created_at" | NewRecordField> &
-  Required<Pick<FuelRecord, NewRecordField>>;
+  Required<Pick<FuelRecord, Exclude<NewRecordField, "source">>>;
 
 export type FuelioImportStats = {
   /** 取り込み対象の記録数 */
@@ -403,6 +403,7 @@ export function fuelioToBackup(
       missed_previous: r.missed_previous,
       fuel_type: r.fuel_type,
       memo: r.memo,
+      source: "import",
     })),
   };
 }
