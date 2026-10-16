@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { createElement, type ReactNode } from "react";
-import { AppFrame } from "@/components/AppShell";
+import { AppShell } from "@/components/AppShell";
 import { SCAN_BUTTON_LABEL } from "@/components/AppNav";
 import { RegisterScanActions, type ScanActionHandlers } from "@/components/ScanActions";
 import ScanReadyPrompt from "@/app/(app)/app/_components/ScanReadyPrompt";
@@ -33,10 +33,10 @@ function handlers(overrides: Partial<ScanActionHandlers> = {}): ScanActionHandle
 
 function Page({ h, registered = true }: { h: ScanActionHandlers; registered?: boolean }) {
   return (
-    <AppFrame>
+    <AppShell>
       {registered && <RegisterScanActions {...h} />}
       <p>本文</p>
-    </AppFrame>
+    </AppShell>
   );
 }
 

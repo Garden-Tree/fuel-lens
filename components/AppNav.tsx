@@ -10,9 +10,9 @@ import { BrandMark } from "./ui/BrandMark";
 /**
  * アプリ画面（/app・/history・/stats・/settings）のナビゲーション。ランディング（/）では使わない。
  * - スマホ（< lg）: 画面下のタブバー（ホーム / 履歴 / 中央のスキャンボタン / 統計 / 設定）。
- *   position: fixed ではなく AppFrame の縦 flex の最後の子（本文は上の器の中だけでスクロールする）
+ *   position: fixed ではなく AppShell の縦 flex の最後の子（本文は上の器の中だけでスクロールする）
  * - PC（≥ lg）: 左のサイドバー（ロゴ・4 項目・「スキャンして記録」・ログイン / ユーザーボタン）
- * スキャンボタンは ScanActionMenu（撮影する / アルバムから選ぶ / 手動で入力）を開く（開閉の状態は AppFrame が持つ）。
+ * スキャンボタンは ScanActionMenu（撮影する / アルバムから選ぶ / 手動で入力）を開く（開閉の状態は AppShell が持つ）。
  */
 
 export type AppNavItem = { href: string; label: string; icon: LucideIcon };
@@ -26,17 +26,35 @@ export const APP_NAV_ITEMS: readonly AppNavItem[] = [
 
 export const SCAN_BUTTON_LABEL = "レシートとメーターを撮影";
 
+/**
+ * ナビの 4 項目は画面全体を先読みする（prefetch={true}）。アプリ画面は動的なので、既定では loading.tsx の境界までしか先読みされず、
+ * ページの JavaScript はタップしてから読み込まれる（遅い回線では 1 秒以上）。ページはクライアントコンポーネントで、
+ * サーバーの描画結果にユーザーのデータは含まれない（データはブラウザがストアから読む）ので、全体を先読みしてよい。
+ * 先読みの結果は next.config.ts の staleTimes.static の間使い回され、ログイン状態が変わったら UserSync が router.refresh() で捨てる。
+ */
+const NAV_PREFETCH = true;
+
 /** いまの画面がナビ項目に当たるか */
 export function isNavItemActive(pathname: string | null, href: string): boolean {
   if (!pathname) return false;
   return pathname === href || pathname.startsWith(`${href}/`);
 }
 
-function TabLink({ item, active }: { item: AppNavItem; active: boolean }) {
+/** ナビの選択表示（AppShell の useOptimisticNavPath）。タップした項目は遷移の完了前から選択中になる */
+export type AppNavProps = {
+  /** 選択中として表示するパス（タップ直後はタップした項目の href、それ以外は pathname） */
+  activePath: string | null;
+  /** 項目のクリックでクライアント遷移が始まるときに呼ぶ（Link の onNavigate） */
+  onNavigate: (href: string) => void;
+};
+
+function TabLink({ item, active, onNavigate }: { item: AppNavItem; active: boolean; onNavigate: (href: string) => void }) {
   const Icon = item.icon;
   return (
     <Link
       href={item.href}
+      prefetch={NAV_PREFETCH}
+      onNavigate={() => onNavigate(item.href)}
       aria-current={active ? "page" : undefined}
       className={`flex h-full min-w-0 flex-col items-center justify-center gap-0.5 rounded-xl text-[11px] transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent ${
         active ? "font-bold text-accent" : "text-sub hover:text-ink"
@@ -49,12 +67,11 @@ function TabLink({ item, active }: { item: AppNavItem; active: boolean }) {
 }
 
 /**
- * スマホの下部タブバー（lg 未満で表示）。AppFrame の縦 flex の下端に置く通常の要素（fixed にしない。理由は AppFrame）。
+ * スマホの下部タブバー（lg 未満で表示）。AppShell の縦 flex の下端に置く通常の要素（fixed にしない。理由は AppShell）。
  * 本文がこの下に潜り込まないので背景はぼかさず不透明にする。中央のスキャンボタンは上に 22px はみ出すため、
  * relative + z-40 で本文の器より手前に描き、overflow は visible のままにする。
  */
-export function AppTabBar({ onScan }: { onScan: () => void }) {
-  const pathname = usePathname();
+export function AppTabBar({ activePath, onNavigate, onScan }: AppNavProps & { onScan: () => void }) {
   const [home, history, stats, settings] = APP_NAV_ITEMS;
   return (
     <nav
@@ -64,8 +81,8 @@ export function AppTabBar({ onScan }: { onScan: () => void }) {
       className="relative z-40 shrink-0 border-t border-line bg-ground pb-[var(--tabbar-safe-bottom)] lg:hidden"
     >
       <div className="mx-auto grid h-14 max-w-lg grid-cols-5 items-stretch px-2">
-        <TabLink item={home} active={isNavItemActive(pathname, home.href)} />
-        <TabLink item={history} active={isNavItemActive(pathname, history.href)} />
+        <TabLink item={home} active={isNavItemActive(activePath, home.href)} onNavigate={onNavigate} />
+        <TabLink item={history} active={isNavItemActive(activePath, history.href)} onNavigate={onNavigate} />
         <div className="flex items-start justify-center">
           <button
             type="button"
@@ -77,21 +94,26 @@ export function AppTabBar({ onScan }: { onScan: () => void }) {
             <Camera className="h-[26px] w-[26px]" strokeWidth={2} aria-hidden="true" />
           </button>
         </div>
-        <TabLink item={stats} active={isNavItemActive(pathname, stats.href)} />
-        <TabLink item={settings} active={isNavItemActive(pathname, settings.href)} />
+        <TabLink item={stats} active={isNavItemActive(activePath, stats.href)} onNavigate={onNavigate} />
+        <TabLink item={settings} active={isNavItemActive(activePath, settings.href)} onNavigate={onNavigate} />
       </div>
     </nav>
   );
 }
 
 /** PC の左サイドバー（lg 以上で表示） */
-export function AppSidebar({ onScan }: { onScan: (anchor: ScanMenuAnchor) => void }) {
+export function AppSidebar({
+  activePath,
+  onNavigate,
+  onScan,
+}: AppNavProps & { onScan: (anchor: ScanMenuAnchor) => void }) {
   const pathname = usePathname();
   const redirectUrl = pathname || "/app";
   return (
     <aside className="sticky top-0 hidden h-dvh w-60 shrink-0 flex-col border-r border-line bg-ground px-3 py-6 lg:flex">
       <Link
         href="/app"
+        onNavigate={() => onNavigate("/app")}
         aria-label="FuelLens ホーム"
         className="mx-1 flex min-h-11 items-center rounded-xl px-2 text-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
       >
@@ -101,11 +123,13 @@ export function AppSidebar({ onScan }: { onScan: (anchor: ScanMenuAnchor) => voi
       <nav aria-label="メイン" className="mt-6 flex flex-col gap-1">
         {APP_NAV_ITEMS.map(item => {
           const Icon = item.icon;
-          const active = isNavItemActive(pathname, item.href);
+          const active = isNavItemActive(activePath, item.href);
           return (
             <Link
               key={item.href}
               href={item.href}
+              prefetch={NAV_PREFETCH}
+              onNavigate={() => onNavigate(item.href)}
               aria-current={active ? "page" : undefined}
               className={`flex min-h-11 items-center gap-3 rounded-xl px-3 text-[15px] transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-accent ${
                 active ? "bg-surface-2 font-bold text-accent" : "text-sub hover:bg-surface hover:text-ink"

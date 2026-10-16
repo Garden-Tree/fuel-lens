@@ -8,6 +8,7 @@ import type { TrialState } from "@/lib/trial";
 import type { Vehicle } from "@/lib/types";
 import type { VehicleScope } from "@/lib/useVehicleScope";
 import { renderWithProviders } from "../setup/render";
+import { AppShell } from "@/components/AppShell";
 
 // 未ログイン（tests/setup/dom.ts の Clerk のモック）。記録はこのブラウザ（ローカル）の想定で、まだ無い
 
@@ -55,7 +56,9 @@ vi.mock("@/lib/scan/analyzeClient", async (importOriginal) => {
 function renderHome(initial: TrialState) {
   return renderWithProviders(
     <TrialProvider initial={initial}>
-      <Home />
+      <AppShell>
+        <Home />
+      </AppShell>
     </TrialProvider>
   );
 }

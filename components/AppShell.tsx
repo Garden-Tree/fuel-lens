@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { usePathname } from "next/navigation";
 import { SignedIn, SignedOut, SignInButton, UserButton } from "@clerk/nextjs";
 import { AppSidebar, AppTabBar } from "./AppNav";
@@ -10,19 +10,15 @@ import { BrandMark } from "./ui/BrandMark";
 
 /**
  * アプリ画面（/app・/history・/stats・/settings）の共通の枠と部品（docs/design-system.md「ナビゲーション」）。
- * - AppFrame: ナビゲーション（スマホは下部タブバー、PC は左サイドバー）と本文の器
+ * - AppShell: ナビゲーション（スマホは下部タブバー、PC は左サイドバー）と本文の器。app/(app)/layout.tsx が描画する
+ * - AppPage: 各ページ（と loading.tsx）の最上位。ページごとの本文の幅
  * - PageHeader: 見出しと右側の車両チップ
  * - HookErrorLine / ReadOnlyCaption: 読み込みエラーの行・閲覧専用の注記
  */
 
-export type AppFrameProps = {
-  /** 本文の最大幅。default = 1040px、narrow = 768px（設定画面など 1 カラムの画面） */
-  width?: "default" | "narrow";
-  children: ReactNode;
-};
-
 /**
- * 画面の枠。各ページの最上位で `<AppFrame>{ページの中身}</AppFrame>` のように使う（`<main>` は AppFrame が描画する）。
+ * アプリ画面の枠（シェル）。`app/(app)/layout.tsx` が 1 回だけ描画し、画面の切り替え（/app ⇔ /history など）では作り直さない。
+ * 切り替わるのは `<main>` の中の各ページ（とその loading.tsx）だけで、サイドバー・タブバー・スキャンメニュー・本文の器は保たれる。
  *
  * スマホ（< lg）は「アプリシェル」: 枠全体を画面に固定（fixed inset-0 の縦 flex）し、文書（html/body）はスクロールさせない。
  * 本文の器（`data-app-scroll`）だけがスクロールし、下部タブバーは position: fixed ではなく flex の最後の子として下端に置く。
@@ -33,11 +29,14 @@ export type AppFrameProps = {
  * 本文の器は文書ではないので、画面の切り替え（pathname の変化）で先頭に戻す（`#record-<id>` などのハッシュ付きは各画面に任せる）。
  * スキャンメニューの開閉もここで持つ。本文とスキャンメニューを ScanActionsProvider で包む
  * （/app のホームが撮影・アルバム・手動入力の処理を登録し、メニューがタップの中で直接呼ぶ。components/ScanActions.tsx）。
+ *
+ * ナビの項目をタップしたら、遷移（サーバーへの往復）の完了を待たずにその項目を選択中として表示する（useOptimisticNavPath）。
  */
-export function AppFrame({ width = "default", children }: AppFrameProps) {
+export function AppShell({ children }: { children: ReactNode }) {
   // null: 閉じている。anchor: null はスマホのボトムシート、値ありは PC のポップオーバー
   const [menu, setMenu] = useState<{ anchor: ScanMenuAnchor | null } | null>(null);
   const pathname = usePathname();
+  const { activePath, onNavigate } = useOptimisticNavPath(pathname);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -49,26 +48,59 @@ export function AppFrame({ width = "default", children }: AppFrameProps) {
   return (
     <ScanActionsProvider>
       <div className="fixed inset-0 flex flex-col overflow-hidden bg-ground text-ink lg:static lg:min-h-dvh lg:flex-row lg:overflow-visible">
-        <AppSidebar onScan={anchor => setMenu({ anchor })} />
+        <AppSidebar activePath={activePath} onNavigate={onNavigate} onScan={anchor => setMenu({ anchor })} />
         <div
           ref={scrollRef}
           // lib/useBodyScrollLock.ts がモーダル表示中にこの器のスクロールも止める
           data-app-scroll=""
           className="min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-contain lg:min-h-0 lg:overflow-visible"
         >
-          <main
-            className={`mx-auto w-full min-w-0 px-4 pb-8 lg:px-8 lg:pt-8 lg:pb-12 ${
-              width === "narrow" ? "max-w-3xl" : "max-w-[1040px]"
-            }`}
-          >
-            {children}
-          </main>
+          <main className="mx-auto w-full min-w-0 max-w-[1040px] px-4 pb-8 lg:px-8 lg:pt-8 lg:pb-12">{children}</main>
         </div>
-        <AppTabBar onScan={() => setMenu({ anchor: null })} />
+        <AppTabBar activePath={activePath} onNavigate={onNavigate} onScan={() => setMenu({ anchor: null })} />
         <ScanActionMenu open={menu !== null} anchor={menu?.anchor ?? null} onClose={() => setMenu(null)} />
       </div>
     </ScanActionsProvider>
   );
+}
+
+/**
+ * ナビの選択表示に使うパス。項目をタップした（Link の onNavigate）時点で、その項目を選択中として返す（楽観的な表示）。
+ * 実際の pathname が変わったら（遷移の完了・別の経路での遷移）楽観的な値を捨て、pathname に従う。
+ */
+export function useOptimisticNavPath(pathname: string | null): {
+  activePath: string | null;
+  onNavigate: (href: string) => void;
+} {
+  const [pending, setPending] = useState<string | null>(null);
+  const [seenPath, setSeenPath] = useState(pathname);
+  if (seenPath !== pathname) {
+    // 描画中に前回の pathname と比べて捨てる（React の「前回の描画の値で state を調整する」パターン）
+    setSeenPath(pathname);
+    setPending(null);
+  }
+  const onNavigate = useCallback(
+    (href: string) => {
+      setPending(href === pathname ? null : href);
+    },
+    [pathname]
+  );
+  return { activePath: pending ?? pathname, onNavigate };
+}
+
+export type AppPageProps = {
+  /** 本文の最大幅。default = 1040px（シェルの `<main>` のまま）、narrow = 768px（設定画面など 1 カラムの画面） */
+  width?: "default" | "narrow";
+  children: ReactNode;
+};
+
+/**
+ * ページの中身の器（各ページと loading.tsx の最上位）。シェル（AppShell）はレイアウトにあるので、ページごとに違う幅だけをここで決める。
+ * narrow は従来の `max-w-3xl`（768px）の `<main>` と同じ本文幅（左右の余白を除いて 736px、PC は 704px）にする。
+ */
+export function AppPage({ width = "default", children }: AppPageProps) {
+  if (width === "default") return <>{children}</>;
+  return <div className="mx-auto w-full min-w-0 max-w-[736px] lg:max-w-[704px]">{children}</div>;
 }
 
 export type PageHeaderProps = {
@@ -126,6 +158,15 @@ export function PageHeader({ title, brand = false, rightSlot }: PageHeaderProps)
         </div>
       </div>
     </header>
+  );
+}
+
+/** 車両チップの読み込み中の形（VehicleSelector の loading と loading.tsx で共有） */
+export function VehicleChipSkeleton({ className = "" }: { className?: string }) {
+  return (
+    <div className={`flex min-w-0 justify-end ${className}`}>
+      <div className="h-10 w-28 rounded-xl border border-border bg-surface animate-pulse" aria-hidden="true" />
+    </div>
   );
 }
 

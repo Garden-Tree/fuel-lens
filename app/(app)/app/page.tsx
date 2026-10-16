@@ -5,7 +5,7 @@ import type { RecordInput } from "@/lib/types";
 import ScanReviewSheet from "@/components/ScanReviewSheet";
 import VehicleSelector from "@/components/VehicleSelector";
 import { useToast } from "@/components/Toast";
-import { AppFrame, HookErrorLine, PageHeader, ReadOnlyCaption } from "@/components/AppShell";
+import { AppPage, HookErrorLine, PageHeader, ReadOnlyCaption } from "@/components/AppShell";
 import { Section } from "@/components/ui";
 import { useVehicleScope } from "@/lib/useVehicleScope";
 import { useResolvedAuth } from "@/lib/data/initialAuthContext";
@@ -62,7 +62,7 @@ const subscribeNothing = () => () => {};
  *   「保存して次へ / この写真をスキップ / 残りを中止」で進める（BatchScanCard・ScanReviewSheet の batch）。
  *   ちょうど 2 枚のときは TwoImageChoiceDialog で「レシートとメーターの組」か「2 件の一括読み取り」かを選ぶ
  * - useRecordEditing: 手動入力・最新記録の編集（重複確認付きの保存）
- * - RegisterScanActions: スキャンメニュー（AppFrame）に撮影・アルバム・2 枚で撮る・手動入力の処理を登録する（メニューがタップの中で直接呼ぶ）
+ * - RegisterScanActions: スキャンメニュー（AppShell）に撮影・アルバム・2 枚で撮る・手動入力の処理を登録する（メニューがタップの中で直接呼ぶ）
  * - ShortcutActionHandler（Suspense の内側）: `?action=` の PWA ショートカット・他の画面のスキャンメニュー・共有。
  *   撮影・アルバムで来たときは「撮影の準備ができました」の案内（ScanReadyPrompt）も出す（遷移後はファイル選択が開かないことがあるため）
  *
@@ -303,7 +303,7 @@ export default function Home() {
   );
 
   return (
-    <AppFrame>
+    <AppPage>
       <RegisterScanActions
         openCamera={openCamera}
         openAlbum={openAlbum}
@@ -533,6 +533,6 @@ export default function Home() {
           }}
         />
       )}
-    </AppFrame>
+    </AppPage>
   );
 }

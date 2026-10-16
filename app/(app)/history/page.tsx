@@ -7,7 +7,8 @@ import type { FuelRecord } from "@/lib/types";
 import EditFuelRecordForm from "@/components/EditFuelRecordForm";
 import { useVehicleScope } from "@/lib/useVehicleScope";
 import VehicleSelector from "@/components/VehicleSelector";
-import { AppFrame, HookErrorLine, PageHeader, ReadOnlyCaption } from "@/components/AppShell";
+import HistoryListSkeleton from "./_components/HistoryListSkeleton";
+import { AppPage, HookErrorLine, PageHeader, ReadOnlyCaption } from "@/components/AppShell";
 import { useToast } from "@/components/Toast";
 import { useRecordForm } from "@/lib/useRecordForm";
 import { useRecordEditing } from "@/lib/useRecordEditing";
@@ -45,35 +46,6 @@ function GroupHeader({ group }: { group: Pick<MonthGroup<FuelRecord>, "label" | 
       <span>
         <span className="num">{group.count}</span>回・<span className="num">¥{group.totalCost.toLocaleString("ja-JP")}</span>
       </span>
-    </div>
-  );
-}
-
-/** 読み込み中の一覧（月の見出しと行の形だけ） */
-function ListSkeleton() {
-  return (
-    <div className="flex flex-col gap-3" aria-hidden="true">
-      {[3, 2].map((rows, g) => (
-        <div key={g} className="flex flex-col gap-1.5">
-          <div className="mx-4 mt-1.5 h-4 w-20 animate-pulse rounded bg-surface" />
-          <div className="divide-y divide-line rounded-2xl bg-surface">
-            {Array.from({ length: rows }, (_, i) => (
-              <div key={i} className="flex min-h-[60px] items-center gap-3 px-4 py-2.5">
-                <div className="h-9 w-8 animate-pulse rounded bg-surface-2" />
-                <div className="flex flex-1 flex-col gap-1.5">
-                  <div className="h-4 w-2/3 max-w-56 animate-pulse rounded bg-surface-2" />
-                  <div className="h-3 w-1/2 max-w-40 animate-pulse rounded bg-surface-2" />
-                </div>
-                <div className="flex flex-col items-end gap-1.5">
-                  <div className="h-5 w-12 animate-pulse rounded bg-surface-2" />
-                  <div className="h-3 w-14 animate-pulse rounded bg-surface-2" />
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      ))}
-      <span className="sr-only">読み込み中…</span>
     </div>
   );
 }
@@ -340,7 +312,7 @@ export default function HistoryPage() {
   const moveTargets = vehicles.filter(v => v.id !== selectedVehicleId);
 
   return (
-    <AppFrame>
+    <AppPage>
       {/* ヘッダーと車両チップ（車両の読み込み中はスケルトン） */}
       <PageHeader
         title="給油履歴"
@@ -365,7 +337,7 @@ export default function HistoryPage() {
       {isLoading ? (
         <>
           <HistoryToolbarSkeleton />
-          <ListSkeleton />
+          <HistoryListSkeleton />
         </>
       ) : (
         <>
@@ -436,6 +408,6 @@ export default function HistoryPage() {
           )}
         </>
       )}
-    </AppFrame>
+    </AppPage>
   );
 }

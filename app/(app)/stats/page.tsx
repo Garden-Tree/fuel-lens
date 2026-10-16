@@ -6,7 +6,7 @@ import { TrendingUp } from "lucide-react";
 import { useVehicleScope } from "@/lib/useVehicleScope";
 import { type Period, buildStatsModel } from "@/lib/stats";
 import VehicleSelector from "@/components/VehicleSelector";
-import { AppFrame, HookErrorLine, PageHeader, ReadOnlyCaption } from "@/components/AppShell";
+import { AppPage, HookErrorLine, PageHeader, ReadOnlyCaption } from "@/components/AppShell";
 import PeriodFilter from "./_components/PeriodFilter";
 import { CostSummary, EfficiencyHero } from "./_components/SummaryCards";
 import EfficiencyChart from "./_components/EfficiencyChart";
@@ -41,7 +41,7 @@ export default function StatsPage() {
   // 記録の再読み込み（車両追加・切替など）のたびに VehicleSelector が再マウントされると、
   // 内部の「車両の管理」モーダルが閉じてしまうため。スケルトン切替は下のコンテンツ部分だけで行う。
   return (
-    <AppFrame>
+    <AppPage>
       <div className="w-full">
         <PageHeader
           title="統計"
@@ -101,6 +101,6 @@ export default function StatsPage() {
           </div>
         )}
       </div>
-    </AppFrame>
+    </AppPage>
   );
 }

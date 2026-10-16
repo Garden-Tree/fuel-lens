@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { screen, waitFor } from "@testing-library/react";
 import type { Vehicle } from "@/lib/types";
 import type { VehicleScope } from "@/lib/useVehicleScope";
-import { renderWithProviders } from "../setup/render";
+import { renderInAppShell } from "../setup/render";
 
 const scopeMock = vi.hoisted(() => ({ useVehicleScope: vi.fn() }));
 vi.mock("@/lib/useVehicleScope", () => scopeMock);
@@ -30,7 +30,7 @@ describe("SettingsPage", () => {
 
   it("一覧を読まない設定でフックを呼び、見出しとホームへのナビゲーションを表示する", () => {
     scopeMock.useVehicleScope.mockReturnValue(scope());
-    renderWithProviders(<SettingsPage />);
+    renderInAppShell(<SettingsPage />);
     expect(scopeMock.useVehicleScope).toHaveBeenCalledWith({ list: false });
     expect(screen.getByRole("heading", { level: 1, name: "設定" })).toBeInTheDocument();
     // 戻るリンクの代わりにタブバー / サイドバーの「ホーム」
@@ -42,7 +42,7 @@ describe("SettingsPage", () => {
   it("データ概要の記録数は fetchAllRecords の件数、車両数は vehicles の数になる", async () => {
     const fetchAllRecords = vi.fn(async () => [{}, {}, {}]);
     scopeMock.useVehicleScope.mockReturnValue(scope({}, fetchAllRecords));
-    renderWithProviders(<SettingsPage />);
+    renderInAppShell(<SettingsPage />);
     await waitFor(() => expect(screen.getByText("記録数（全車両）").nextElementSibling).toHaveTextContent("3"));
     expect(fetchAllRecords).toHaveBeenCalled();
     expect(screen.getByText("車両数").nextElementSibling).toHaveTextContent("1");
@@ -50,7 +50,7 @@ describe("SettingsPage", () => {
 
   it("読み込みエラーと閲覧専用の注記を表示する", () => {
     scopeMock.useVehicleScope.mockReturnValue(scope({ error: "車両を読み込めませんでした。", readOnly: true }));
-    renderWithProviders(<SettingsPage />);
+    renderInAppShell(<SettingsPage />);
     expect(screen.getByRole("alert")).toHaveTextContent("車両を読み込めませんでした。");
     expect(screen.getByText("閲覧専用（クラウド接続待ち）")).toBeInTheDocument();
   });

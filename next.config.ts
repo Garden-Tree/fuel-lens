@@ -6,6 +6,15 @@ const nextConfig: NextConfig = {
   // 自動生成する。本リポジトリは独自の CLAUDE.md を管理しているため無効化する。
   agentRules: false,
 
+  // クライアントのルーターキャッシュ（docs/architecture.md「画面の切り替え」）。アプリ画面（/app など）は auth() を読む動的なページで、
+  // 既定（dynamic: 0）ではタブを切り替えるたびにサーバーへ往復する。30 秒以内に戻った画面はキャッシュを使ってすぐに表示する。
+  // ページ（page.tsx）はクライアントコンポーネントで、サーバーの描画結果にユーザーのデータは含まれない（データはブラウザが読む）。
+  // ログイン状態が変わったら components/UserSync.tsx が router.refresh() でこのキャッシュを捨てる。
+  // static は loading.tsx の境界（先読み）と prefetch={true} の再利用時間（既定の 5 分より短くはしない）。
+  experimental: {
+    staleTimes: { dynamic: 30, static: 300 },
+  },
+
   // Sentry の環境名とリリースをクライアントにも埋め込む（VERCEL_ENV / VERCEL_GIT_COMMIT_SHA はビルド時のみ読める）。
   // 使い方は lib/sentry/options.ts。Vercel 以外（ローカル・CI）では空になり、環境名は NODE_ENV にフォールバックする。
   env: {

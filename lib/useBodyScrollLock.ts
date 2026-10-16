@@ -7,7 +7,7 @@ import { useEffect } from "react";
  *
  * - 文書のスクロール（PC・公開ページ）: iOS Safari は `overflow: hidden` だけでは背面のスクロールを止められないため、
  *   body を `position: fixed` にして現在のスクロール位置を `top` で保つ方式にする。解除時に元の位置へ戻す。
- * - スマホのアプリ画面: 文書はスクロールせず、AppFrame の本文の器（`[data-app-scroll]`）がスクロールする
+ * - スマホのアプリ画面: 文書はスクロールせず、AppShell の本文の器（`[data-app-scroll]`）がスクロールする
  *   （components/AppShell.tsx）。器が実際にスクロールする設定（overflow-y: auto / scroll）のときは `overflow: hidden` にする。
  *   overflow: hidden は scrollTop を保つので、解除後も同じ位置のまま。PC では器は overflow: visible なので触らない。
  * 複数のオーバーレイが同時に開いても早く解除しないよう、参照カウントで管理する。
@@ -15,7 +15,7 @@ import { useEffect } from "react";
 
 const LOCKED_PROPS = ["position", "top", "left", "right", "width", "overflow"] as const;
 
-/** AppFrame の本文の器（スマホではこれがスクロールする） */
+/** AppShell の本文の器（スマホではこれがスクロールする） */
 export const APP_SCROLL_SELECTOR = "[data-app-scroll]";
 
 let lockCount = 0;

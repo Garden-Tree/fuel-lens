@@ -98,6 +98,8 @@ export function useFuelRecords(
   const inFlightBackground = useRef(0);
   // 「再試行」イベントの再読み込みだけ、クラウドの初期化の失敗メモ（30 秒）を飛ばす
   const forceBootstrap = useRef(false);
+  // このフックのインスタンスでクラウドから一覧を読めたか（読めるまでは、画面を開いた直後のキャッシュの先行表示を使う）
+  const syncedRef = useRef(false);
 
   const readOnly = isSignedIn && outage != null;
   const scope = useMemo(() => recordScopeOf(selectedVehicleId, defaultVehicleId), [selectedVehicleId, defaultVehicleId]);
@@ -192,7 +194,23 @@ export function useFuelRecords(
     if (previewScopeRef.current !== null && previewUserRef.current !== (isSignedIn ? userId : null)) dropPreview();
     // 同じ範囲のキャッシュを表示中なら loading を立てずに置き換える（失敗時の扱いは通常の読み込みと同じ）。
     // 範囲が変わっていれば（車両一覧の更新で選択が変わったなど）別の車両の記録を見せ続けないよう、通常どおりスケルトンにする
-    if (previewScopeRef.current !== scopeKey) setLoading(true);
+    // このフックがまだクラウドから一覧を読めていない（画面を開いた直後。タブの切り替えでもページごとにフックは作り直される）なら、
+    // 最後に同期したこの範囲の一覧（このユーザーのキャッシュ）を先に表示し、下の読み込みの結果で置き換える（stale-while-revalidate）。
+    // Clerk の読み込み後のログイン中だけ。書き込みは通常どおりクラウドへ行う（閲覧専用の先行表示 previewing とは別）
+    const seed =
+      previewScopeRef.current !== scopeKey &&
+      !syncedRef.current &&
+      stores?.kind === "cloud" &&
+      enabled &&
+      isUuid(scope.vehicleId)
+        ? stores.records.cached(scope)
+        : null;
+    if (seed) {
+      setRecords(sortRecordsByDateDesc(normalizeAll(seed)));
+      setLoading(false);
+    } else if (previewScopeRef.current !== scopeKey) {
+      setLoading(true);
+    }
     setError(null);
     const force = forceBootstrap.current;
     forceBootstrap.current = false;
@@ -236,6 +254,7 @@ export function useFuelRecords(
 
       const list = await stores.records.list(scope);
       if (!isCurrent()) return;
+      syncedRef.current = true;
       setRecords(sortRecordsByDateDesc(list));
     } catch (e) {
       if (!isCurrent()) return;

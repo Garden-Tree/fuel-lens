@@ -6,7 +6,7 @@ import Home from "@/app/(app)/app/page";
 import { SCAN_BUTTON_LABEL } from "@/components/AppNav";
 import type { Vehicle } from "@/lib/types";
 import type { VehicleScope } from "@/lib/useVehicleScope";
-import { renderWithProviders } from "../setup/render";
+import { renderInAppShell } from "../setup/render";
 
 // ログイン中
 vi.mock("@clerk/nextjs", () => ({
@@ -93,7 +93,7 @@ describe("ホーム: レシートとメーターを別々に撮る", () => {
 
   it("スキャンメニューから開き、2 枚を 1 回の /api/analyze で読み取って確認シートに出す", async () => {
     const user = userEvent.setup();
-    renderWithProviders(<Home />);
+    renderInAppShell(<Home />);
     await user.click(screen.getByRole("button", { name: SCAN_BUTTON_LABEL }));
     await user.click(
       within(screen.getByRole("dialog", { name: "記録する" })).getByRole("button", { name: /レシートとメーターを別々に撮る/ })
@@ -127,7 +127,7 @@ describe("ホーム: レシートとメーターを別々に撮る", () => {
 
   it("「メーターなしで読み取る」はレシートだけを従来の 1 枚の形で送る", async () => {
     const user = userEvent.setup();
-    renderWithProviders(<Home />);
+    renderInAppShell(<Home />);
     await user.click(screen.getByRole("button", { name: SCAN_BUTTON_LABEL }));
     await user.click(
       within(screen.getByRole("dialog", { name: "記録する" })).getByRole("button", { name: /レシートとメーターを別々に撮る/ })
@@ -146,7 +146,7 @@ describe("ホーム: レシートとメーターを別々に撮る", () => {
 
   it("?action=pair（他の画面のスキャンメニュー）で来たらシートを開き、URL から消す", async () => {
     nav.params = new URLSearchParams("action=pair");
-    renderWithProviders(<Home />);
+    renderInAppShell(<Home />);
     expect(await screen.findByRole("dialog", { name: "レシートとメーターを別々に撮る" })).toBeInTheDocument();
     expect(nav.replace).toHaveBeenCalledWith("/app");
   });
@@ -154,7 +154,7 @@ describe("ホーム: レシートとメーターを別々に撮る", () => {
   it("2 枚の読み取り結果を保存すると、記録の入口は pair になる", async () => {
     const user = userEvent.setup();
     addRecord.mockClear();
-    renderWithProviders(<Home />);
+    renderInAppShell(<Home />);
     await user.click(screen.getByRole("button", { name: SCAN_BUTTON_LABEL }));
     await user.click(
       within(screen.getByRole("dialog", { name: "記録する" })).getByRole("button", { name: /レシートとメーターを別々に撮る/ })
@@ -174,7 +174,7 @@ describe("ホーム: レシートとメーターを別々に撮る", () => {
 
   it("PC で画像を 2 枚ドロップすると読み取り方を聞き、「レシートとメーターの組として読む」でドロップした順に選んだ状態のシートを開く", async () => {
     const user = userEvent.setup();
-    renderWithProviders(<Home />);
+    renderInAppShell(<Home />);
     fireEvent.drop(screen.getByRole("heading", { name: "記録する" }), {
       dataTransfer: { files: [receiptFile, meterFile], items: [] },
     });
@@ -189,7 +189,7 @@ describe("ホーム: レシートとメーターを別々に撮る", () => {
   });
 
   it("1 枚のドロップは従来どおりすぐに読み取る（シートは開かない）", async () => {
-    renderWithProviders(<Home />);
+    renderInAppShell(<Home />);
     fireEvent.drop(screen.getByRole("heading", { name: "記録する" }), {
       dataTransfer: { files: [receiptFile], items: [] },
     });

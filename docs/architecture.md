@@ -20,9 +20,9 @@ FuelLens の構成、データの流れ、主要なモジュールの役割を�
 | `app/api/account/route.ts`、`lib/server/account/handler.ts` | アカウント削除の API（`DELETE /api/account`。Clerk のユーザーを削除する。[api-account.md](./api-account.md)） |
 | `app/api/keepalive/route.ts` | Supabase 自動停止対策のエンドポイント（[operations.md](./operations.md#3-supabase-の自動停止と-keepalive)） |
 | `app/layout.tsx` | ルートレイアウト。フォント（数字用の JetBrains Mono。日本語は端末のフォント）、`ServiceWorkerRegister` / `WebAnalytics`、`metadata` と `viewport`、`IosViewportGuard`（iOS だけ viewport に `maximum-scale=1` を足して入力欄の自動ズームを止める。ピンチズームは有効のまま。判定は `lib/iosViewport.ts`）。Clerk・トースト・Supabase は載せない（公開ページ `/`・`/calc`・`/gas-cost`・`/privacy`・`/terms` を軽くするため） |
-| `app/(app)/layout.tsx` | アプリ画面（`/app`・`/history`・`/stats`・`/settings`。ルートグループなので URL は変わらない）の共通レイアウト。`ClerkProvider`（`localization` は `lib/clerkLocalization.ts`） / `InitialAuthProvider`（サーバーの `auth()` の結果。[2 章「最初の描画」](#2-データフロー)。このため 4 画面は動的描画） / `ToastProvider` / `UserSync` / `SupabaseStatusBanner`、Clerk Frontend API への `preconnect`（`lib/clerkFrontendApi.ts`） |
+| `app/(app)/layout.tsx` | アプリ画面（`/app`・`/history`・`/stats`・`/settings`。ルートグループなので URL は変わらない）の共通レイアウト。`ClerkProvider`（`localization` は `lib/clerkLocalization.ts`） / `InitialAuthProvider`（サーバーの `auth()` の結果。[2 章「最初の描画」](#2-データフロー)。このため 4 画面は動的描画） / `ToastProvider` / `UserSync` / `SupabaseStatusBanner`、Clerk Frontend API への `preconnect`（`lib/clerkFrontendApi.ts`）。画面の枠 `AppShell` もここで描画する。各画面に `loading.tsx`（見出しとスケルトン。[画面の切り替え](#画面の切り替えタブのタップ)） |
 | `app/globals.css` | デザイントークン（`@theme`）と `num` などのユーティリティ（[design-system.md](./design-system.md)） |
-| `components/AppShell.tsx` / `components/AppNav.tsx` / `components/ScanActionMenu.tsx` / `components/ScanActions.tsx` | アプリ画面の枠。`AppFrame`（本文の器とナビ）/ `PageHeader`（見出し + 車両チップ）/ `HookErrorLine` / `ReadOnlyCaption`、ナビ（スマホは下部タブバー、PC は左サイドバー）、スキャンメニュー（撮影する / アルバムから選ぶ / レシートとメーターを別々に撮る / 手動で入力）と、ホームがメニューに処理を登録する `ScanActionsProvider` / `RegisterScanActions`（[ナビゲーションとスキャンメニュー](#ナビゲーションとスキャンメニュー)） |
+| `components/AppShell.tsx` / `components/AppNav.tsx` / `components/ScanActionMenu.tsx` / `components/ScanActions.tsx` | アプリ画面の枠。`AppShell`（本文の器とナビ。`app/(app)/layout.tsx` が描画し、画面の切り替えでは作り直さない）/ `AppPage`（各ページの最上位。本文の幅）/ `PageHeader`（見出し + 車両チップ）/ `HookErrorLine` / `ReadOnlyCaption`、ナビ（スマホは下部タブバー、PC は左サイドバー）、スキャンメニュー（撮影する / アルバムから選ぶ / レシートとメーターを別々に撮る / 手動で入力）と、ホームがメニューに処理を登録する `ScanActionsProvider` / `RegisterScanActions`（[ナビゲーションとスキャンメニュー](#ナビゲーションとスキャンメニュー)） |
 | `components/ui/*` | デザインシステムの部品（`Section` / `GroupedList` / `ListRow` / `ValueRow` / `SegmentedControl` / `Chip` / `IconButton` / `Num` / `Menu` / `MenuItem` / `BrandMark`）。`@/components/ui` から import する |
 | `app/error.tsx` / `app/global-error.tsx` / `app/not-found.tsx` | エラー画面・404 |
 | `components/ScanReviewSheet.tsx` | スキャン結果の確認シート（保存前に確認・修正する） |
@@ -127,6 +127,10 @@ FuelLens の構成、データの流れ、主要なモジュールの役割を�
     持ち主が違う・記録が無い・サーバーの値が不明なら何も出さず、従来どおり Clerk を待ちます。
   - `previewing` の間は `useVehicleScope` の `readOnly` が true（書き込みのボタンは無効。ストアも無いので呼べば日本語エラー）、
     ホームの撮影・手動入力・`?action=` は読み込み中と同じ扱い、設定画面のパネルは読み込み中です。「閲覧専用（クラウド接続待ち）」の注記は障害のときだけ出します（`readOnly && !previewing`）。
+  - **Clerk の読み込み後に画面を開いたとき**（タブの切り替え。ページごとにフックは作り直される）も、ログイン中ならこのユーザーのキャッシュ
+    （`CachedVehicleStore.cached()` / `CachedRecordStore.cached(scope)`）を先に表示し、裏で読み込んだ一覧で置き換えます（stale-while-revalidate。スケルトンに戻さない）。
+    こちらは `previewing` ではなく通常の表示で、書き込みもできます（ストアは準備済み。書き込み中に一覧の読み込みが実行中なら読み直す従来の仕組みがそのまま効く）。
+    使うのはそのフックのインスタンスがまだクラウドから一覧を読めていない間だけで、キャッシュが無ければ従来どおりスケルトンです。失敗時の扱い（障害・日本語エラー・キャッシュの閲覧専用表示）は変わりません。
   - `syncCacheOwner` は従来どおり Clerk の確定値（`authLoaded`）を待って呼びます。移行（`migrateLocalData`）は従来どおりクラウドの初期化からだけ走ります。
   - `auth()` を読むため `/app`・`/history`・`/stats`・`/settings` はリクエストごとの描画（ビルド出力の `ƒ`）です。公開ページ（`/`・`/calc`・`/gas-cost`・`/privacy`・`/terms`）は静的のままです。
 - 選択中の車両 ID は localStorage に保存します。未ログイン時は `fuel_lens_selected_vehicle_id`、ログイン時はユーザーごとの `fuel_lens_selected_vehicle_id_<userId>` を使い、保存値が現在の車両一覧に無い場合は既定車両へフォールバックして保存値を書き換えます。
@@ -277,8 +281,8 @@ useVehicles / useFuelRecords
   このとき `recordsLoading` は `false`、`loading` は車両の読み込みだけを表します（未ログイン時はローカルの記録が読まれるので `records` が空とは限らない）。
 - 純粋関数 `scopeKeyOf` / `composeScopeError` / `combineScopeLoading` も同じファイルから export しています（`tests/useVehicleScope.test.ts`）。
 
-画面の共通部品は `components/AppShell.tsx` にあります: `AppFrame`（ナビゲーション＝スマホの下部タブバー / PC のサイドバーと本文の器。
-`components/AppNav.tsx`・`components/ScanActionMenu.tsx`）、`PageHeader`（見出しと右側の車両チップ。スマホではログインボタンも。
+画面の共通部品は `components/AppShell.tsx` にあります: `AppShell`（ナビゲーション＝スマホの下部タブバー / PC のサイドバーと本文の器。
+`components/AppNav.tsx`・`components/ScanActionMenu.tsx`。`app/(app)/layout.tsx` が描画する）、`AppPage`（各ページの最上位。`width="narrow"` で設定画面の 1 カラム幅）、`PageHeader`（見出しと右側の車両チップ。スマホではログインボタンも。
 ログイン後の戻り先は `usePathname()`）、`HookErrorLine`（`error` の赤い行）、`ReadOnlyCaption`（「閲覧専用（クラウド接続待ち）」）。
 車両の切り替えは `VehicleSelector`（チップ＋メニュー、最後の項目「車両を管理」）で、読み込み中スケルトンは `loading` プロップで表示します。
 見た目の規則と部品は [design-system.md](./design-system.md)。
@@ -411,10 +415,11 @@ useVehicles / useFuelRecords
 
 ### ナビゲーションとスキャンメニュー
 
-アプリ画面（/app・/history・/stats・/settings）は最上位を `AppFrame`（`components/AppShell.tsx`）で包みます。ランディング（/）では使いません。
+アプリ画面（/app・/history・/stats・/settings）の枠 `AppShell`（`components/AppShell.tsx`）は `app/(app)/layout.tsx` が 1 回だけ描画し、各ページ（と `loading.tsx`）はその `<main>` の中に入ります。
+ページの最上位は `AppPage`（本文の幅。設定画面は `width="narrow"`）です。ランディング（/）では使いません。
 
 - ナビ項目は `APP_NAV_ITEMS`（ホーム / 履歴 / 統計 / 設定。`components/AppNav.tsx`）。スマホ（lg 未満）は下部のタブバー（`AppTabBar`。中央にスキャンボタン）、PC（lg 以上）は左のサイドバー（`AppSidebar`。ロゴ・4 項目・「スキャンして記録」・ログイン / ユーザーボタン）。`PageHeader` はスマホではログイン / ユーザーボタンも右端に出します。
-- スキャンボタンは `ScanActionMenu`（`components/ScanActionMenu.tsx`）を開きます。項目は「撮影する」/「アルバムから選ぶ」/「レシートとメーターを別々に撮る」/「手動で入力」。スマホはボトムシート、PC はボタン直下のポップオーバー（`ScanMenuAnchor` で位置を渡す）。メニューの開閉は `AppFrame` の state です。
+- スキャンボタンは `ScanActionMenu`（`components/ScanActionMenu.tsx`）を開きます。項目は「撮影する」/「アルバムから選ぶ」/「レシートとメーターを別々に撮る」/「手動で入力」。スマホはボトムシート、PC はボタン直下のポップオーバー（`ScanMenuAnchor` で位置を渡す）。メニューの開閉は `AppShell` の state です（画面を切り替えても枠は作り直さない）。
 - 未ログインの撮影・アルバム・2 枚で撮る（とドロップ・貼り付けの案内）は `lib/trial.ts` の `scanAccessOf` で決めます（スキャンメニュー・ホームの記録の入口・`DropZoneRow` で共通）。
   - お試しが無効（`TRIAL_COOKIE_SECRET` 未設定）: 撮影・アルバムを無効にし、「AIスキャンはログイン後に使えます。手動入力はログインなしでも使えます。」と案内します（従来どおり）。
   - お試しが残っている: 撮影・アルバムを使え、「お試しであと N 回読み取れます。ログインすると続けて使えます。」と添えます。
@@ -422,13 +427,27 @@ useVehicles / useFuelRecords
     ホームの上にはログインの案内（`app/(app)/app/_components/TrialLoginPrompt.tsx`。Clerk の `SignInButton` のモーダル、確認シートを開いている間は出さない、「閉じる」で消せる）も出し、
     ログインするとクラウドに保存されること、このブラウザの記録はログイン時に自動でアカウントへ移されること（`migrateLocalData`）を伝えます。
   - 閲覧専用・キャッシュの先行表示・障害時の扱いはログイン中だけのもので、お試しには関係しません。
-- **/app を表示中**は、ホームが `RegisterScanActions`（`components/ScanActions.tsx`。`AppFrame` が `ScanActionsProvider` を描画する）で登録した `openCamera` / `openAlbum` / `openPair` / `openManual` を、メニューの項目のクリックハンドラの中で同期的に呼びます（ファイル入力の `click()` はユーザーのタップの中でないとブラウザに黙って無視されるため）。解析中・確認中・読み込み中・閲覧専用は `canScan` / `canManual` に従って項目を無効にし、理由を 1 行添えます。「手動で入力」は、手動入力・編集のフォームを開いていれば「入力中の内容を破棄して新しく入力しますか？」を確認してから開きます。
+- **/app を表示中**は、ホームが `RegisterScanActions`（`components/ScanActions.tsx`。`AppShell` が `ScanActionsProvider` でタブバー・メニューとページの両方を包む）で登録した `openCamera` / `openAlbum` / `openPair` / `openManual` を、メニューの項目のクリックハンドラの中で同期的に呼びます（ファイル入力の `click()` はユーザーのタップの中でないとブラウザに黙って無視されるため）。解析中・確認中・読み込み中・閲覧専用は `canScan` / `canManual` に従って項目を無効にし、理由を 1 行添えます。「手動で入力」は、手動入力・編集のフォームを開いていれば「入力中の内容を破棄して新しく入力しますか？」を確認してから開きます。
 - **他の画面**では、項目は `/app?action=scan|album|pair|manual` への遷移です。/app の `ShortcutActionHandler`（`useShortcutActions`）が処理し、撮影・アルバムは開くのを試したうえで「撮影の準備ができました」の案内（`ScanReadyPrompt`）を出します。始められない状態なら取り下げて toast で理由を伝えます。
 - `aria-current="page"` で現在の項目を示し、現在の画面の判定は `isNavItemActive`（パスの前方一致）です。
+  項目をタップしたら、遷移の完了を待たずにその項目を選択中にします（`useOptimisticNavPath`。Link の `onNavigate` で記録し、`pathname` が変わったら捨てる）。
+
+#### 画面の切り替え（タブのタップ）
+
+4 画面はサーバーで `auth()` を読む動的なページなので、何もしなければタブのタップのたびにサーバーへ往復し、応答（とページの JavaScript）が届くまで前の画面のままになります。次の 4 つで、タップの直後に反応させます。
+
+- **枠を保つ**: `AppShell` はレイアウトにあるので、タブを切り替えても作り直しません（切り替わるのは `<main>` の中だけ）。本文の器（`[data-app-scroll]`）は `pathname` が変わったら先頭に戻します（ハッシュ付きは各画面）。
+- **楽観的な選択表示**: 上の `useOptimisticNavPath`。タップした項目がすぐに選択中になります。
+- **`loading.tsx` と先読み**: 各画面（`app/(app)/{app,history,stats,settings}/loading.tsx`）に見出し（`PageHeader`）とスケルトン（各画面のスケルトン部品を共用）を置きます。
+  ナビの 4 項目は `prefetch={true}`（`components/AppNav.tsx` の `NAV_PREFETCH`）で画面全体（ページの JavaScript を含む）を先読みし、`staleTimes.static`（5 分）の間使い回します。
+  ページはクライアントコンポーネントで、サーバーの描画結果にユーザーのデータは含まれません（データはブラウザがストアから読む）。先読みが間に合わなかったときは `loading.tsx` が先に出ます。
+- **クライアントのルーターキャッシュ**: `next.config.ts` の `experimental.staleTimes.dynamic: 30` で、30 秒以内に戻った画面はサーバーへ往復せずに表示します。
+  ログイン状態（ユーザー）が変わったら `components/UserSync.tsx` が `router.refresh()` でキャッシュを捨てます（Clerk の Next.js 連携もサインイン時にキャッシュを無効化する）。
+- **データ**: 画面を開くたびにフックは作り直されますが、ログイン中は最後に同期した一覧（キャッシュ）を先に表示して裏で読み直します（[2 章「最初の描画」](#2-データフロー)）。未ログインは localStorage なのですぐに読めます。
 
 ### 燃費計算ページ（`/calc`）
 
-`app/calc/page.tsx` はログイン不要の公開ページ（「満タン法 燃費計算」などの検索からの入口）で、`AppFrame` は使わず、規約ページと同じヘッダー（`components/LegalPage.tsx` の `PublicPageHeader`）で包みます。
+`app/calc/page.tsx` はログイン不要の公開ページ（「満タン法 燃費計算」などの検索からの入口）で、`AppShell` は使わず、規約ページと同じヘッダー（`components/LegalPage.tsx` の `PublicPageHeader`）で包みます。
 計算機 `app/calc/_components/FuelCalculator.tsx`（クライアント）は走行距離（区間距離）・給油量・任意の支払総額から燃費・単価・1km あたりの燃料費を出し、入力は state にだけ持って保存しません。
 検証と計算は `lib/calcPage.ts` の `computeCalc`（数値の読み取りは `parseDraftNumber`、燃費と単価は `calculateFuelMetrics`、オドメーターらしい値の注意は `PLAUSIBILITY_LIMITS`）。
 FAQ（`CALC_FAQS`）はページと構造化データで共有し、`buildCalcJsonLd`（`WebApplication` + `FAQPage`、固定文言のみ・`<` をエスケープ）を `<script type="application/ld+json">` で出します。

@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef } from 'react';
+import { useRouter } from 'next/navigation';
 import { useAuth, useUser } from '@clerk/nextjs';
 import { setClientSentryUser } from '@/lib/sentry/client';
 import { AUTH_TOKEN_ERROR_MESSAGE, getSupabaseClient, isAuthTokenError } from '@/lib/supabaseClient';
@@ -8,9 +9,15 @@ import { reportSupabaseFailure } from '@/lib/supabaseHealth';
 
 /**
  * ログイン中のユーザーを Supabase の users テーブルへ同期する（1 ユーザーにつきセッション中 1 回）。
+ * あわせて、ログイン状態（ユーザー）が変わったらクライアントのルーターキャッシュを捨てる（router.refresh()）。
+ * next.config.ts の staleTimes で 30 秒以内の再訪はキャッシュから表示するため、ログアウト・ユーザー切り替えの前の
+ * サーバーの描画結果（レイアウトの初期認証状態など）を使い回さないようにする。
  */
 export default function UserSync() {
-  const { getToken, userId, isSignedIn } = useAuth();
+  const { getToken, userId, isSignedIn, isLoaded } = useAuth();
+  const router = useRouter();
+  // 前回見たユーザー（undefined = Clerk の読み込み前でまだ見ていない）
+  const seenUserRef = useRef<string | null | undefined>(undefined);
   const { user } = useUser();
   // 同期済みの userId を保持する。同一タブでアカウントを切り替えた場合も新しいユーザーを同期できる。
   const syncedUserIdRef = useRef<string | null>(null);
@@ -19,6 +26,13 @@ export default function UserSync() {
   useEffect(() => {
     setClientSentryUser(isSignedIn && userId ? userId : null);
   }, [isSignedIn, userId]);
+
+  useEffect(() => {
+    if (!isLoaded) return;
+    const current = isSignedIn && userId ? userId : null;
+    if (seenUserRef.current !== undefined && seenUserRef.current !== current) router.refresh();
+    seenUserRef.current = current;
+  }, [isLoaded, isSignedIn, userId, router]);
 
   useEffect(() => {
     if (!isSignedIn || !userId || !user) return;
