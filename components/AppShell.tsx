@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { usePathname } from "next/navigation";
 import { SignedIn, SignedOut, SignInButton, UserButton } from "@clerk/nextjs";
 import { AppSidebar, AppTabBar } from "./AppNav";
@@ -23,20 +23,41 @@ export type AppFrameProps = {
 
 /**
  * 画面の枠。各ページの最上位で `<AppFrame>{ページの中身}</AppFrame>` のように使う（`<main>` は AppFrame が描画する）。
- * スマホでは本文の下にタブバーの高さ＋safe-area 分の余白を空ける。スキャンメニューの開閉もここで持つ。
- * 本文とスキャンメニューを ScanActionsProvider で包む（/app のホームが撮影・アルバム・手動入力の処理を登録し、
- * メニューがタップの中で直接呼ぶ。components/ScanActions.tsx）。
+ *
+ * スマホ（< lg）は「アプリシェル」: 枠全体を画面に固定（fixed inset-0 の縦 flex）し、文書（html/body）はスクロールさせない。
+ * 本文の器（`data-app-scroll`）だけがスクロールし、下部タブバーは position: fixed ではなく flex の最後の子として下端に置く。
+ * iOS の WebKit はカメラ・写真の選択から戻った直後などにレイアウト用ビューポートの高さがずれ、
+ * fixed のタブバーがページと一緒にスクロールしたり下に空白ができたりするため（docs/design-system.md「ナビゲーション」）。
+ * PC（≥ lg）は従来どおり左サイドバー＋文書のスクロール。
+ *
+ * 本文の器は文書ではないので、画面の切り替え（pathname の変化）で先頭に戻す（`#record-<id>` などのハッシュ付きは各画面に任せる）。
+ * スキャンメニューの開閉もここで持つ。本文とスキャンメニューを ScanActionsProvider で包む
+ * （/app のホームが撮影・アルバム・手動入力の処理を登録し、メニューがタップの中で直接呼ぶ。components/ScanActions.tsx）。
  */
 export function AppFrame({ width = "default", children }: AppFrameProps) {
   // null: 閉じている。anchor: null はスマホのボトムシート、値ありは PC のポップオーバー
   const [menu, setMenu] = useState<{ anchor: ScanMenuAnchor | null } | null>(null);
+  const pathname = usePathname();
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el || window.location.hash) return;
+    el.scrollTop = 0;
+  }, [pathname]);
+
   return (
     <ScanActionsProvider>
-      <div className="min-h-dvh bg-ground text-ink lg:flex">
+      <div className="fixed inset-0 flex flex-col overflow-hidden bg-ground text-ink lg:static lg:min-h-dvh lg:flex-row lg:overflow-visible">
         <AppSidebar onScan={anchor => setMenu({ anchor })} />
-        <div className="min-w-0 flex-1">
+        <div
+          ref={scrollRef}
+          // lib/useBodyScrollLock.ts がモーダル表示中にこの器のスクロールも止める
+          data-app-scroll=""
+          className="min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-contain lg:min-h-0 lg:overflow-visible"
+        >
           <main
-            className={`mx-auto w-full min-w-0 px-4 pb-[calc(var(--tabbar-safe-bottom)+56px+32px)] lg:px-8 lg:pt-8 lg:pb-12 ${
+            className={`mx-auto w-full min-w-0 px-4 pb-8 lg:px-8 lg:pt-8 lg:pb-12 ${
               width === "narrow" ? "max-w-3xl" : "max-w-[1040px]"
             }`}
           >

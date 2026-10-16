@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { AppFrame, HookErrorLine, PageHeader, ReadOnlyCaption } from "@/components/AppShell";
@@ -8,7 +8,17 @@ import VehicleSelector from "@/components/VehicleSelector";
 import type { Vehicle } from "@/lib/types";
 import { renderWithProviders } from "../setup/render";
 
-// tests/setup/dom.ts のモックでは usePathname() は "/app"、未ログイン
+// tests/setup/dom.ts と同じモックだが、画面の切り替えを試すため usePathname() の値を変えられるようにする（既定は "/app"、未ログイン）
+const nav = vi.hoisted(() => ({ pathname: "/app" }));
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ replace: vi.fn(), push: vi.fn(), back: vi.fn(), refresh: vi.fn(), prefetch: vi.fn() }),
+  useSearchParams: () => new URLSearchParams(),
+  usePathname: () => nav.pathname,
+}));
+
+afterEach(() => {
+  nav.pathname = "/app";
+});
 
 describe("PageHeader", () => {
   it("見出し（h1）を表示し、戻るリンクは出さない", () => {
@@ -49,6 +59,61 @@ describe("AppFrame", () => {
       expect(within(nav).getByRole("link", { name: "ホーム" })).toHaveAttribute("aria-current", "page");
       expect(within(nav).getByRole("link", { name: "履歴" })).not.toHaveAttribute("aria-current");
     }
+  });
+
+  it("スマホは枠を画面に固定し、本文の器だけをスクロールさせる。タブバーは fixed ではなく flex の下端（PC は従来どおり）", () => {
+    renderWithProviders(
+      <AppFrame>
+        <p>本文</p>
+      </AppFrame>
+    );
+    const scroller = screen.getByRole("main").parentElement!;
+    expect(scroller).toHaveAttribute("data-app-scroll");
+    const classesOf = (el: HTMLElement) => el.className.split(/\s+/);
+    expect(classesOf(scroller)).toEqual(expect.arrayContaining(["flex-1", "min-h-0", "overflow-y-auto", "lg:overflow-visible"]));
+
+    const shell = scroller.parentElement!;
+    expect(classesOf(shell)).toEqual(
+      expect.arrayContaining(["fixed", "inset-0", "flex-col", "overflow-hidden", "lg:static", "lg:overflow-visible"])
+    );
+
+    const tabBar = document.querySelector<HTMLElement>("[data-app-tabbar]")!;
+    // 本文の器の兄弟（器の中でも fixed でもない）
+    expect(tabBar.parentElement).toBe(shell);
+    expect(scroller.contains(tabBar)).toBe(false);
+    expect(classesOf(tabBar)).not.toContain("fixed");
+    expect(tabBar.className).not.toContain("backdrop-blur");
+    expect(classesOf(tabBar)).toEqual(
+      expect.arrayContaining(["relative", "z-40", "shrink-0", "pb-[var(--tabbar-safe-bottom)]", "lg:hidden"])
+    );
+  });
+
+  it("画面が切り替わったら本文の器を先頭に戻す（ハッシュ付きは各画面に任せる）", () => {
+    const { rerender } = renderWithProviders(
+      <AppFrame>
+        <p>本文</p>
+      </AppFrame>
+    );
+    const scroller = screen.getByRole("main").parentElement!;
+    scroller.scrollTop = 500;
+    nav.pathname = "/history";
+    rerender(
+      <AppFrame>
+        <p>本文</p>
+      </AppFrame>
+    );
+    expect(scroller.scrollTop).toBe(0);
+
+    scroller.scrollTop = 300;
+    window.history.replaceState(null, "", "/stats#record-1");
+    nav.pathname = "/stats";
+    rerender(
+      <AppFrame>
+        <p>本文</p>
+      </AppFrame>
+    );
+    expect(scroller.scrollTop).toBe(300);
+    window.history.replaceState(null, "", "/");
   });
 
   it("スキャンボタンでメニューを開き、未ログインでは手動入力だけ選べる", async () => {

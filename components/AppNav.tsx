@@ -9,7 +9,8 @@ import { BrandMark } from "./ui/BrandMark";
 
 /**
  * アプリ画面（/app・/history・/stats・/settings）のナビゲーション。ランディング（/）では使わない。
- * - スマホ（< lg）: 画面下の固定タブバー（ホーム / 履歴 / 中央のスキャンボタン / 統計 / 設定）
+ * - スマホ（< lg）: 画面下のタブバー（ホーム / 履歴 / 中央のスキャンボタン / 統計 / 設定）。
+ *   position: fixed ではなく AppFrame の縦 flex の最後の子（本文は上の器の中だけでスクロールする）
  * - PC（≥ lg）: 左のサイドバー（ロゴ・4 項目・「スキャンして記録」・ログイン / ユーザーボタン）
  * スキャンボタンは ScanActionMenu（撮影する / アルバムから選ぶ / 手動で入力）を開く（開閉の状態は AppFrame が持つ）。
  */
@@ -47,7 +48,11 @@ function TabLink({ item, active }: { item: AppNavItem; active: boolean }) {
   );
 }
 
-/** スマホの下部タブバー（lg 未満で表示） */
+/**
+ * スマホの下部タブバー（lg 未満で表示）。AppFrame の縦 flex の下端に置く通常の要素（fixed にしない。理由は AppFrame）。
+ * 本文がこの下に潜り込まないので背景はぼかさず不透明にする。中央のスキャンボタンは上に 22px はみ出すため、
+ * relative + z-40 で本文の器より手前に描き、overflow は visible のままにする。
+ */
 export function AppTabBar({ onScan }: { onScan: () => void }) {
   const pathname = usePathname();
   const [home, history, stats, settings] = APP_NAV_ITEMS;
@@ -56,7 +61,7 @@ export function AppTabBar({ onScan }: { onScan: () => void }) {
       aria-label="メイン"
       // components/ui/Menu.tsx がこの上端を下限にしてメニューを上下どちらに開くか決める
       data-app-tabbar=""
-      className="fixed inset-x-0 bottom-0 z-40 border-t border-line bg-[rgba(11,15,20,0.96)] pb-[var(--tabbar-safe-bottom)] backdrop-blur-md lg:hidden"
+      className="relative z-40 shrink-0 border-t border-line bg-ground pb-[var(--tabbar-safe-bottom)] lg:hidden"
     >
       <div className="mx-auto grid h-14 max-w-lg grid-cols-5 items-stretch px-2">
         <TabLink item={home} active={isNavItemActive(pathname, home.href)} />

@@ -44,4 +44,35 @@ describe("useBodyScrollLock", () => {
     expect(document.body.style.position).toBe("");
     expect(scrollTo).toHaveBeenCalledTimes(1);
   });
+
+  it("スマホのアプリ画面の本文の器（[data-app-scroll]、overflow-y: auto）も止め、位置を保ったまま解除で戻す", () => {
+    const scroller = document.createElement("div");
+    scroller.setAttribute("data-app-scroll", "");
+    scroller.style.overflowY = "auto";
+    document.body.appendChild(scroller);
+    scroller.scrollTop = 120;
+
+    const a = renderHook(() => useBodyScrollLock(true));
+    const b = renderHook(() => useBodyScrollLock(true));
+    expect(scroller.style.overflow).toBe("hidden");
+    a.unmount();
+    expect(scroller.style.overflow).toBe("hidden");
+    b.unmount();
+    expect(scroller.style.overflow).toBe("");
+    expect(scroller.style.overflowY).toBe("auto");
+    expect(scroller.scrollTop).toBe(120);
+    scroller.remove();
+  });
+
+  it("本文の器がスクロールしない設定（PC の overflow: visible）なら触らない", () => {
+    const scroller = document.createElement("div");
+    scroller.setAttribute("data-app-scroll", "");
+    scroller.style.overflow = "visible";
+    document.body.appendChild(scroller);
+    const { unmount } = renderHook(() => useBodyScrollLock(true));
+    expect(scroller.style.overflow).toBe("visible");
+    unmount();
+    expect(scroller.style.overflow).toBe("visible");
+    scroller.remove();
+  });
 });

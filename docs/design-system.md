@@ -87,8 +87,14 @@ recharts の SVG 属性（`stroke`・`fill` など）には Tailwind のクラ�
 </AppFrame>
 ```
 
-- **スマホ（< lg）**: 画面下の固定タブバー（ホーム / 履歴 / 中央のスキャンボタン / 統計 / 設定）。高さ 56px ＋ 下余白 `--tabbar-safe-bottom`（`app/globals.css`。safe-area から 14px 詰めた値、最低 6px。本文の下余白とトーストの位置も同じ変数を使う）。
-  選択中はアクセント色・太字。本文の下にはタブバー分の余白を AppFrame が空けます。
+- **スマホ（< lg）**: 画面下のタブバー（ホーム / 履歴 / 中央のスキャンボタン / 統計 / 設定）。高さ 56px ＋ 下余白 `--tabbar-safe-bottom`（`app/globals.css`。safe-area から 14px 詰めた値、最低 6px。トーストの位置も同じ変数を使う）。
+  選択中はアクセント色・太字。
+  - **アプリシェル**: AppFrame の枠は `fixed inset-0` の縦 flex で、文書（html/body）はスクロールしません。本文の器（`[data-app-scroll]`、`overflow-y-auto overscroll-contain`）だけがスクロールし、
+    タブバーは `position: fixed` ではなく flex の最後の子（`relative z-40 shrink-0`、背景は不透明でぼかしなし）。iOS の WebKit はカメラ・写真の選択から戻った直後などにレイアウト用ビューポートの高さがずれ、
+    fixed のタブバーがページと一緒にスクロールしたり下に大きな空白ができたりするためです。ヘッダー（safe-area-inset-top 込み）は本文の器の中でスクロールします。
+  - 本文の器は文書ではないので、画面の切り替え（pathname の変化）で AppFrame が先頭に戻します（ハッシュ付き、例 `/history#record-<id>` は各画面がその行へスクロール）。
+    モーダル・シートの背面のスクロール止め（`lib/useBodyScrollLock.ts`）は body に加えてこの器にも `overflow: hidden` をかけます。
+  - 画面の高さ・スクロール位置に `window.scrollY` / `window.scrollTo` / `position: sticky`（文書基準）を前提にしないこと（スマホでは常に 0 / 効かない）。
 - **PC（≥ lg）**: 左に幅 240px のサイドバー（ロゴ・4 項目・「スキャンして記録」・ログイン / ユーザーボタン）。本文は最大 1040px（`width="narrow"` は 768px）・余白 32px で中央に置きます。
 - スキャンボタンは `ScanActionMenu`（撮影する / アルバムから選ぶ / レシートとメーターを別々に撮る / 手動で入力）を開きます。スマホはボトムシート、PC はボタン直下のポップオーバー。
   /app ではホームが登録した処理（`components/ScanActions.tsx`）を項目のタップの中で直接呼び（ファイル選択がブロックされないように）、解析中・閲覧専用などで押せない項目は無効にして理由を 1 行添えます。
@@ -128,4 +134,4 @@ recharts の SVG 属性（`stroke`・`fill` など）には Tailwind のクラ�
 - 行の区切りは `divide-line`、操作部品の枠は `border-border`。
 - スマホは 1 カラム・左右 16px。PC は同じ部品を 2 カラムなどに並べ直す（別デザインにはしない）。
 - 横スクロールを出さない（長い名前は `truncate`）。
-- 入力欄（`input` / `select` / `textarea`）の文字は、タッチ端末で 16px 以上にする（`text-base`。`app/globals.css` の `@media (pointer: coarse)` でも保証）。iOS は 16px 未満の入力欄へのフォーカスでページを自動拡大し、拡大中は `position: fixed` の下部タブバーがページと一緒にスクロールして見える。PC 用に小さくするときは `pointer-fine:text-sm` を使い、`sm:text-sm` は使わない（iPad が引っかかる）。非表示のファイル入力にも `text-base` を付ける。
+- 入力欄（`input` / `select` / `textarea`）の文字は、タッチ端末で 16px 以上にする（`text-base`。`app/globals.css` の `@media (pointer: coarse)` でも保証）。iOS は 16px 未満の入力欄へのフォーカスでページを自動拡大し、拡大中は下部タブバーが画面からずれて見える。PC 用に小さくするときは `pointer-fine:text-sm` を使い、`sm:text-sm` は使わない（iPad が引っかかる）。非表示のファイル入力にも `text-base` を付ける。

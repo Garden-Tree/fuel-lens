@@ -94,7 +94,7 @@ a,
 }
 
 /* タッチ端末では入力欄を 16px 以上にする。iOS は 16px 未満の入力欄へのフォーカスでページを自動拡大し、
-   position: fixed のタブバーがページと一緒にスクロールして見える（docs/design-system.md）。 */
+   下部タブバーが画面からずれて見える（docs/design-system.md）。 */
 @media (pointer: coarse) {
   input,
   select,
