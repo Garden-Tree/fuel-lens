@@ -289,7 +289,7 @@ export default function BackupPanel({
           ref={fileInputRef}
           type="file"
           accept=".json,application/json"
-          className="hidden"
+          className="hidden text-base"
           onChange={handleFileChange}
           aria-label="バックアップファイルを選択"
         />

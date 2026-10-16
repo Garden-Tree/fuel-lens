@@ -4,6 +4,7 @@ import "./globals.css";
 import { getSiteUrl } from "@/lib/siteUrl";
 import ServiceWorkerRegister from "@/components/ServiceWorkerRegister";
 import WebAnalytics from "@/components/WebAnalytics";
+import IosViewportGuard from "@/components/IosViewportGuard";
 
 // 本文は端末の日本語フォント（app/globals.css の --font-sans）、数字（`num` ユーティリティ）は JetBrains Mono（docs/design-system.md）。
 // 日本語の Web フォント（Noto Sans JP）は 1 ページで 30 個以上・約 700KB のファイルを読み込み、
@@ -81,6 +82,7 @@ export default function RootLayout({
     <html lang="ja" className={jetBrainsMono.variable}>
       <body className="antialiased bg-ground text-ink min-h-screen">
         <ServiceWorkerRegister />
+        <IosViewportGuard />
         {children}
         <WebAnalytics />
       </body>

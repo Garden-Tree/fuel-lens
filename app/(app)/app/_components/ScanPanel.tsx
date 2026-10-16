@@ -101,6 +101,8 @@ export default function ScanPanel({
   const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files ?? []);
     e.target.value = "";
+    // 入力欄にフォーカスが残るとズームが戻らないことがあるので外す
+    (document.activeElement as HTMLElement | null)?.blur?.();
     if (files.length === 0) return;
     // 2 枚以上は一括読み取りへ（1 枚なら従来どおり）
     if (files.length > 1 && onSelectFiles) {
@@ -193,12 +195,12 @@ export default function ScanPanel({
   return (
     <>
       {card}
-      <input type="file" accept="image/*" capture="environment" className="hidden" ref={cameraInputRef} onChange={handleFileChange} aria-label="カメラで撮影" />
+      <input type="file" accept="image/*" capture="environment" className="hidden text-base" ref={cameraInputRef} onChange={handleFileChange} aria-label="カメラで撮影" />
       <input
         type="file"
         accept="image/*"
         multiple={onSelectFiles !== undefined}
-        className="hidden"
+        className="hidden text-base"
         ref={galleryInputRef}
         onChange={handleFileChange}
         aria-label="画像ファイルを選択"

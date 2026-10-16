@@ -166,6 +166,8 @@ export default function TwoPhotoScanSheet({ onClose, onSubmit, distanceMode, ini
   const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     e.target.value = "";
+    // 入力欄にフォーカスが残るとズームが戻らないことがあるので外す
+    (document.activeElement as HTMLElement | null)?.blur?.();
     if (!file) return;
     if (!file.type.startsWith("image/")) return; // accept="image/*" なので通常は来ない
     if (targetRole.current === "receipt") {
@@ -277,7 +279,7 @@ export default function TwoPhotoScanSheet({ onClose, onSubmit, distanceMode, ini
         type="file"
         accept="image/*"
         capture="environment"
-        className="hidden"
+        className="hidden text-base"
         ref={cameraInputRef}
         onChange={handleFileChange}
         aria-label="カメラで撮影（2枚で読み取る）"
@@ -285,7 +287,7 @@ export default function TwoPhotoScanSheet({ onClose, onSubmit, distanceMode, ini
       <input
         type="file"
         accept="image/*"
-        className="hidden"
+        className="hidden text-base"
         ref={albumInputRef}
         onChange={handleFileChange}
         aria-label="画像ファイルを選択（2枚で読み取る）"

@@ -128,3 +128,4 @@ recharts の SVG 属性（`stroke`・`fill` など）には Tailwind のクラ�
 - 行の区切りは `divide-line`、操作部品の枠は `border-border`。
 - スマホは 1 カラム・左右 16px。PC は同じ部品を 2 カラムなどに並べ直す（別デザインにはしない）。
 - 横スクロールを出さない（長い名前は `truncate`）。
+- 入力欄（`input` / `select` / `textarea`）の文字は、タッチ端末で 16px 以上にする（`text-base`。`app/globals.css` の `@media (pointer: coarse)` でも保証）。iOS は 16px 未満の入力欄へのフォーカスでページを自動拡大し、拡大中は `position: fixed` の下部タブバーがページと一緒にスクロールして見える。PC 用に小さくするときは `pointer-fine:text-sm` を使い、`sm:text-sm` は使わない（iPad が引っかかる）。非表示のファイル入力にも `text-base` を付ける。

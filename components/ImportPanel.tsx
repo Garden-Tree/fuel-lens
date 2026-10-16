@@ -301,7 +301,7 @@ export default function ImportPanel({
         ref={fileInputRef}
         type="file"
         accept=".csv,text/csv"
-        className="hidden"
+        className="hidden text-base"
         onChange={handleFileChange}
         aria-label="CSV ファイルを選択"
       />
