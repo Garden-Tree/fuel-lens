@@ -3,6 +3,7 @@ import { handleAnalyze, type AnalyzeDeps } from "@/lib/server/analyze/handler";
 import { GeminiCallError } from "@/lib/server/analyze/errors";
 import { createRateLimiter } from "@/lib/server/analyze/rateLimit";
 import { encodeTrialCookie } from "@/lib/server/analyze/trialCookie";
+import { MAX_PAIR_IMAGE_BASE64_LENGTH, MAX_PAIR_TOTAL_BASE64_LENGTH } from "@/lib/analyze";
 
 // ---------------------------------------------------------------------------
 // fixtures: 先頭バイトにマジックナンバーを持つ 32 バイトのダミー画像（tests/analyze.test.ts と同じ作り）
@@ -46,6 +47,7 @@ function makeDeps(overrides: Partial<AnalyzeDeps> = {}) {
     limiter: createRateLimiter({ windowMs: 60_000, max: 5, maxKeys: 10_000, now: () => NOW }),
     trialLimiter: createRateLimiter({ windowMs: 24 * 60 * 60 * 1000, max: 10, maxKeys: 10_000, now: () => NOW }),
     now: () => NOW,
+    sleep: async () => {},
     log,
     newRequestId: () => "req00001",
     ...overrides,
@@ -300,7 +302,7 @@ describe("handleAnalyze", () => {
   it("accepts PNG and the legacy imageBase64 field", async () => {
     const { deps, gemini } = makeDeps({ limiter: looseLimiter() });
     expect((await handleAnalyze(makeReq({ image: PNG_B64 }), deps)).status).toBe(200);
-    expect(gemini.mock.calls[0][0].mimeType).toBe("image/png");
+    expect(gemini.mock.calls[0][0].images).toEqual([{ role: "combined", base64: PNG_B64, mimeType: "image/png" }]);
     expect((await handleAnalyze(makeReq({ imageBase64: JPEG_B64 }), deps)).status).toBe(200);
   });
 
@@ -324,15 +326,14 @@ describe("handleAnalyze", () => {
     expect(gemini).toHaveBeenCalledWith({
       apiKey: "test-key",
       model: "my-model",
-      base64: JPEG_B64,
-      mimeType: "image/jpeg",
+      images: [{ role: "combined", base64: JPEG_B64, mimeType: "image/jpeg" }],
     });
   });
 
   it("uses the default model when GEMINI_MODEL is unset", async () => {
     const { deps, gemini } = makeDeps();
     await handleAnalyze(makeReq(goodBody), deps);
-    expect(gemini.mock.calls[0][0].model).toBe("gemini-3.1-flash-lite");
+    expect(gemini.mock.calls[0][0].model).toBe("gemini-3.5-flash-lite");
   });
 
   it("includes plausibility warnings as { code, message }", async () => {
@@ -385,11 +386,12 @@ describe("handleAnalyze", () => {
     gemini.mockRejectedValueOnce(new GeminiCallError("timeout", undefined, new Error("deadline")));
     await expectError(await handleAnalyze(makeReq(goodBody), deps), 504, "UPSTREAM_TIMEOUT");
 
-    gemini.mockRejectedValueOnce(new GeminiCallError("upstream", 500, new Error("secret 500")));
+    gemini.mockRejectedValue(new GeminiCallError("upstream", 500, new Error("secret 500")));
     const upstream = await expectError(await handleAnalyze(makeReq(goodBody), deps), 502, "UPSTREAM_ERROR");
     expect(JSON.stringify(upstream)).not.toContain("secret");
 
     // 分類されていない例外も 502 に寄せる
+    gemini.mockReset();
     gemini.mockRejectedValueOnce(new Error("unclassified"));
     await expectError(await handleAnalyze(makeReq(goodBody), deps), 502, "UPSTREAM_ERROR");
   });
@@ -402,5 +404,300 @@ describe("handleAnalyze", () => {
     });
     await expectError(await handleAnalyze(makeReq(goodBody), deps), 500, "INTERNAL_ERROR");
     expect(log).toHaveBeenCalledWith("error", "[analyze req00001]", "Unexpected error:", expect.any(Error));
+  });
+
+  describe("transient upstream errors: retry and fallback", () => {
+    const e503 = () => new GeminiCallError("upstream", 503, new Error("secret high demand body"));
+    const models = (g: GeminiMock) => g.mock.calls.map((c) => (c[0] as { model: string }).model);
+
+    it("retries the primary model once after a 503 and succeeds", async () => {
+      const sleep = vi.fn(async () => {});
+      const { deps, gemini, log } = makeDeps({ sleep, random: () => 0.5 });
+      gemini.mockRejectedValueOnce(e503());
+      const res = await handleAnalyze(makeReq(goodBody), deps);
+      expect(res.status).toBe(200);
+      expect(models(gemini)).toEqual(["gemini-3.5-flash-lite", "gemini-3.5-flash-lite"]);
+      expect(sleep).toHaveBeenCalledTimes(1);
+      const ms = (sleep.mock.calls[0] as unknown as [number])[0];
+      expect(ms).toBeGreaterThanOrEqual(800);
+      expect(ms).toBeLessThanOrEqual(1500);
+      expect(log).toHaveBeenCalledWith("warn", "[analyze req00001]", expect.stringContaining("attempt 1 failed (upstream, status=503"));
+    });
+
+    it("falls back to the fallback model after two transient failures", async () => {
+      const { deps, gemini, log } = makeDeps();
+      gemini.mockRejectedValueOnce(e503()).mockRejectedValueOnce(e503());
+      const res = await handleAnalyze(makeReq(goodBody), deps);
+      expect(res.status).toBe(200);
+      expect(models(gemini)).toEqual(["gemini-3.5-flash-lite", "gemini-3.5-flash-lite", "gemini-2.5-flash"]);
+      expect(log).toHaveBeenCalledWith("log", "[analyze req00001]", "succeeded with fallback model gemini-2.5-flash");
+    });
+
+    it("uses GEMINI_FALLBACK_MODEL and counts one rate-limit hit for all attempts", async () => {
+      const limiter = { consume: vi.fn(() => ({ allowed: true, retryAfterSec: 0 })) };
+      const { deps, gemini } = makeDeps({
+        env: { GEMINI_API_KEY: "k", GEMINI_FALLBACK_MODEL: "custom-fb" },
+        limiter,
+      });
+      gemini.mockRejectedValueOnce(e503()).mockRejectedValueOnce(e503());
+      expect((await handleAnalyze(makeReq(goodBody), deps)).status).toBe(200);
+      expect(models(gemini)[2]).toBe("custom-fb");
+      expect(limiter.consume).toHaveBeenCalledTimes(1);
+    });
+
+    it("returns the overload message with requestId and no body leak when every attempt fails with 503", async () => {
+      const { deps, gemini } = makeDeps();
+      gemini.mockRejectedValue(e503());
+      const res = await handleAnalyze(makeReq(goodBody), deps);
+      const json = await expectError(res, 502, "UPSTREAM_ERROR");
+      expect(gemini).toHaveBeenCalledTimes(3);
+      expect(json.error).toBe("AIが混み合っています。少し時間をおいてもう一度お試しください。");
+      expect(JSON.stringify(json)).not.toMatch(/secret|gemini/i);
+    });
+
+    it("does not retry quota, timeout, 4xx or unclassified errors", async () => {
+      for (const err of [
+        new GeminiCallError("quota", 429, new Error("q")),
+        new GeminiCallError("timeout", undefined, new Error("t")),
+        new GeminiCallError("upstream", 400, new Error("bad")),
+        new Error("unclassified"),
+      ]) {
+        const { deps, gemini } = makeDeps();
+        gemini.mockRejectedValue(err);
+        await handleAnalyze(makeReq(goodBody), deps);
+        expect(gemini).toHaveBeenCalledTimes(1);
+      }
+    });
+
+    it("retries network errors (no status) and 500", async () => {
+      const { deps, gemini } = makeDeps();
+      gemini
+        .mockRejectedValueOnce(new GeminiCallError("upstream", undefined, new Error("fetch failed")))
+        .mockRejectedValueOnce(new GeminiCallError("upstream", 500, new Error("x")));
+      expect((await handleAnalyze(makeReq(goodBody), deps)).status).toBe(200);
+      expect(gemini).toHaveBeenCalledTimes(3);
+    });
+
+    it("skips the fallback when the env is empty or equals the primary", async () => {
+      for (const env of [
+        { GEMINI_API_KEY: "k", GEMINI_FALLBACK_MODEL: "" },
+        { GEMINI_API_KEY: "k", GEMINI_MODEL: "m1", GEMINI_FALLBACK_MODEL: "m1" },
+      ]) {
+        const { deps, gemini } = makeDeps({ env });
+        gemini.mockRejectedValue(e503());
+        await expectError(await handleAnalyze(makeReq(goodBody), deps), 502, "UPSTREAM_ERROR");
+        expect(gemini).toHaveBeenCalledTimes(2);
+      }
+    });
+
+    it("does not start another attempt when less than 32s of the 55s budget remains", async () => {
+      let t = NOW;
+      const { deps, gemini, log } = makeDeps({ now: () => t, sleep: async () => { t += 1_000; } });
+      gemini.mockImplementation(async () => {
+        t += 24_000; // 遅い失敗: 1 回目で 24s + 待機 1s = 25s 経過、残り 30s < 32s
+        throw e503();
+      });
+      await expectError(await handleAnalyze(makeReq(goodBody), deps), 502, "UPSTREAM_ERROR");
+      expect(gemini).toHaveBeenCalledTimes(1);
+      expect(log).toHaveBeenCalledWith("warn", "[analyze req00001]", expect.stringContaining("not enough time budget"));
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 2 枚（レシート + メーター）
+// ---------------------------------------------------------------------------
+
+const receiptEntry = { role: "receipt", image: `data:image/jpeg;base64,${JPEG_B64}` };
+const meterEntry = { role: "meter", image: PNG_B64 };
+const pairBody = { images: [receiptEntry, meterEntry] };
+
+/** Base64 として正しく、先頭が JPEG の、指定の長さ（4 の倍数）の文字列 */
+function bigJpegBase64(length: number): string {
+  // 30 バイト = 40 文字（パディングなし）の JPEG の先頭に "A"（0 のバイト）を続ける
+  const head = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(26)]).toString("base64");
+  return head + "A".repeat(length - head.length);
+}
+
+describe("handleAnalyze（2 枚: レシート + メーター）", () => {
+  it("2 枚を 1 回の Gemini 呼び出しで送る（レシート → メーターの順）", async () => {
+    const { deps, gemini } = makeDeps();
+    const res = await handleAnalyze(makeReq(pairBody), deps);
+    expect(res.status).toBe(200);
+    expect(gemini).toHaveBeenCalledTimes(1);
+    expect(gemini.mock.calls[0][0].images).toEqual([
+      { role: "receipt", base64: JPEG_B64, mimeType: "image/jpeg" },
+      { role: "meter", base64: PNG_B64, mimeType: "image/png" },
+    ]);
+    const json = await res.json();
+    expect(json).toMatchObject({ fuel_amount: 40, total_distance: 512.3, requestId: "req00001" });
+  });
+
+  it("順序が逆（メーター → レシート）でも役割どおりに並べ替える", async () => {
+    const { deps, gemini } = makeDeps();
+    const res = await handleAnalyze(makeReq({ images: [meterEntry, receiptEntry] }), deps);
+    expect(res.status).toBe(200);
+    expect(gemini.mock.calls[0][0].images.map((img: { role: string }) => img.role)).toEqual(["receipt", "meter"]);
+  });
+
+  it("0 枚・1 枚・3 枚は 400 INVALID_IMAGE（Gemini を呼ばない）", async () => {
+    const { deps, gemini } = makeDeps({ limiter: looseLimiter() });
+    await expectError(await handleAnalyze(makeReq({ images: [] }), deps), 400, "INVALID_IMAGE");
+    await expectError(await handleAnalyze(makeReq({ images: [receiptEntry] }), deps), 400, "INVALID_IMAGE");
+    await expectError(
+      await handleAnalyze(makeReq({ images: [receiptEntry, meterEntry, { role: "meter", image: JPEG_B64 }] }), deps),
+      400,
+      "INVALID_IMAGE"
+    );
+    expect(gemini).not.toHaveBeenCalled();
+  });
+
+  it("役割の重複・未知の役割・未知のキー・配列でない・要素がオブジェクトでないものは 400 INVALID_IMAGE", async () => {
+    const { deps, gemini } = makeDeps({ limiter: looseLimiter() });
+    const bad: unknown[] = [
+      { images: [receiptEntry, { ...meterEntry, role: "receipt" }] },
+      { images: [receiptEntry, { ...meterEntry, role: "odometer" }] },
+      { images: [receiptEntry, { ...meterEntry, role: undefined }] },
+      { images: [receiptEntry, { ...meterEntry, note: "x" }] },
+      { images: "not array" },
+      { images: { receipt: JPEG_B64, meter: PNG_B64 } },
+      { images: [receiptEntry, JPEG_B64] },
+      { images: [receiptEntry, null] },
+    ];
+    for (const body of bad) {
+      const json = await expectError(await handleAnalyze(makeReq(body), deps), 400, "INVALID_IMAGE");
+      expect(json.error).toContain("レシートとメーター");
+    }
+    expect(gemini).not.toHaveBeenCalled();
+  });
+
+  it("image と images を両方送ったら 400 INVALID_IMAGE", async () => {
+    const { deps, gemini } = makeDeps({ limiter: looseLimiter() });
+    await expectError(await handleAnalyze(makeReq({ ...goodBody, ...pairBody }), deps), 400, "INVALID_IMAGE");
+    await expectError(await handleAnalyze(makeReq({ imageBase64: JPEG_B64, ...pairBody }), deps), 400, "INVALID_IMAGE");
+    expect(gemini).not.toHaveBeenCalled();
+  });
+
+  it("どちらかの画像が JPEG/PNG/WebP でなければ 415、壊れていれば 400", async () => {
+    const { deps, gemini } = makeDeps({ limiter: looseLimiter() });
+    await expectError(
+      await handleAnalyze(makeReq({ images: [receiptEntry, { role: "meter", image: GIF_B64 }] }), deps),
+      415,
+      "INVALID_IMAGE"
+    );
+    await expectError(
+      await handleAnalyze(makeReq({ images: [{ role: "receipt", image: `data:text/plain;base64,${JPEG_B64}` }, meterEntry] }), deps),
+      415,
+      "INVALID_IMAGE"
+    );
+    await expectError(
+      await handleAnalyze(makeReq({ images: [receiptEntry, { role: "meter", image: "***" }] }), deps),
+      400,
+      "INVALID_IMAGE"
+    );
+    await expectError(
+      await handleAnalyze(makeReq({ images: [receiptEntry, { role: "meter" }] }), deps),
+      400,
+      "INVALID_IMAGE"
+    );
+    expect(gemini).not.toHaveBeenCalled();
+  });
+
+  it("1 枚あたりの上限（1.5MB）を超えたら 413 INVALID_IMAGE、合計の上限を超えたら 413 PAYLOAD_TOO_LARGE", async () => {
+    const { deps, gemini } = makeDeps({ limiter: looseLimiter() });
+    const perImageMax = MAX_PAIR_IMAGE_BASE64_LENGTH - (MAX_PAIR_IMAGE_BASE64_LENGTH % 4);
+    const tooBig = bigJpegBase64(perImageMax + 4);
+    const json = await expectError(
+      await handleAnalyze(makeReq({ images: [{ role: "receipt", image: tooBig }, meterEntry] }), deps),
+      413,
+      "INVALID_IMAGE"
+    );
+    expect(json.error).toContain("1枚あたり");
+
+    // 1 枚ずつは上限内だが、合計が上限を超える
+    const each = bigJpegBase64(perImageMax);
+    expect(each.length * 2).toBeGreaterThan(MAX_PAIR_TOTAL_BASE64_LENGTH);
+    await expectError(
+      await handleAnalyze(makeReq({ images: [{ role: "receipt", image: each }, { role: "meter", image: each }] }), deps),
+      413,
+      "PAYLOAD_TOO_LARGE"
+    );
+    expect(gemini).not.toHaveBeenCalled();
+  });
+
+  it("未ログインでお試しが無効（TRIAL_COOKIE_SECRET 未設定）なら 401（2 枚でも同じ）", async () => {
+    const { deps, gemini } = makeDeps({ auth: async () => ({ userId: null }) });
+    await expectError(await handleAnalyze(makeReq(pairBody), deps), 401, "AUTH_REQUIRED");
+    expect(gemini).not.toHaveBeenCalled();
+  });
+
+  it("未ログインのお試しでも 2 枚を受け付け、1 リクエスト = お試し 1 回分として数える", async () => {
+    const { deps, gemini } = makeDeps({
+      auth: async () => ({ userId: null }),
+      env: { GEMINI_API_KEY: "k", TRIAL_COOKIE_SECRET: SECRET },
+      limiter: looseLimiter(),
+    });
+    const res = await handleAnalyze(makeReq(pairBody, { ...IP_A, cookie: cookieFor(1) }), deps);
+    expect(res.status).toBe(200);
+    expect(gemini).toHaveBeenCalledTimes(1);
+    expect(res.headers.get("X-Trial-Remaining")).toBe("1");
+    expect(res.headers.get("Set-Cookie") ?? "").toContain(`fuel_lens_trial=${encodeTrialCookie(2, SECRET)}`);
+
+    // 使い切っていれば 2 枚でも 401 TRIAL_EXHAUSTED（Gemini を呼ばない）
+    const blocked = await handleAnalyze(makeReq(pairBody, { ...IP_A, cookie: cookieFor(3) }), deps);
+    await expectError(blocked, 401, "TRIAL_EXHAUSTED");
+    expect(gemini).toHaveBeenCalledTimes(1);
+  });
+
+  it("お試しでも 2 枚の大きさの上限は同じ（413 では回数を数えない）", async () => {
+    const { deps, gemini } = makeDeps({
+      auth: async () => ({ userId: null }),
+      env: { GEMINI_API_KEY: "k", TRIAL_COOKIE_SECRET: SECRET },
+      limiter: looseLimiter(),
+    });
+    const perImageMax = MAX_PAIR_IMAGE_BASE64_LENGTH - (MAX_PAIR_IMAGE_BASE64_LENGTH % 4);
+    const res = await handleAnalyze(
+      makeReq({ images: [{ role: "receipt", image: bigJpegBase64(perImageMax + 4) }, meterEntry] }, { ...IP_A, cookie: cookieFor(0) }),
+      deps
+    );
+    await expectError(res, 413, "INVALID_IMAGE");
+    expect(res.headers.get("Set-Cookie")).toBeNull();
+    expect(res.headers.get("X-Trial-Remaining")).toBe("3");
+    expect(gemini).not.toHaveBeenCalled();
+  });
+
+  it("2 枚でも一時的な失敗（503）は再試行・代替モデルに同じ 2 枚を送る", async () => {
+    const { deps, gemini } = makeDeps();
+    const e503 = () => new GeminiCallError("upstream", 503, new Error("busy"));
+    gemini.mockRejectedValueOnce(e503()).mockRejectedValueOnce(e503());
+    const res = await handleAnalyze(makeReq(pairBody), deps);
+    expect(res.status).toBe(200);
+    expect(gemini).toHaveBeenCalledTimes(3);
+    const calls = gemini.mock.calls.map((c) => c[0] as { model: string; images: { role: string }[] });
+    expect(calls.map((c) => c.model)).toEqual(["gemini-3.5-flash-lite", "gemini-3.5-flash-lite", "gemini-2.5-flash"]);
+    for (const c of calls) expect(c.images.map((img) => img.role)).toEqual(["receipt", "meter"]);
+  });
+
+  it("2 枚でもレートリミットは 1 リクエスト = 1 回分", async () => {
+    const { deps } = makeDeps(); // 1 分に 5 回
+    for (let i = 0; i < 5; i++) {
+      expect((await handleAnalyze(makeReq(pairBody), deps)).status).toBe(200);
+    }
+    await expectError(await handleAnalyze(makeReq(pairBody), deps), 429, "RATE_LIMITED");
+  });
+
+  it("2 枚で何も読み取れなければ 422 NOTHING_EXTRACTED（画像の選び方の確認を促す）", async () => {
+    const { deps, gemini } = makeDeps();
+    gemini.mockResolvedValue({ text: JSON.stringify({ date: null, gas_station: null }) });
+    const json = await expectError(await handleAnalyze(makeReq(pairBody), deps), 422, "NOTHING_EXTRACTED");
+    expect(json.error).toContain("1枚目にレシート");
+  });
+
+  it("Gemini のエラー本文を返さない（2 枚でも汎用メッセージ + requestId）", async () => {
+    const { deps, gemini } = makeDeps();
+    // 500 は再試行・代替モデルの対象なので、すべての試行を失敗させる
+    gemini.mockRejectedValue(new GeminiCallError("upstream", 500, new Error("secret upstream body")));
+    const json = await expectError(await handleAnalyze(makeReq(pairBody), deps), 502, "UPSTREAM_ERROR");
+    expect(JSON.stringify(json)).not.toContain("secret");
   });
 });

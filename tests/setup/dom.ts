@@ -8,6 +8,9 @@ afterEach(() => {
   cleanup();
 });
 
+// jsdom は window.scrollTo 未実装（body スクロールロックの解除で呼ばれる）
+window.scrollTo = vi.fn() as unknown as typeof window.scrollTo;
+
 // --- Clerk ---------------------------------------------------------------
 vi.mock("@clerk/nextjs", () => ({
   useAuth: () => ({ isLoaded: true, isSignedIn: false, userId: null, getToken: async () => null }),

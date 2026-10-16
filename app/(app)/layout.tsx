@@ -8,6 +8,7 @@ import { clerkFrontendApiOrigin } from "@/lib/clerkFrontendApi";
 import UserSync from "@/components/UserSync";
 import SupabaseStatusBanner from "@/components/SupabaseStatusBanner";
 import { ToastProvider } from "@/components/Toast";
+import { AppShell } from "@/components/AppShell";
 import { InitialAuthProvider } from "@/lib/data/initialAuthContext";
 import type { InitialAuth } from "@/lib/data/initialAuth";
 import { TrialProvider } from "@/lib/scan/trialContext";
@@ -52,7 +53,11 @@ async function readInitialTrial(): Promise<TrialState> {
  * 公開ページ（/・/calc・/privacy・/terms）には載せない。ランディングのログインボタンは
  * components/landing/HeaderAuthButtons.tsx が読み込み完了後に Clerk を遅延読み込みする。
  * ルートグループ `(app)` なので URL は変わらない。画面間の移動ではこのレイアウトが保たれる（Clerk・トーストは作り直さない）。
+ * 画面の枠（AppShell: サイドバー・下部タブバー・スキャンメニュー・本文の器）もここで描画し、タブの切り替えでは作り直さない
+ * （切り替わるのは `<main>` の中のページだけ）。
  * サーバーで auth() を読むため、この 4 画面はリクエストごとの描画（動的）になる（公開ページは静的のまま）。
+ * 動的なページはリンクの先読み（prefetch）がされないため、各画面に loading.tsx を置く。先読みは loading.tsx の境界まで行われ、
+ * タップした瞬間にその画面の見出しとスケルトンを表示できる（ページ本体はサーバーの応答を待って差し替わる）。
  */
 export default async function AppLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   // Clerk の Frontend API（/v1/environment・/v1/client。Cookie 付き）への接続を先に張る
@@ -67,7 +72,7 @@ export default async function AppLayout({ children }: Readonly<{ children: React
           <ToastProvider>
             <UserSync />
             <SupabaseStatusBanner />
-            {children}
+            <AppShell>{children}</AppShell>
           </ToastProvider>
         </TrialProvider>
       </InitialAuthProvider>

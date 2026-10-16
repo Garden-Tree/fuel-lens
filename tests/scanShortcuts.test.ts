@@ -30,6 +30,10 @@ describe("resolveShortcutAction", () => {
     const scanning = { ...ALL_READY, scanBlock: "scanning", manualBlock: "scanning", shared: false } as const;
     expect(resolveShortcutAction("scan", scanning)).toEqual({ type: "drop", message: "読み取り中のため撮影を開始できません" });
     expect(resolveShortcutAction("album", scanning)).toEqual({ type: "drop", message: "読み取り中のためアルバムを開けません" });
+    expect(resolveShortcutAction("pair", scanning)).toEqual({
+      type: "drop",
+      message: "読み取り中のためレシートとメーターの撮影を開始できません",
+    });
     const reviewing = { ...ALL_READY, scanBlock: "reviewing", manualBlock: "reviewing", shared: false } as const;
     expect(resolveShortcutAction("scan", reviewing)).toEqual({
       type: "drop",

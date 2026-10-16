@@ -1,14 +1,49 @@
-import { describe, expect, it, vi } from "vitest";
-import { screen, within } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { act, renderHook, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { AppFrame, HookErrorLine, PageHeader, ReadOnlyCaption } from "@/components/AppShell";
+import { AppPage, AppShell, HookErrorLine, PageHeader, ReadOnlyCaption, useOptimisticNavPath } from "@/components/AppShell";
 import { APP_NAV_ITEMS, SCAN_BUTTON_LABEL, isNavItemActive } from "@/components/AppNav";
 import { SIGNED_OUT_SCAN_NOTE } from "@/components/ScanActionMenu";
 import VehicleSelector from "@/components/VehicleSelector";
 import type { Vehicle } from "@/lib/types";
 import { renderWithProviders } from "../setup/render";
 
-// tests/setup/dom.ts のモックでは usePathname() は "/app"、未ログイン
+// tests/setup/dom.ts と同じモックだが、画面の切り替えを試すため usePathname() の値を変えられるようにする（既定は "/app"、未ログイン）
+const nav = vi.hoisted(() => ({ pathname: "/app" }));
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ replace: vi.fn(), push: vi.fn(), back: vi.fn(), refresh: vi.fn(), prefetch: vi.fn() }),
+  useSearchParams: () => new URLSearchParams(),
+  usePathname: () => nav.pathname,
+}));
+
+// next/link のクライアント遷移の代わり: クリックで onNavigate を呼び、文書の遷移はしない（jsdom はルーターを持たない）
+vi.mock("next/link", async () => {
+  const { createElement } = await import("react");
+  return {
+    default: ({
+      href,
+      onNavigate,
+      children,
+      ...rest
+    }: { href: string; onNavigate?: (e: { preventDefault: () => void }) => void; children?: React.ReactNode } & Record<string, unknown>) =>
+      createElement(
+        "a",
+        {
+          ...rest,
+          href,
+          onClick: (e: MouseEvent) => {
+            e.preventDefault();
+            onNavigate?.({ preventDefault: () => {} });
+          },
+        },
+        children
+      ),
+  };
+});
+
+afterEach(() => {
+  nav.pathname = "/app";
+});
 
 describe("PageHeader", () => {
   it("見出し（h1）を表示し、戻るリンクは出さない", () => {
@@ -32,12 +67,12 @@ describe("PageHeader", () => {
   });
 });
 
-describe("AppFrame", () => {
+describe("AppShell", () => {
   it("本文を main に描画し、ナビゲーションの 4 項目を並べる（今の画面に aria-current）", () => {
     renderWithProviders(
-      <AppFrame>
+      <AppShell>
         <p>本文</p>
-      </AppFrame>
+      </AppShell>
     );
     expect(within(screen.getByRole("main")).getByText("本文")).toBeInTheDocument();
     // スマホのタブバーと PC のサイドバー（CSS で出し分け）の 2 つ
@@ -51,12 +86,105 @@ describe("AppFrame", () => {
     }
   });
 
+  it("スマホは枠を画面に固定し、本文の器だけをスクロールさせる。タブバーは fixed ではなく flex の下端（PC は従来どおり）", () => {
+    renderWithProviders(
+      <AppShell>
+        <p>本文</p>
+      </AppShell>
+    );
+    const scroller = screen.getByRole("main").parentElement!;
+    expect(scroller).toHaveAttribute("data-app-scroll");
+    const classesOf = (el: HTMLElement) => el.className.split(/\s+/);
+    expect(classesOf(scroller)).toEqual(expect.arrayContaining(["flex-1", "min-h-0", "overflow-y-auto", "lg:overflow-visible"]));
+
+    const shell = scroller.parentElement!;
+    expect(classesOf(shell)).toEqual(
+      expect.arrayContaining(["fixed", "inset-0", "flex-col", "overflow-hidden", "lg:static", "lg:overflow-visible"])
+    );
+
+    const tabBar = document.querySelector<HTMLElement>("[data-app-tabbar]")!;
+    // 本文の器の兄弟（器の中でも fixed でもない）
+    expect(tabBar.parentElement).toBe(shell);
+    expect(scroller.contains(tabBar)).toBe(false);
+    expect(classesOf(tabBar)).not.toContain("fixed");
+    expect(tabBar.className).not.toContain("backdrop-blur");
+    expect(classesOf(tabBar)).toEqual(
+      expect.arrayContaining(["relative", "z-40", "shrink-0", "pb-[var(--tabbar-safe-bottom)]", "lg:hidden"])
+    );
+  });
+
+  it("画面が切り替わったら本文の器を先頭に戻す（ハッシュ付きは各画面に任せる）", () => {
+    const { rerender } = renderWithProviders(
+      <AppShell>
+        <p>本文</p>
+      </AppShell>
+    );
+    const scroller = screen.getByRole("main").parentElement!;
+    scroller.scrollTop = 500;
+    nav.pathname = "/history";
+    rerender(
+      <AppShell>
+        <p>本文</p>
+      </AppShell>
+    );
+    expect(scroller.scrollTop).toBe(0);
+
+    scroller.scrollTop = 300;
+    window.history.replaceState(null, "", "/stats#record-1");
+    nav.pathname = "/stats";
+    rerender(
+      <AppShell>
+        <p>本文</p>
+      </AppShell>
+    );
+    expect(scroller.scrollTop).toBe(300);
+    window.history.replaceState(null, "", "/");
+  });
+
+  it("画面（children）と pathname が変わっても枠（タブバー・サイドバー・本文の器）は作り直さない", () => {
+    const { rerender } = renderWithProviders(
+      <AppShell>
+        <p>ホームの本文</p>
+      </AppShell>
+    );
+    const tabBar = document.querySelector("[data-app-tabbar]");
+    const scroller = document.querySelector("[data-app-scroll]");
+    const sidebarNav = screen.getAllByRole("navigation", { name: "メイン" })[1];
+    nav.pathname = "/history";
+    rerender(
+      <AppShell>
+        <p>履歴の本文</p>
+      </AppShell>
+    );
+    expect(screen.getByText("履歴の本文")).toBeInTheDocument();
+    expect(document.querySelector("[data-app-tabbar]")).toBe(tabBar);
+    expect(document.querySelector("[data-app-scroll]")).toBe(scroller);
+    expect(screen.getAllByRole("navigation", { name: "メイン" })[1]).toBe(sidebarNav);
+    for (const n of screen.getAllByRole("navigation", { name: "メイン" })) {
+      expect(within(n).getByRole("link", { name: "履歴" })).toHaveAttribute("aria-current", "page");
+    }
+  });
+
+  it("タブをタップしたら、遷移の完了（pathname の変化）を待たずにその項目を選択中にする", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(
+      <AppShell>
+        <p>本文</p>
+      </AppShell>
+    );
+    const tabBar = document.querySelector<HTMLElement>("[data-app-tabbar]")!;
+    // jsdom では遷移しない（pathname は "/app" のまま）
+    await user.click(within(tabBar).getByRole("link", { name: "統計" }));
+    expect(within(tabBar).getByRole("link", { name: "統計" })).toHaveAttribute("aria-current", "page");
+    expect(within(tabBar).getByRole("link", { name: "ホーム" })).not.toHaveAttribute("aria-current");
+  });
+
   it("スキャンボタンでメニューを開き、未ログインでは手動入力だけ選べる", async () => {
     const user = userEvent.setup();
     renderWithProviders(
-      <AppFrame>
+      <AppShell>
         <p>本文</p>
-      </AppFrame>
+      </AppShell>
     );
     await user.click(screen.getByRole("button", { name: SCAN_BUTTON_LABEL }));
     const dialog = screen.getByRole("dialog", { name: "記録する" });
@@ -72,9 +200,9 @@ describe("AppFrame", () => {
   it("PC のサイドバーの「スキャンして記録」からも同じメニューを開く", async () => {
     const user = userEvent.setup();
     renderWithProviders(
-      <AppFrame>
+      <AppShell>
         <p>本文</p>
-      </AppFrame>
+      </AppShell>
     );
     await user.click(screen.getByRole("button", { name: "スキャンして記録" }));
     const dialog = screen.getByRole("dialog", { name: "記録する" });
@@ -82,6 +210,46 @@ describe("AppFrame", () => {
     expect(within(dialog).getByRole("link", { name: /手動で入力/ })).toHaveFocus();
     await user.keyboard("{Escape}");
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+});
+
+describe("useOptimisticNavPath", () => {
+  it("タップした項目を pathname より先に返し、pathname が変わったら pathname に戻す", () => {
+    const { result, rerender } = renderHook(({ path }) => useOptimisticNavPath(path), { initialProps: { path: "/app" } });
+    expect(result.current.activePath).toBe("/app");
+    act(() => result.current.onNavigate("/history"));
+    expect(result.current.activePath).toBe("/history");
+    rerender({ path: "/history" });
+    expect(result.current.activePath).toBe("/history");
+    // 別の経路で元の画面に戻っても、前のタップの値を使い回さない
+    rerender({ path: "/app" });
+    expect(result.current.activePath).toBe("/app");
+  });
+
+  it("今の画面の項目をタップしても選択は変わらない", () => {
+    const { result } = renderHook(() => useOptimisticNavPath("/stats"));
+    act(() => result.current.onNavigate("/stats"));
+    expect(result.current.activePath).toBe("/stats");
+  });
+});
+
+describe("AppPage", () => {
+  it("default は包まずに描画し、narrow は従来の 768px の本文幅の器で包む", () => {
+    const { rerender } = renderWithProviders(
+      <AppPage>
+        <p data-testid="body">本文</p>
+      </AppPage>
+    );
+    expect(screen.getByTestId("body").parentElement).toBe(document.querySelector("[data-testid=body]")!.parentElement);
+    expect(screen.getByTestId("body").parentElement!.className).not.toContain("max-w-[736px]");
+    rerender(
+      <AppPage width="narrow">
+        <p data-testid="body">本文</p>
+      </AppPage>
+    );
+    expect(screen.getByTestId("body").parentElement!.className.split(/\s+/)).toEqual(
+      expect.arrayContaining(["mx-auto", "max-w-[736px]", "lg:max-w-[704px]"])
+    );
   });
 });
 

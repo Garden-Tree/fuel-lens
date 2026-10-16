@@ -13,6 +13,7 @@ import {
 import { X } from "lucide-react";
 import { useBackdropClose } from "@/lib/useBackdropClose";
 import { useFocusTrap } from "@/lib/useFocusTrap";
+import { useBodyScrollLock } from "@/lib/useBodyScrollLock";
 
 /**
  * アプリ共通のモーダルダイアログ。
@@ -69,7 +70,7 @@ export interface ModalProps {
   onEscape?: () => void;
   /** true の間は Escape・背景クリック・× を無視する（保存中など） */
   disableClose?: boolean;
-  /** 開いている間 document.body のスクロールを止める（既定 false） */
+  /** 開いている間 document.body のスクロールを止める（既定 true。アンカー位置のポップオーバーだけ false） */
   lockBodyScroll?: boolean;
   /** 背景（オーバーレイ）の className。既定は中央寄せの暗い背景 */
   backdropClassName?: string;
@@ -90,7 +91,7 @@ function ModalRoot({
   closeOnEscape = true,
   onEscape,
   disableClose = false,
-  lockBodyScroll = false,
+  lockBodyScroll = true,
   backdropClassName = DEFAULT_BACKDROP_CLASS,
   panelClassName = DEFAULT_PANEL_CLASS,
   panelStyle,
@@ -115,15 +116,8 @@ function ModalRoot({
   // 開いたら初期フォーカスを置き、モーダル内でフォーカスを循環させる。閉じたら開いた要素へ戻す
   useFocusTrap(panelRef, { active: open, initialFocusRef: initialFocusRef ?? closeButtonRef });
 
-  // 本文スクロールのロック
-  useEffect(() => {
-    if (!open || !lockBodyScroll) return;
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.body.style.overflow = prev;
-    };
-  }, [open, lockBodyScroll]);
+  // 背面のページ（下部タブバー含む）のスクロール・ドラッグを止める（iOS 対応は lib/useBodyScrollLock.ts）
+  useBodyScrollLock(open && lockBodyScroll);
 
   // 背景クリックで閉じる（パネル内から背景へドラッグして離した場合は閉じない）
   const backdropHandlers = useBackdropClose(onClose, closeOnBackdrop && !disableClose);
@@ -165,7 +159,7 @@ function ModalHeader({ icon, className = "mb-6" }: { icon?: ReactNode; className
 
 /** スクロールする本文領域 */
 function ModalBody({ children, className = "" }: { children: ReactNode; className?: string }) {
-  return <div className={`flex-1 overflow-y-auto ${className}`}>{children}</div>;
+  return <div className={`flex-1 overflow-y-auto overscroll-contain ${className}`}>{children}</div>;
 }
 
 /** 下部に固定する領域（ボタン行・フォームなど） */

@@ -5,7 +5,7 @@ import {
   hasAnyCoreValue,
   hostFromUrl,
   isAllowedOrigin,
-  parseImagePayload,
+  parseAnalyzeImages,
   plausibilityWarnings,
   sanitizeAIResponse,
   type AnalyzeErrorResponse,
@@ -18,11 +18,35 @@ import type { callGemini } from "./geminiClient";
 import { clientIpOf, type RateLimiter } from "./rateLimit";
 import { decodeTrialCookie, readCookie, trialSetCookie } from "./trialCookie";
 
-export const DEFAULT_GEMINI_MODEL = "gemini-3.1-flash-lite";
+export const DEFAULT_GEMINI_MODEL = "gemini-3.5-flash-lite";
+/** 主モデルが一時的に失敗し続けたときの代替モデルの既定 */
+export const DEFAULT_GEMINI_FALLBACK_MODEL = "gemini-2.5-flash";
+
+/** ハンドラ開始からの全体の時間予算（maxDuration 60 秒より少し手前） */
+export const ANALYZE_TOTAL_BUDGET_MS = 55_000;
+/** 新しい試行を始めるのに残っていてほしい時間（Gemini のタイムアウト 30 秒 + 余裕） */
+export const ANALYZE_MIN_REMAINING_MS = 32_000;
+
+/** 一時的な上流エラー（503 / 500 / 504 とネットワークエラー）か。429 の枠超過・タイムアウト・4xx は含めない */
+export function isTransientGeminiError(error: unknown): boolean {
+  if (!(error instanceof GeminiCallError)) return false;
+  const { kind, status } = error;
+  if (kind === "quota") return false;
+  if (kind === "timeout") return status === 504;
+  return status === undefined || status === 500 || status === 503 || status === 504;
+}
+
+const NOTHING_EXTRACTED_MESSAGE =
+  "レシート/メーターを読み取れませんでした。文字がはっきり写るように撮り直すか、「手動で入力」から記録してください。";
+/** 2 枚で送ったとき（役割の取り違えもありうるので、選び方の確認も促す） */
+const NOTHING_EXTRACTED_PAIR_MESSAGE =
+  "レシート/メーターを読み取れませんでした。1枚目にレシート、2枚目にメーターの写真を選んでいるか確認し、文字がはっきり写るように撮り直すか、「手動で入力」から記録してください。";
 
 export type AnalyzeEnv = {
   GEMINI_API_KEY?: string;
   GEMINI_MODEL?: string;
+  /** 主モデルが一時的に失敗したときの代替モデル。空文字なら代替しない（未設定は既定の gemini-2.5-flash） */
+  GEMINI_FALLBACK_MODEL?: string;
   /** 未ログインのお試し読み取りの Cookie の署名鍵。未設定ならお試しは無効（未ログインは 401 AUTH_REQUIRED） */
   TRIAL_COOKIE_SECRET?: string;
   NEXT_PUBLIC_APP_URL?: string;
@@ -39,6 +63,10 @@ export type AnalyzeDeps = {
   /** 未ログインのお試しの IP ごとの 1 日の上限（キー = `ip:<IP>`） */
   trialLimiter: RateLimiter;
   now: () => number;
+  /** リトライ前の待機（省略時は setTimeout。テストで差し替える） */
+  sleep?: (ms: number) => Promise<void>;
+  /** 0 以上 1 未満の乱数（待機時間のゆらぎ用。省略時は Math.random） */
+  random?: () => number;
   /** 第 1 引数は `[analyze <requestId>]` 接頭辞 */
   log: (level: "log" | "warn" | "error", ...args: unknown[]) => void;
   /** リクエスト ID の生成（省略時は UUID の先頭 8 文字） */
@@ -169,25 +197,67 @@ export async function handleAnalyze(req: Request, deps: AnalyzeDeps): Promise<Re
       return errorResponse(400, { error: "リクエスト本文が不正です。", code: "INVALID_BODY", requestId });
     }
 
-    // `image` が正。旧クライアント互換のため `imageBase64` も受け付ける
-    const { image, imageBase64 } = body as { image?: unknown; imageBase64?: unknown };
-    const parsed = parseImagePayload(image ?? imageBase64);
+    // 1 枚（`image`。旧クライアント互換で `imageBase64` も）か、2 枚（`images`: レシート + メーター）。
+    // 2 枚でも Gemini 呼び出しは 1 回（レートリミットも 1 回分。上で消費済み）
+    const parsed = parseAnalyzeImages(body as Record<string, unknown>);
     if (!parsed.ok) {
-      return errorResponse(parsed.status, { error: parsed.error, code: "INVALID_IMAGE", requestId });
+      return errorResponse(parsed.status, { error: parsed.error, code: parsed.code, requestId });
     }
-    log("log", `image ${parsed.mimeType} ~${Math.round(parsed.approxBytes / 1024)} KB user=${userId ? "yes" : "trial"}`);
+    const { mode, images } = parsed;
+    log(
+      "log",
+      `${mode} ${images.map((img) => `${img.role}:${img.mimeType} ~${Math.round(img.approxBytes / 1024)} KB`).join(" ")} user=${userId ? "yes" : "trial"}`
+    );
+    // 再試行・代替モデルでも同じ画像（1 枚または 2 枚）を送る
+    const promptImages = images.map(({ role, base64, mimeType }) => ({ role, base64, mimeType }));
 
     // ---- Gemini 呼び出し ----
     const model = env.GEMINI_MODEL || DEFAULT_GEMINI_MODEL;
 
+    // 一時的な失敗（503 など）は主モデルを 1 回だけ再試行 → 代替モデルを 1 回だけ試す。
+    // 429・タイムアウト・4xx は再試行しない。時間予算が足りなければ新しい試行は始めない。
+    // レートリミットは 1 リクエスト 1 回（内部の再試行では数えない）
+    const sleep = deps.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
+    const random = deps.random ?? Math.random;
+    const fallbackRaw = env.GEMINI_FALLBACK_MODEL ?? DEFAULT_GEMINI_FALLBACK_MODEL;
+    const fallbackModel = fallbackRaw && fallbackRaw !== model ? fallbackRaw : null;
+    const plan = fallbackModel ? [model, model, fallbackModel] : [model, model];
+    const startedAt = deps.now();
+    const hasBudget = () => ANALYZE_TOTAL_BUDGET_MS - (deps.now() - startedAt) >= ANALYZE_MIN_REMAINING_MS;
+
     let responseText: string | undefined;
+    let usedModel = model;
     try {
-      const result = await deps.gemini({
-        apiKey,
-        model,
-        base64: parsed.base64,
-        mimeType: parsed.mimeType,
-      });
+      let result: Awaited<ReturnType<AnalyzeDeps["gemini"]>> | undefined;
+      let lastError: unknown;
+      for (let i = 0; i < plan.length; i++) {
+        if (i > 0) {
+          if (!isTransientGeminiError(lastError)) break;
+          if (i === 1) {
+            await sleep(800 + Math.floor(random() * 700));
+          }
+          if (!hasBudget()) {
+            log("warn", `skip attempt ${i + 1}: not enough time budget left`);
+            break;
+          }
+        }
+        usedModel = plan[i];
+        try {
+          result = await deps.gemini({
+            apiKey,
+            model: usedModel,
+            images: promptImages,
+          });
+          break;
+        } catch (error) {
+          lastError = error;
+          if (error instanceof GeminiCallError) {
+            log("warn", `attempt ${i + 1} failed (${error.kind}, status=${error.status ?? "n/a"}, model=${usedModel})`);
+          }
+        }
+      }
+      if (!result) throw lastError;
+      if (usedModel !== model) log("log", `succeeded with fallback model ${usedModel}`);
       responseText = result.text;
 
       if (!responseText) {
@@ -211,7 +281,7 @@ export async function handleAnalyze(req: Request, deps: AnalyzeDeps): Promise<Re
       const status = error instanceof GeminiCallError ? error.status : undefined;
       log(
         "error",
-        `Gemini call failed (${kind}, status=${status ?? "n/a"}, model=${model}):`,
+        `Gemini call failed (${kind}, status=${status ?? "n/a"}, model=${usedModel}):`,
         error instanceof GeminiCallError ? error.cause : error
       );
 
@@ -230,7 +300,10 @@ export async function handleAnalyze(req: Request, deps: AnalyzeDeps): Promise<Re
         });
       }
       return errorResponse(502, {
-        error: "AI解析サービスでエラーが発生しました。しばらくしてから再度お試しください。",
+        error:
+          status === 503
+            ? "AIが混み合っています。少し時間をおいてもう一度お試しください。"
+            : "AI解析サービスでエラーが発生しました。しばらくしてから再度お試しください。",
         code: "UPSTREAM_ERROR",
         requestId,
       });
@@ -265,7 +338,7 @@ export async function handleAnalyze(req: Request, deps: AnalyzeDeps): Promise<Re
     if (!hasAnyCoreValue(data)) {
       log("warn", "No core values extracted", data);
       return errorResponse(422, {
-        error: "レシート/メーターを読み取れませんでした。文字がはっきり写るように撮り直すか、「手動で入力」から記録してください。",
+        error: mode === "pair" ? NOTHING_EXTRACTED_PAIR_MESSAGE : NOTHING_EXTRACTED_MESSAGE,
         code: "NOTHING_EXTRACTED",
         requestId,
       });

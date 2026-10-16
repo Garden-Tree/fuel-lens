@@ -5,7 +5,7 @@ import { useAuth } from "@clerk/nextjs";
 
 import { useVehicleScope } from "@/lib/useVehicleScope";
 import AccountPanel from "@/components/AccountPanel";
-import { AppFrame, HookErrorLine, PageHeader, ReadOnlyCaption } from "@/components/AppShell";
+import { AppPage, HookErrorLine, PageHeader, ReadOnlyCaption } from "@/components/AppShell";
 import BackupPanel from "@/components/BackupPanel";
 import ImportPanel from "@/components/ImportPanel";
 import { GroupedList, ListRow, Section } from "@/components/ui";
@@ -41,7 +41,7 @@ export default function SettingsPage() {
   }, []);
 
   return (
-    <AppFrame width="narrow">
+    <AppPage width="narrow">
       <div className="flex w-full flex-col gap-5">
         <PageHeader title="設定" />
 
@@ -91,6 +91,6 @@ export default function SettingsPage() {
           </GroupedList>
         </Section>
       </div>
-    </AppFrame>
+    </AppPage>
   );
 }

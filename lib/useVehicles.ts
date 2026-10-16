@@ -54,6 +54,8 @@ export function useVehicles() {
   const inFlightLoads = useRef(0);
   // 「再試行」イベントの再読み込みだけ、クラウドの初期化の失敗メモ（30 秒）を飛ばす
   const forceBootstrap = useRef(false);
+  // このフックのインスタンスでクラウドから一覧を読めたか（読めるまでは、画面を開いた直後のキャッシュの先行表示を使う）
+  const syncedRef = useRef(false);
 
   const readOnly = isSignedIn && outage != null;
 
@@ -110,9 +112,22 @@ export function useVehicles() {
     // Clerk の確定したユーザーが先行表示の持ち主と違う（別のユーザー・未ログイン）なら、先にキャッシュを消す
     if (previewingRef.current && previewUserRef.current !== (isSignedIn ? userId : null)) dropPreview();
     if (background && stores?.kind !== "cloud") return;
+    // このフックがまだクラウドから一覧を読めていない（画面を開いた直後。タブの切り替えでもページごとにフックは作り直される）なら、
+    // 最後に同期した一覧（このユーザーのキャッシュ）を先に表示し、裏で読み込んだ一覧で置き換える（stale-while-revalidate）。
+    // Clerk の読み込み後のログイン中だけ。書き込みは通常どおりクラウドへ行う（閲覧専用の先行表示 previewing とは別）
+    const seed =
+      !background && !previewingRef.current && !syncedRef.current && stores?.kind === "cloud"
+        ? (stores.vehicles.cached() ?? []).map(v => normalizeVehicle(v))
+        : [];
     if (!background) {
-      // キャッシュを表示中なら loading を立てずに置き換える（失敗時の扱いは通常の読み込みと同じ）
-      if (!previewingRef.current) setLoading(true);
+      if (seed.length > 0) {
+        setVehicles(seed);
+        setSelectedVehicleIdState(pickSelected(seed, cachedSelectedId, DEFAULT_VEHICLE.id));
+        setLoading(false);
+      } else if (!previewingRef.current) {
+        // キャッシュを表示中なら loading を立てずに置き換える（失敗時の扱いは通常の読み込みと同じ）
+        setLoading(true);
+      }
       setError(null);
     }
     const isCurrent = () => fetchId === fetchCounter.current;
@@ -162,6 +177,7 @@ export function useVehicles() {
       const list = await stores.vehicles.list();
       if (!isCurrent()) return;
       if (background) setError(migrationError ?? null);
+      syncedRef.current = true;
       setVehicles(list);
       applySelection(list);
     } catch (e) {

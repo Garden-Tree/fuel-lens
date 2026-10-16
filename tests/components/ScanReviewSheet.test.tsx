@@ -39,6 +39,20 @@ function setup(overrides: Partial<AnalyzeSuccessResponse> = {}) {
 }
 
 describe("ScanReviewSheet", () => {
+  it("開いている間は背面の body を固定し、閉じると元のスクロール位置へ戻す", () => {
+    const scrollTo = vi.spyOn(window, "scrollTo").mockImplementation(() => {});
+    Object.defineProperty(window, "scrollY", { value: 240, configurable: true });
+    const props = { result: makeResult(), imageSrc: null, onSave: vi.fn(), onDiscard: vi.fn() };
+    const { unmount } = renderWithProviders(<ScanReviewSheet {...props} />);
+    expect(document.body.style.position).toBe("fixed");
+    expect(document.body.style.top).toBe("-240px");
+    unmount();
+    expect(document.body.style.position).toBe("");
+    expect(document.body.style.top).toBe("");
+    expect(scrollTo).toHaveBeenCalledWith(0, 240);
+    scrollTo.mockRestore();
+  });
+
   it("読み取り結果をフォームに流し込み、確信度が低い項目だけ「要確認」にする", () => {
     setup();
     expect(screen.getByRole("dialog", { name: "読み取り結果の確認" })).toBeInTheDocument();
@@ -164,5 +178,48 @@ describe("ScanReviewSheet", () => {
     await waitFor(() => expect(screen.getByRole("button", { name: "破棄" })).toBeEnabled());
     await user.keyboard("{Escape}");
     expect(onDiscard).toHaveBeenCalledTimes(1);
+  });
+
+  describe("写真の表示（最初から大きく）", () => {
+    const img = "data:image/png;base64,AAAA";
+    it("1 枚: 上部に大きく出し、タップで拡大 / 縮小できる", async () => {
+      const user = userEvent.setup();
+      renderWithProviders(<ScanReviewSheet result={makeResult()} imageSrc={img} onSave={vi.fn()} onDiscard={vi.fn()} />);
+      const photo = screen.getByRole("img", { name: "解析した写真" });
+      expect(photo).toHaveClass("max-h-[45vh]", "w-full", "object-contain");
+      await user.click(screen.getByRole("button", { name: "写真を拡大する" }));
+      expect(screen.getByRole("img", { name: "解析した写真" })).toHaveClass("max-h-[75dvh]");
+      expect(screen.getByLabelText("給油量 (L)")).toBeInTheDocument();
+    });
+
+    it("2 枚: レシートとメーターを並べて大きく出す", () => {
+      renderWithProviders(
+        <ScanReviewSheet result={makeResult()} imageSrc={img} meterImageSrc={img} onSave={vi.fn()} onDiscard={vi.fn()} />,
+      );
+      expect(screen.getByRole("img", { name: "解析したレシートの写真" })).toHaveClass("object-contain", "max-h-[45vh]");
+      expect(screen.getByRole("img", { name: "解析したメーターの写真" })).toHaveClass("object-contain", "max-h-[45vh]");
+      expect(screen.getByRole("button", { name: "レシートを拡大する" })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "メーターを拡大する" })).toBeInTheDocument();
+    });
+
+    it("一括読み取り: 同じ大きな表示で、スキップ・保存ボタンはそのまま", () => {
+      renderWithProviders(
+        <ScanReviewSheet
+          result={makeResult()}
+          imageSrc={img}
+          batch={{ index: 0, total: 2, onAbort: vi.fn() }}
+          onSave={vi.fn()}
+          onDiscard={vi.fn()}
+        />,
+      );
+      expect(screen.getByRole("img", { name: "解析した写真" })).toHaveClass("max-h-[45vh]");
+      expect(screen.getByRole("button", { name: "この写真をスキップ" })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "保存して次へ" })).toBeInTheDocument();
+    });
+
+    it("写真が無いときは大きな写真を出さない", () => {
+      setup();
+      expect(screen.queryByRole("img")).not.toBeInTheDocument();
+    });
   });
 });

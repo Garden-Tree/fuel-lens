@@ -9,9 +9,10 @@ import { createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef,
  * /app を表示中はメニューの項目のクリックハンドラから、ホームが登録した openCamera / openAlbum を同期的に呼ぶ。
  * 登録が無い画面（/history など）では、メニューは従来どおり `/app?action=…` へ遷移する。
  *
- * - `ScanActionsProvider`: AppFrame が描画する
+ * - `ScanActionsProvider`: AppShell（app/(app)/layout.tsx）が描画する。タブバーのスキャンボタン・メニューと各ページの両方を包む
  * - `useRegisterScanActions(handlers)` / `<RegisterScanActions {...handlers} />`: ホームがマウント中だけ登録する（アンマウントで解除）
  * - `useScanActions()`: ScanActionMenu が読む（未登録なら null）
+ * - 撮影・アルバム・2 枚で撮る（openPair）は canScan、手動入力は canManual に従う
  */
 
 export type ScanActionHandlers = {
@@ -19,6 +20,8 @@ export type ScanActionHandlers = {
   openCamera: () => void;
   /** ファイル選択（アルバム）を開く（タップの中で同期的に呼ぶこと） */
   openAlbum: () => void;
+  /** レシートとメーターを別々に撮るシートを開く（シートの中のボタンでファイル選択を開くので、同期でなくてよい） */
+  openPair: () => void;
   /** 手動入力を開く（入力中のフォームがあれば破棄の確認をする） */
   openManual: () => void;
   /** 撮影・アルバムを始められるか（解析中・確認中・読み込み中は false） */
@@ -64,6 +67,7 @@ export function useRegisterScanActions(handlers: ScanActionHandlers): void {
     setHandlers({
       openCamera: () => latest.current.openCamera(),
       openAlbum: () => latest.current.openAlbum(),
+      openPair: () => latest.current.openPair(),
       openManual: () => latest.current.openManual(),
       canScan,
       canManual,
@@ -78,7 +82,7 @@ export function useRegisterScanActions(handlers: ScanActionHandlers): void {
   }, [setHandlers]);
 }
 
-/** useRegisterScanActions を AppFrame の内側（Provider の内側）で呼ぶための描画なしコンポーネント */
+/** useRegisterScanActions を AppShell の内側（Provider の内側）で呼ぶための描画なしコンポーネント */
 export function RegisterScanActions(props: ScanActionHandlers) {
   useRegisterScanActions(props);
   return null;

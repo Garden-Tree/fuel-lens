@@ -5,16 +5,17 @@ import Link from "next/link";
 import { useResolvedAuth } from "@/lib/data/initialAuthContext";
 import { useTrial } from "@/lib/scan/trialContext";
 import { scanAccessOf } from "@/lib/trial";
-import { Camera, ChevronRight, Edit2, Image as ImageIcon, type LucideIcon } from "lucide-react";
+import { Camera, ChevronRight, Edit2, Image as ImageIcon, Images, type LucideIcon } from "lucide-react";
 import Modal from "./Modal";
 import { useScanActions, type ScanActionHandlers } from "./ScanActions";
 
 /**
- * スキャンボタン（タブバー中央 / サイドバー）から開く操作メニュー: 撮影する / アルバムから選ぶ / 手動で入力。
+ * スキャンボタン（タブバー中央 / サイドバー）から開く操作メニュー:
+ * 撮影する / アルバムから選ぶ / レシートとメーターを別々に撮る / 手動で入力。
  * - /app を表示中（ホームが components/ScanActions.tsx で処理を登録済み）: 項目のクリックハンドラの中で
- *   openCamera / openAlbum / openManual を同期的に呼ぶ（ファイル選択をタップの中で開くため。遅れるとブラウザに無視される）。
+ *   openCamera / openAlbum / openPair / openManual を同期的に呼ぶ（ファイル選択をタップの中で開くため。遅れるとブラウザに無視される）。
  *   解析中・確認中・閲覧専用・読み込み中は canScan / canManual に従って項目を無効にし、理由を 1 行で添える
- * - それ以外の画面: `/app?action=scan|album|manual` へ遷移し、/app の useShortcutActions が処理する（実行後に URL から消える）
+ * - それ以外の画面: `/app?action=scan|album|pair|manual` へ遷移し、/app の useShortcutActions が処理する（実行後に URL から消える）
  *
  * - `anchor` なし（スマホ）: 画面下からのボトムシート
  * - `anchor` あり（PC）: ボタンの真下に出すポップオーバー（アンカーの左端・幅に合わせる）
@@ -27,7 +28,7 @@ import { useScanActions, type ScanActionHandlers } from "./ScanActions";
 export type ScanMenuAnchor = { left: number; bottom: number; width: number };
 
 type ScanAction = {
-  action: "scan" | "album" | "manual";
+  action: "scan" | "album" | "pair" | "manual";
   label: string;
   description: string;
   icon: LucideIcon;
@@ -37,7 +38,14 @@ type ScanAction = {
 
 const ACTIONS: readonly ScanAction[] = [
   { action: "scan", label: "撮影する", description: "レシートとメーターを1枚に収めて撮影", icon: Camera, requiresSignIn: true },
-  { action: "album", label: "アルバムから選ぶ", description: "撮影済みの写真を読み取る", icon: ImageIcon, requiresSignIn: true },
+  { action: "album", label: "アルバムから選ぶ", description: "撮影済みの写真を読み取る（複数枚も選べます）", icon: ImageIcon, requiresSignIn: true },
+  {
+    action: "pair",
+    label: "レシートとメーターを別々に撮る",
+    description: "1枚に収まらないときは2枚で読み取る",
+    icon: Images,
+    requiresSignIn: true,
+  },
   { action: "manual", label: "手動で入力", description: "金額・給油量・距離を入力", icon: Edit2, requiresSignIn: false },
 ];
 
@@ -55,7 +63,16 @@ const ROW_CLASS =
 
 /** 登録済みの処理のうち、項目に対応するもの */
 function handlerOf(handlers: ScanActionHandlers, action: ScanAction["action"]): () => void {
-  return action === "scan" ? handlers.openCamera : action === "album" ? handlers.openAlbum : handlers.openManual;
+  switch (action) {
+    case "scan":
+      return handlers.openCamera;
+    case "album":
+      return handlers.openAlbum;
+    case "pair":
+      return handlers.openPair;
+    case "manual":
+      return handlers.openManual;
+  }
 }
 
 export default function ScanActionMenu({ open, onClose, anchor = null }: ScanActionMenuProps) {

@@ -11,7 +11,7 @@ import {
 } from "@/lib/server/analyze/rateLimit";
 
 /**
- * Gemini 呼び出し（最大30秒）＋前後処理の余裕を見て関数全体の上限を60秒にする。
+ * Gemini 呼び出し（1 回最大30秒。一時的な失敗の再試行・代替モデルは残り時間が足りるときだけ。全体の予算は 55 秒）＋前後処理の余裕を見て関数全体の上限を60秒にする。
  * （Vercel の Serverless Function 上限。Hobby プランでも 60 秒まで指定可能）
  */
 export const maxDuration = 60;
@@ -40,6 +40,7 @@ export async function POST(req: Request) {
     env: {
       GEMINI_API_KEY: process.env.GEMINI_API_KEY,
       GEMINI_MODEL: process.env.GEMINI_MODEL,
+      GEMINI_FALLBACK_MODEL: process.env.GEMINI_FALLBACK_MODEL,
       TRIAL_COOKIE_SECRET: process.env.TRIAL_COOKIE_SECRET,
       NEXT_PUBLIC_APP_URL: process.env.NEXT_PUBLIC_APP_URL,
       NODE_ENV: process.env.NODE_ENV,

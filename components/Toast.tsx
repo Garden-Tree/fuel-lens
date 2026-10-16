@@ -12,6 +12,7 @@ import {
 } from 'react';
 import { useBackdropClose } from '@/lib/useBackdropClose';
 import { useFocusTrap } from '@/lib/useFocusTrap';
+import { useBodyScrollLock } from '@/lib/useBodyScrollLock';
 
 /**
  * アプリ共通の通知（トースト）と確認ダイアログ。
@@ -144,6 +145,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   const confirmPanelRef = useRef<HTMLDivElement>(null);
   const cancelButtonRef = useRef<HTMLButtonElement>(null);
   const okButtonRef = useRef<HTMLButtonElement>(null);
+  useBodyScrollLock(confirmState !== null);
   useFocusTrap(confirmPanelRef, {
     active: confirmState !== null,
     initialFocusRef: confirmState?.options.danger ? cancelButtonRef : okButtonRef,
@@ -204,7 +206,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
             role="dialog"
             aria-modal="true"
             aria-labelledby="confirm-dialog-title"
-            className="w-full max-w-sm max-h-[85dvh] overflow-y-auto rounded-hero border border-line bg-surface p-5 shadow-2xl shadow-black/50"
+            className="w-full max-w-sm max-h-[85dvh] overflow-y-auto overscroll-contain rounded-hero border border-line bg-surface p-5 shadow-2xl shadow-black/50"
           >
             <h2 id="confirm-dialog-title" className="text-base font-bold text-ink">
               {confirmState.options.title ?? '確認'}

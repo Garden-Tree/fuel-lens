@@ -167,15 +167,17 @@ describe("Modal", () => {
     expect(opener).toHaveFocus();
   });
 
-  it("lockBodyScroll の間だけ body のスクロールを止める", () => {
-    const { rerender } = render(<Sample lockBodyScroll />);
+  it("開いている間は body を固定してスクロールを止める（既定）", () => {
+    const { rerender } = render(<Sample />);
+    expect(document.body.style.position).toBe("fixed");
     expect(document.body.style.overflow).toBe("hidden");
-    rerender(<Sample lockBodyScroll open={false} />);
+    rerender(<Sample open={false} />);
+    expect(document.body.style.position).toBe("");
     expect(document.body.style.overflow).toBe("");
   });
 
-  it("lockBodyScroll 未指定では body に触れない", () => {
-    render(<Sample />);
+  it("lockBodyScroll={false} では body に触れない", () => {
+    render(<Sample lockBodyScroll={false} />);
     expect(document.body.style.overflow).toBe("");
   });
 

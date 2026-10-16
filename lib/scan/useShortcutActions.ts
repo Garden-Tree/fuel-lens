@@ -12,6 +12,8 @@ export type UseShortcutActionsOptions = {
   onScan: () => void;
   /** `?action=album`: ファイル選択（アルバム）を開く */
   onAlbum: () => void;
+  /** `?action=pair`: レシートとメーターを別々に撮るシートを開く */
+  onPair: () => void;
   /**
    * `?action=manual`: 手動入力を開く。`&distance=…&amount=…&cost=…`（燃費計算ページ /calc から）が付いていれば、
    * 検証済みの値を prefill で渡す（lib/manualPrefill.ts の parseManualPrefill。読めなければ null）
@@ -27,7 +29,7 @@ export type UseShortcutActionsOptions = {
 
 /**
  * PWA ショートカット（manifest の `/app?action=scan` / `/app?action=manual`）、
- * 他の画面のスキャンメニュー（components/ScanActionMenu.tsx の `/app?action=scan|album|manual`）と
+ * 他の画面のスキャンメニュー（components/ScanActionMenu.tsx の `/app?action=scan|album|pair|manual`）と
  * Web Share Target（Service Worker からの `/app?action=shared&t=<token>`、
  * SW 未準備時・画像なしの `/app?action=share-unavailable`）と、燃費計算ページ（/calc）の「この内容で FuelLens に記録する」
  * （`/app?action=manual&distance=…&amount=…&cost=…`。手動入力を事前入力つきで開く）を処理する。
@@ -44,6 +46,7 @@ export function useShortcutActions({
   readiness,
   onScan,
   onAlbum,
+  onPair,
   onManual,
   onShared,
   onShareUnavailable,
@@ -60,6 +63,7 @@ export function useShortcutActions({
   const run = useEffectEvent((resolved: ShortcutAction, token: string | null) => {
     if (resolved === "scan") onScan();
     else if (resolved === "album") onAlbum();
+    else if (resolved === "pair") onPair();
     else if (resolved === "manual") onManual(parseManualPrefill(searchParams));
     else if (resolved === "shared") onShared(token);
     else onShareUnavailable();

@@ -38,7 +38,7 @@ afterEach(() => vi.restoreAllMocks());
 
 describe("RecordSource validator", () => {
   it("accepts exactly the known values", () => {
-    expect(RECORD_SOURCES).toEqual(["scan", "manual", "calc", "import", "restore"]);
+    expect(RECORD_SOURCES).toEqual(["scan", "batch", "pair", "manual", "calc", "import", "restore"]);
     for (const s of RECORD_SOURCES) {
       expect(isRecordSource(s)).toBe(true);
       expect(sanitizeRecordSource(s)).toBe(s);
@@ -46,7 +46,7 @@ describe("RecordSource validator", () => {
   });
 
   it("maps unknown strings and non-strings to null without throwing", () => {
-    for (const v of ["batch", "SCAN", "", " scan", "x".repeat(100), null, undefined, 1, true, {}, []]) {
+    for (const v of ["trial", "SCAN", "Batch", "pair ", "", " scan", "x".repeat(100), null, undefined, 1, true, {}, []]) {
       expect(isRecordSource(v)).toBe(false);
       expect(sanitizeRecordSource(v)).toBeNull();
     }
@@ -185,7 +185,7 @@ describe("backup", () => {
     const withSource = (id: string, source: unknown) => ({ ...raw.records[0], id, source });
     const noKey = { ...raw.records[0], id: "d" } as Record<string, unknown>;
     delete noKey.source;
-    raw.records = [withSource("a", "calc"), withSource("b", "batch"), withSource("c", 42), noKey, withSource("e", null)];
+    raw.records = [withSource("a", "calc"), withSource("b", "future"), withSource("c", 42), noKey, withSource("e", null), withSource("f", "batch"), withSource("g", "pair")];
     const res = parseBackup(JSON.stringify(raw));
     expect(res.ok).toBe(true);
     if (!res.ok) return;
@@ -195,6 +195,8 @@ describe("backup", () => {
       c: null,
       d: null,
       e: null,
+      f: "batch",
+      g: "pair",
     });
   });
 
@@ -214,13 +216,15 @@ describe("backup", () => {
         rec({ id: "a", date: "2026-01-01", source: "scan" }),
         rec({ id: "b", date: "2026-01-02", source: null }),
         rec({ id: "c", date: "2026-01-03" }),
-        rec({ id: "d", date: "2026-01-04", source: "batch" as RecordSource }),
+        rec({ id: "d", date: "2026-01-04", source: "future" as RecordSource }),
+        rec({ id: "e", date: "2026-01-05", source: "batch" }),
+        rec({ id: "f", date: "2026-01-06", source: "pair" }),
       ],
     };
     const plan = planRestore(backup, [vehicle("exist", "B")], []);
-    expect(plan.records.map(r => r.source)).toEqual(["scan", "restore", "restore", "restore"]);
+    expect(plan.records.map(r => r.source)).toEqual(["scan", "restore", "restore", "restore", "batch", "pair"]);
     const finalized = finalizeRestoreRecords(plan, { [V1]: "new-vehicle" });
-    expect(finalized.map(r => r.source)).toEqual(["scan", "restore", "restore", "restore"]);
+    expect(finalized.map(r => r.source)).toEqual(["scan", "restore", "restore", "restore", "batch", "pair"]);
   });
 });
 

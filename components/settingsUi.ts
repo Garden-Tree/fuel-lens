@@ -35,4 +35,4 @@ export const dangerButtonClass = `${BUTTON_BASE} bg-red-600 text-white hover:bg-
 
 /** テキスト入力 */
 export const inputClass =
-  "h-11 w-full min-w-0 rounded-xl border border-border bg-ground px-3 text-base text-ink placeholder:text-faint transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-60 sm:text-sm";
+  "h-11 w-full min-w-0 rounded-xl border border-border bg-ground px-3 text-base text-ink placeholder:text-faint transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-60 pointer-fine:text-sm";

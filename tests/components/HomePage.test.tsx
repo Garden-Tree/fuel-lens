@@ -6,7 +6,7 @@ import Home from "@/app/(app)/app/page";
 import { SCAN_BUTTON_LABEL } from "@/components/AppNav";
 import type { FuelRecord, Vehicle } from "@/lib/types";
 import type { VehicleScope } from "@/lib/useVehicleScope";
-import { renderWithProviders } from "../setup/render";
+import { renderInAppShell } from "../setup/render";
 
 // ログイン中
 vi.mock("@clerk/nextjs", () => ({
@@ -90,7 +90,7 @@ describe("ホーム（/app）のスキャンの入口", () => {
   it("?action=scan で来たら撮影を試し、「撮影の準備ができました」の案内を出す（ボタンでもう一度開ける・閉じられる）", async () => {
     const user = userEvent.setup();
     nav.params = new URLSearchParams("action=scan");
-    renderWithProviders(<Home />);
+    renderInAppShell(<Home />);
     expect(clickedInputs()).toEqual(["camera"]);
     expect(nav.replace).toHaveBeenCalledWith("/app");
 
@@ -105,7 +105,7 @@ describe("ホーム（/app）のスキャンの入口", () => {
 
   it("画面内のスキャンメニューは URL を経由せずにタップの中でカメラを開き、案内は出さない", async () => {
     const user = userEvent.setup();
-    renderWithProviders(<Home />);
+    renderInAppShell(<Home />);
     await user.click(screen.getByRole("button", { name: SCAN_BUTTON_LABEL }));
     await user.click(within(screen.getByRole("dialog", { name: "記録する" })).getByRole("button", { name: /撮影する/ }));
     expect(clickedInputs()).toEqual(["camera"]);
@@ -116,7 +116,7 @@ describe("ホーム（/app）のスキャンの入口", () => {
   it("閲覧専用で ?action=manual が来たら、フォームを開かずに理由を伝えて URL から消す", async () => {
     state.readOnly = true;
     nav.params = new URLSearchParams("action=manual");
-    renderWithProviders(<Home />);
+    renderInAppShell(<Home />);
     expect(await screen.findByText("閲覧専用のため手動入力はできません")).toBeInTheDocument();
     expect(nav.replace).toHaveBeenCalledWith("/app");
     expect(screen.queryByRole("heading", { name: "手動で記録を追加" })).not.toBeInTheDocument();
@@ -124,7 +124,7 @@ describe("ホーム（/app）のスキャンの入口", () => {
 
   it("編集中に「手動で入力」を選ぶと破棄してよいか確認する（キャンセルなら編集を続ける）", async () => {
     const user = userEvent.setup();
-    renderWithProviders(<Home />);
+    renderInAppShell(<Home />);
     await user.click(screen.getByRole("button", { name: "編集" }));
     expect(screen.getByRole("heading", { name: "給油記録の編集" })).toBeInTheDocument();
 
@@ -147,7 +147,7 @@ describe("ホーム（/app）のスキャンの入口", () => {
 
   it("燃費計算ページから ?action=manual&distance=…&amount=…&cost=… で来たら、値を入れた手動入力を開く（保存はしない）", async () => {
     nav.params = new URLSearchParams("action=manual&distance=400&amount=25&cost=4000");
-    renderWithProviders(<Home />);
+    renderInAppShell(<Home />);
     expect(await screen.findByRole("heading", { name: "手動で記録を追加" })).toBeInTheDocument();
     expect(screen.getByLabelText(/^走行距離/)).toHaveValue("400");
     expect(screen.getByLabelText(/^給油量/)).toHaveValue("25");
@@ -161,7 +161,7 @@ describe("ホーム（/app）のスキャンの入口", () => {
   it("オドメーターモードの車両では区間距離を入れず、オドメーターの入力を案内する", async () => {
     state.mode = "odometer";
     nav.params = new URLSearchParams("action=manual&distance=400&amount=25");
-    renderWithProviders(<Home />);
+    renderInAppShell(<Home />);
     expect(await screen.findByRole("heading", { name: "手動で記録を追加" })).toBeInTheDocument();
     expect(screen.queryByLabelText(/^走行距離/)).not.toBeInTheDocument();
     expect(screen.getByLabelText(/^オドメーター/)).toHaveValue("");
@@ -172,7 +172,7 @@ describe("ホーム（/app）のスキャンの入口", () => {
   it("閲覧専用なら事前入力つきでもフォームを開かずに取り下げる", async () => {
     state.readOnly = true;
     nav.params = new URLSearchParams("action=manual&distance=400&amount=25");
-    renderWithProviders(<Home />);
+    renderInAppShell(<Home />);
     expect(await screen.findByText("閲覧専用のため手動入力はできません")).toBeInTheDocument();
     expect(nav.replace).toHaveBeenCalledWith("/app");
     expect(screen.queryByRole("heading", { name: "手動で記録を追加" })).not.toBeInTheDocument();

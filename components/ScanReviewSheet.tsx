@@ -1,13 +1,14 @@
 "use client";
 
 import { useMemo, useRef, useState } from "react";
-import { AlertTriangle, ScanLine } from "lucide-react";
+import { AlertTriangle, CircleStop, ScanLine } from "lucide-react";
 import type { AnalyzeSuccessResponse, ConfidenceField } from "@/lib/analyze";
 import { useRecordForm, visibleScanWarnings, type DraftField } from "@/lib/useRecordForm";
 import { distanceModeOf } from "@/lib/fillChain";
 import { todayLocalISO } from "@/lib/dates";
 import type { FuelRecord, RecordInput, Vehicle } from "@/lib/types";
 import { formatKm } from "@/lib/format";
+import { POSSIBLE_DUPLICATE_MESSAGE, batchPositionLabel, findPossibleDuplicate } from "@/lib/scan/batch";
 import EditFuelRecordForm from "./EditFuelRecordForm";
 import Modal from "./Modal";
 
@@ -39,14 +40,79 @@ function BigValue({
   );
 }
 
+/** 読み取った写真 1 枚。タップで縦に大きくする / 戻す（2 枚のときは広げた方が横いっぱいになる） */
+function ScanPhoto({
+  src,
+  alt,
+  label,
+  expanded,
+  onToggle,
+  wide,
+}: {
+  src: string;
+  alt: string;
+  label: string | null;
+  expanded: boolean;
+  onToggle: () => void;
+  wide: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      aria-expanded={expanded}
+      aria-label={`${label ?? "写真"}を${expanded ? "縮小する" : "拡大する"}`}
+      className={`relative block min-w-0 overflow-hidden rounded-2xl border border-border bg-surface focus:outline-none focus-visible:ring-2 focus-visible:ring-accent ${
+        wide ? "col-span-2" : ""
+      }`}
+    >
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={src}
+        alt={alt}
+        className={`mx-auto block w-full object-contain ${expanded ? "max-h-[75dvh]" : "max-h-[45vh]"}`}
+        draggable={false}
+      />
+      {label && (
+        <span className="absolute left-2 top-2 rounded bg-black/60 px-1.5 py-0.5 text-[11px] font-bold text-ink">{label}</span>
+      )}
+    </button>
+  );
+}
+
 /** この値未満の確信度は「要確認」として強調する */
 const LOW_CONFIDENCE = 0.6;
+
+/** 一括読み取り（旧レシート）の 1 件として表示するときの情報 */
+export type ScanReviewBatch = {
+  /** 何枚目か（0 から） */
+  index: number;
+  /** 選んだ枚数 */
+  total: number;
+  /** 写真を読み取れなかった理由（読み取り結果は空。写真を見ながら手入力するか、スキップする）。読み取れたなら null */
+  readError?: string | null;
+  /** 「残りを中止」 */
+  onAbort: () => void;
+};
+
+/** 一括読み取りで日付を読み取れなかったときの案内（今日の日付は入れない） */
+export const BATCH_DATE_MISSING_NOTE =
+  "レシートから給油日を読み取れませんでした。今日の日付は入れていないので、レシートを見て給油日を入力してください。";
+
+/** 一括読み取りで距離が無いときの案内（方式ごと） */
+export function batchDistanceMissingNote(mode: "trip" | "odometer"): string {
+  return mode === "odometer"
+    ? "写真からオドメーターを読み取れませんでした（メーターが写っていない写真など）。分かれば入力してください。未入力でも保存でき、区間距離は次にオドメーターのある記録へまとめて計算されます。"
+    : "写真から走行距離（トリップメーター）を読み取れませんでした（メーターが写っていない写真など）。分かれば入力してください。未入力でも保存できますが、この給油の燃費は計算されません。";
+}
 
 interface Props {
   /** /api/analyze の成功レスポンス */
   result: AnalyzeSuccessResponse;
-  /** 解析に使った画像（data URL）。サムネイルとして表示する */
+  /** 解析に使った画像（data URL）。上部に大きく表示する。2 枚で読み取ったときはレシート */
   imageSrc: string | null;
+  /** 2 枚で読み取ったときのメーターの画像（data URL）。レシートの隣に並べて大きく出す */
+  meterImageSrc?: string | null;
   /** 記録先の車両（距離の入力方式・既定の燃料種別）。省略はトリップモード */
   vehicle?: Pick<Vehicle, "distance_mode" | "default_fuel_type"> | null;
   /**
@@ -61,8 +127,13 @@ interface Props {
    * 失敗時は reject（throw）すればシートは開いたままになる。
    */
   onSave: (record: RecordInput) => Promise<void>;
-  /** 「破棄」・Escape・背景クリック時 */
+  /** 「破棄」・Escape・背景クリック時（一括読み取りでは「この写真をスキップ」・Escape） */
   onDiscard: () => void;
+  /**
+   * 一括読み取りの 1 件として表示する（進み具合・「保存して次へ / この写真をスキップ / 残りを中止」・重複の注意）。
+   * 日付が読めなければ今日を入れずに空にして入力を求め、背景クリックでは閉じない
+   */
+  batch?: ScanReviewBatch | null;
 }
 
 /**
@@ -73,20 +144,24 @@ interface Props {
 export default function ScanReviewSheet({
   result,
   imageSrc,
+  meterImageSrc = null,
   vehicle = null,
   records,
   readOnly = false,
   onSave,
   onDiscard,
+  batch = null,
 }: Props) {
   const mode = distanceModeOf(vehicle);
+  const [expandedPhoto, setExpandedPhoto] = useState<"main" | "meter" | null>(null);
   // オドメーターモードでは読み取ったオドメーターを主入力に入れる（トリップモードでは参考表示のみで保存しない）。
   // 燃料種別が読めなければ車両の既定値になる（useRecordForm の recordToDraft）。
   // スキャン結果はオドメーター未入力でも保存できる（odometerOptional。メーターが写っていない・読めないことがあるため）。
-  // 未入力なら注意を出し、区間距離は null のまま保存する（連鎖計算では持ち越し行として次の区間にまとめて計算される）
+  // 未入力なら注意を出し、区間距離は null のまま保存する（連鎖計算では持ち越し行として次の区間にまとめて計算される）。
+  // 一括読み取り（古いレシート）では、日付が読めなくても今日を入れない（空のまま「要確認」にして入力を求める）
   const form = useRecordForm(
     {
-      date: result.date ?? todayLocalISO(),
+      date: result.date ?? (batch ? "" : todayLocalISO()),
       fuel_amount: result.fuel_amount,
       total_cost: result.total_cost,
       total_distance: result.total_distance,
@@ -148,6 +223,19 @@ export default function ScanReviewSheet({
   const { parsed } = form;
   const distanceValue = mode === "odometer" ? parsed.odometer : parsed.total_distance;
 
+  // 一括読み取り: 入力中の値で、同じ日付・金額の記録がすでにあるか（保存の前に注意する）
+  const possibleDuplicate = batch
+    ? findPossibleDuplicate(records ?? [], { date: parsed.date, total_cost: parsed.total_cost, fuel_amount: parsed.fuel_amount })
+    : null;
+  // 一括読み取り: 日付・距離が読めず、まだ入力されていないときの案内
+  const dateMissing = batch !== null && result.date == null && parsed.date === "";
+  const distanceMissing =
+    batch !== null &&
+    (mode === "odometer"
+      ? result.odometer == null && parsed.odometer == null
+      : result.total_distance == null && parsed.total_distance == null);
+  const isLast = batch !== null && batch.index + 1 >= batch.total;
+
   return (
     // フォーカストラップ・Escape・背景クリック・本文スクロールのロックは Modal に任せる（保存中は閉じない）
     <Modal
@@ -156,26 +244,64 @@ export default function ScanReviewSheet({
       title="読み取り結果の確認"
       labelledBy={titleId}
       disableClose={saving}
+      closeOnBackdrop={batch === null}
       lockBodyScroll
       initialFocusRef={firstFieldRef}
       backdropClassName="fixed inset-0 z-[90] flex items-end justify-center bg-black/70 backdrop-blur-sm sm:items-center sm:p-4"
-      panelClassName="w-full max-w-lg max-h-[92dvh] sm:max-h-[92vh] overflow-y-auto rounded-t-hero sm:rounded-hero border border-line bg-ground shadow-2xl shadow-black/50"
+      panelClassName="w-full max-w-lg max-h-[92dvh] sm:max-h-[92vh] overflow-y-auto overscroll-contain rounded-t-hero sm:rounded-hero border border-line bg-ground shadow-2xl shadow-black/50"
     >
       <div className="space-y-4 p-4 pb-[max(1rem,env(safe-area-inset-bottom))] sm:p-5">
         {/* シートのつまみ（スマホ） */}
         <div className="mx-auto -mt-1 h-1 w-10 rounded-full bg-border sm:hidden" aria-hidden="true" />
 
+        {/* 一括読み取りの進み具合（読み上げは見出しの sr-only とホームの状態カードの aria-live） */}
+        {batch && (
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between text-xs">
+              <span className="font-bold text-accent">写真の一括読み取り</span>
+              <span className="num font-bold text-ink">{batchPositionLabel(batch.index, batch.total)}</span>
+            </div>
+            <div
+              className="h-1.5 w-full overflow-hidden rounded-full bg-surface-2"
+              role="progressbar"
+              aria-label="一括読み取りの進み具合"
+              aria-valuemin={1}
+              aria-valuemax={batch.total}
+              aria-valuenow={batch.index + 1}
+              aria-valuetext={batchPositionLabel(batch.index, batch.total)}
+            >
+              <div className="h-full rounded-full bg-accent" style={{ width: `${((batch.index + 1) / batch.total) * 100}%` }} />
+            </div>
+          </div>
+        )}
+
+        {/* 読み取った写真（最初から大きく出し、値と見比べられるようにする。タップで縦に大きくする） */}
+        {imageSrc && (
+          <div className={meterImageSrc ? "grid grid-cols-2 gap-2" : ""}>
+            <ScanPhoto
+              src={imageSrc}
+              alt={meterImageSrc ? "解析したレシートの写真" : "解析した写真"}
+              label={meterImageSrc ? "レシート" : null}
+              expanded={expandedPhoto === "main"}
+              onToggle={() => setExpandedPhoto((v) => (v === "main" ? null : "main"))}
+              wide={expandedPhoto === "main"}
+            />
+            {meterImageSrc && (
+              <ScanPhoto
+                src={meterImageSrc}
+                alt="解析したメーターの写真"
+                label="メーター"
+                expanded={expandedPhoto === "meter"}
+                onToggle={() => setExpandedPhoto((v) => (v === "meter" ? null : "meter"))}
+                wide={expandedPhoto === "meter"}
+              />
+            )}
+          </div>
+        )}
+
         {/* ヘッダー */}
         <div className="flex items-start gap-3">
-          {imageSrc ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={imageSrc}
-              alt="解析した画像のサムネイル"
-              className="h-16 w-16 shrink-0 rounded-xl border border-border object-cover"
-              draggable={false}
-            />
-          ) : (
+          {!imageSrc && (
             <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-xl bg-surface">
               <ScanLine className="h-6 w-6 text-faint" aria-hidden="true" />
             </div>
@@ -183,6 +309,8 @@ export default function ScanReviewSheet({
           <div className="min-w-0 flex-1">
             <h2 id={titleId} className="text-xl font-bold text-ink">
               読み取り結果の確認
+              {/* 一括読み取りでは、シートが開くたびに何枚目かもダイアログ名として読み上げる（背景の aria-live は aria-modal の外になるため） */}
+              {batch && <span className="sr-only">（{batchPositionLabel(batch.index, batch.total)}）</span>}
             </h2>
             <p className="mt-0.5 text-xs text-sub">
               内容を確認・修正してから保存してください。
@@ -200,6 +328,37 @@ export default function ScanReviewSheet({
             )}
           </div>
         </div>
+
+        {/* 一括読み取り: 読み取れなかった写真（手入力かスキップ） */}
+        {batch?.readError && (
+          <div role="alert" className="rounded-2xl border border-warn/40 bg-warn-bg p-3 text-xs text-warn">
+            <p className="mb-1 flex items-center gap-1.5 font-bold">
+              <AlertTriangle className="h-4 w-4" aria-hidden="true" /> この写真は読み取れませんでした
+            </p>
+            <p>{batch.readError}</p>
+            <p className="mt-1">写真を見ながら入力して保存するか、「この写真をスキップ」を選んでください。</p>
+          </div>
+        )}
+
+        {/* 一括読み取り: 同じ日付・金額の記録がすでにある */}
+        {possibleDuplicate && (
+          <div role="alert" className="rounded-2xl border border-warn/40 bg-warn-bg p-3 text-xs text-warn">
+            <p className="flex items-center gap-1.5 font-bold">
+              <AlertTriangle className="h-4 w-4" aria-hidden="true" /> {POSSIBLE_DUPLICATE_MESSAGE}
+            </p>
+            <p className="mt-1">
+              登録済みの写真かもしれません。重複していれば「この写真をスキップ」、別の給油ならそのまま保存してください。
+            </p>
+          </div>
+        )}
+
+        {/* 一括読み取り: 日付・距離が読めなかった */}
+        {!batch?.readError && (dateMissing || distanceMissing) && (
+          <ul className="list-disc space-y-1 rounded-2xl border border-line bg-surface p-3 pl-7 text-xs text-sub">
+            {dateMissing && <li className="text-warn">{BATCH_DATE_MISSING_NOTE}</li>}
+            {distanceMissing && <li>{batchDistanceMissingNote(mode)}</li>}
+          </ul>
+        )}
 
         {/* 読み取った値（編集すると追従する） */}
         <div className="grid grid-cols-3 gap-2 rounded-2xl bg-surface p-4" aria-live="polite">
@@ -250,11 +409,22 @@ export default function ScanReviewSheet({
           disabled={readOnly}
           canSave={form.hasCoreValue}
           saveHint="保存するには給油量または支払総額を入力してください"
-          saveLabel="保存"
-          cancelLabel="破棄"
+          saveLabel={batch ? (isLast ? "保存して終了" : "保存して次へ") : "保存"}
+          cancelLabel={batch ? "この写真をスキップ" : "破棄"}
           highlightFields={highlightFields}
           firstFieldRef={firstFieldRef}
         />
+
+        {batch && (
+          <button
+            type="button"
+            onClick={batch.onAbort}
+            disabled={saving}
+            className="flex min-h-11 w-full items-center justify-center gap-2 rounded-xl px-4 text-sm font-medium text-sub transition-colors hover:bg-surface hover:text-ink focus:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-60"
+          >
+            <CircleStop className="h-4 w-4" aria-hidden="true" /> 残りを中止
+          </button>
+        )}
       </div>
     </Modal>
   );

@@ -17,13 +17,20 @@ export type ScanPanelProps = {
   /** スキャン（圧縮・解析）中 */
   scanning: boolean;
   loadingStep: ScanLoadingStep;
-  /** プレビュー中の画像（data URL） */
+  /** プレビュー中の画像（data URL）。2 枚で読み取るときはレシート */
   preview: string | null;
+  /** 2 枚で読み取るときのメーターの画像（data URL）。1 枚なら null / 省略 */
+  previewMeter?: string | null;
   /** 共有で受け取り、確認ダイアログで読み取らなかった画像（「読み取る」「手動で入力」を出す） */
   sharedPending: string | null;
   readOnly: boolean;
-  /** カメラ・アルバムで画像が選ばれたとき */
+  /** カメラ・アルバムで画像が 1 枚選ばれたとき */
   onSelectFile: (file: File) => void;
+  /**
+   * アルバムで 2 枚以上選ばれたとき（旧レシートの一括読み取り）。渡したときだけアルバムの入力を複数選択にする。
+   * 画像以外・上限の確認は呼び出し側が行う
+   */
+  onSelectFiles?: (files: File[]) => void;
   onClearPreview: () => void;
   onAnalyzeShared: (dataUrl: string) => void;
   onManualEntry: () => void;
@@ -34,12 +41,12 @@ export type ScanPanelProps = {
 const SMALL_BUTTON =
   "inline-flex h-10 items-center gap-1.5 rounded-xl px-3 text-sm font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-50";
 
-function Thumbnail({ src }: { src: string }) {
+function Thumbnail({ src, alt = "読み取る画像のプレビュー" }: { src: string; alt?: string }) {
   return (
     // eslint-disable-next-line @next/next/no-img-element
     <img
       src={src}
-      alt="読み取る画像のプレビュー"
+      alt={alt}
       className="h-16 w-16 shrink-0 rounded-xl bg-surface-2 object-cover"
       draggable="false"
     />
@@ -69,9 +76,11 @@ export default function ScanPanel({
   scanning,
   loadingStep,
   preview,
+  previewMeter = null,
   sharedPending,
   readOnly,
   onSelectFile,
+  onSelectFiles,
   onClearPreview,
   onAnalyzeShared,
   onManualEntry,
@@ -90,17 +99,36 @@ export default function ScanPanel({
   );
 
   const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
+    const files = Array.from(e.target.files ?? []);
     e.target.value = "";
-    if (!file) return;
-    onSelectFile(file);
+    // 入力欄にフォーカスが残るとズームが戻らないことがあるので外す
+    (document.activeElement as HTMLElement | null)?.blur?.();
+    if (files.length === 0) return;
+    // 2 枚以上は一括読み取りへ（1 枚なら従来どおり）
+    if (files.length > 1 && onSelectFiles) {
+      onSelectFiles(files);
+      return;
+    }
+    onSelectFile(files[0]);
   };
+
+  // 2 枚で読み取るときはレシートとメーターを並べる
+  const thumbnails = preview ? (
+    previewMeter ? (
+      <div className="flex shrink-0 gap-1.5">
+        <Thumbnail src={preview} alt="読み取るレシートのプレビュー" />
+        <Thumbnail src={previewMeter} alt="読み取るメーターのプレビュー" />
+      </div>
+    ) : (
+      <Thumbnail src={preview} />
+    )
+  ) : null;
 
   let card: ReactNode = null;
   if (scanning) {
     card = (
       <StatusCard live>
-        {preview && <Thumbnail src={preview} />}
+        {thumbnails}
         <div className="flex min-w-0 flex-1 flex-col gap-0.5">
           <p className="flex items-center gap-2 text-[15px] font-bold text-ink">
             <Loader2 className="h-4 w-4 shrink-0 animate-spin text-accent" aria-hidden="true" />
@@ -124,7 +152,7 @@ export default function ScanPanel({
   } else if (preview) {
     card = (
       <StatusCard>
-        <Thumbnail src={preview} />
+        {thumbnails}
         <div className="flex min-w-0 flex-1 flex-col gap-2">
           <p className="truncate text-[15px] font-medium text-ink">{sharedPending ? "共有された画像" : "読み取った画像"}</p>
           <div className="flex flex-wrap gap-2">
@@ -167,8 +195,16 @@ export default function ScanPanel({
   return (
     <>
       {card}
-      <input type="file" accept="image/*" capture="environment" className="hidden" ref={cameraInputRef} onChange={handleFileChange} aria-label="カメラで撮影" />
-      <input type="file" accept="image/*" className="hidden" ref={galleryInputRef} onChange={handleFileChange} aria-label="画像ファイルを選択" />
+      <input type="file" accept="image/*" capture="environment" className="hidden text-base" ref={cameraInputRef} onChange={handleFileChange} aria-label="カメラで撮影" />
+      <input
+        type="file"
+        accept="image/*"
+        multiple={onSelectFiles !== undefined}
+        className="hidden text-base"
+        ref={galleryInputRef}
+        onChange={handleFileChange}
+        aria-label="画像ファイルを選択"
+      />
     </>
   );
 }

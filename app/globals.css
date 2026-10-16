@@ -80,6 +80,29 @@ html {
   scrollbar-gutter: stable;
 }
 
+/* iOS が横幅の変化などで文字サイズを自動で拡大しないようにする（ピンチズームは有効のまま） */
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+/* ダブルタップ拡大（ページが勝手にズームして文字が大きく見える）を止める。ピンチズームは有効のまま */
+button,
+a,
+[role="button"] {
+  touch-action: manipulation;
+}
+
+/* タッチ端末では入力欄を 16px 以上にする。iOS は 16px 未満の入力欄へのフォーカスでページを自動拡大し、
+   下部タブバーが画面からずれて見える（docs/design-system.md）。 */
+@media (pointer: coarse) {
+  input,
+  select,
+  textarea {
+    font-size: max(16px, 1em);
+  }
+}
+
 body {
   background: var(--color-ground);
   color: var(--color-ink);

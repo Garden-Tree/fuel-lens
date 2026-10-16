@@ -26,6 +26,7 @@ function callbacks() {
   return {
     onScan: vi.fn(),
     onAlbum: vi.fn(),
+    onPair: vi.fn(),
     onManual: vi.fn(),
     onShared: vi.fn(),
     onShareUnavailable: vi.fn(),
@@ -45,6 +46,16 @@ describe("useShortcutActions", () => {
     render(<Harness readiness={READY} {...cb} />);
     expect(cb.onAlbum).toHaveBeenCalledTimes(1);
     expect(cb.onScan).not.toHaveBeenCalled();
+    expect(nav.replace).toHaveBeenCalledWith("/app");
+  });
+
+  it("pair はレシートとメーターを別々に撮るシートを開き、URL から action を消す", () => {
+    const cb = callbacks();
+    nav.params = new URLSearchParams("action=pair");
+    render(<Harness readiness={READY} {...cb} />);
+    expect(cb.onPair).toHaveBeenCalledTimes(1);
+    expect(cb.onScan).not.toHaveBeenCalled();
+    expect(cb.onAlbum).not.toHaveBeenCalled();
     expect(nav.replace).toHaveBeenCalledWith("/app");
   });
 

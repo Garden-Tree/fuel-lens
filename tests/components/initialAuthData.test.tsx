@@ -241,3 +241,52 @@ describe("サーバーの初期認証状態による先行描画（Clerk の読�
     expect(screen.queryByTestId("stations")).not.toBeInTheDocument();
   });
 });
+
+describe("Clerk の読み込み後に画面を開いたとき（タブの切り替え）", () => {
+  let openGate: () => void = () => {};
+
+  beforeEach(() => {
+    setClerk({ isSignedIn: true, userId: "u1" });
+    loadingLog.length = 0;
+    h.cloud.vehicles = [VEHICLE];
+    h.cloud.records = [record("n1", "クラウドのスタンド", V1)];
+    h.cloud.gate = new Promise<void>(resolve => {
+      openGate = resolve;
+    });
+    localStorage.clear();
+    localStorage.setItem("fuel_lens_cache_owner", "u1");
+    localStorage.setItem("fuel_lens_cache_vehicles_u1", JSON.stringify([VEHICLE]));
+    localStorage.setItem(`fuel_lens_cache_records_u1_${V1}`, JSON.stringify([record("c1", "キャッシュのスタンド", V1)]));
+  });
+  afterEach(() => {
+    openGate();
+    localStorage.clear();
+  });
+
+  it("このユーザーのキャッシュを応答待ちの間に表示し（書き込み可）、スケルトンに戻さずに最新の一覧へ置き換える", async () => {
+    render(tree({ signedIn: true, userId: "u1" }));
+    await settle();
+    expect(screen.getByTestId("stations")).toHaveTextContent("キャッシュのスタンド");
+    expect(screen.getByTestId("vehicles")).toHaveTextContent("クラウドの車");
+    // Clerk の読み込み前の先行表示（閲覧専用）とは違い、通常の表示として扱う
+    expect(screen.getByTestId("state")).toHaveTextContent("previewing=false readOnly=false");
+    const shownAt = loadingLog.lastIndexOf(true) + 1;
+    openGate();
+    await settle();
+    expect(screen.getByTestId("stations")).toHaveTextContent("クラウドのスタンド");
+    expect(screen.getByTestId("stations")).not.toHaveTextContent("キャッシュ");
+    // キャッシュを表示してからはスケルトンに戻らない
+    expect(loadingLog.slice(shownAt)).not.toContain(true);
+  });
+
+  it("キャッシュが無ければ従来どおり応答まで読み込み中にする", async () => {
+    localStorage.removeItem("fuel_lens_cache_vehicles_u1");
+    localStorage.removeItem(`fuel_lens_cache_records_u1_${V1}`);
+    render(tree({ signedIn: true, userId: "u1" }));
+    await settle();
+    expect(screen.getByText("loading")).toBeInTheDocument();
+    openGate();
+    await settle();
+    expect(screen.getByTestId("stations")).toHaveTextContent("クラウドのスタンド");
+  });
+});

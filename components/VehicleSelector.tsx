@@ -5,6 +5,7 @@ import { Car, Bike, Settings } from "lucide-react";
 import { Menu, MenuItem } from "./ui/Menu";
 import type { Vehicle, VehicleSettings, VehicleType } from "@/lib/types";
 import ManageVehiclesModal from "./ManageVehiclesModal";
+import { VehicleChipSkeleton } from "./AppShell";
 
 /**
  * 車両の切り替えチップ「<車両名> ▾」（ヘッダー右側。デザイン D のモックどおり角丸 12px）。押すと車両の一覧（選択中にチェック）と「車両を管理」のメニューを開く。
@@ -46,11 +47,7 @@ export default function VehicleSelector({
   }
 
   if (loading) {
-    return (
-      <div className={`flex min-w-0 justify-end ${className}`}>
-        <div className="h-10 w-28 rounded-xl border border-border bg-surface animate-pulse" aria-hidden="true" />
-      </div>
-    );
+    return <VehicleChipSkeleton className={className} />;
   }
 
   const selected = vehicles.find(v => v.id === selectedVehicleId);

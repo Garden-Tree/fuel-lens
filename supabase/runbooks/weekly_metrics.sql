@@ -47,7 +47,8 @@ select
 from per_user;
 
 -- 4. 記録の入口（fuel_records.source。0005 で追加。どの経路で記録が作られたか）
---    source: scan = 撮影・アルバム / manual = 手動入力 / calc = 燃費計算ページから引き継いだ手動入力 /
+--    source: scan = 撮影・アルバム（1 枚） / batch = 写真の一括読み取り / pair = レシートとメーターの 2 枚の読み取り /
+--            manual = 手動入力 / calc = 燃費計算ページから引き継いだ手動入力 /
 --            import = Fuelio・CSV の取り込み / restore = バックアップの復元 / unknown = 0005 より前の記録（null）
 --    注意: 取り込み・復元の記録の created_at は元の記録の日時のまま（取り込んだ週ではなく記録した週に入る）。
 --    4a. 直近 12 週 × 入口ごとの記録数（月曜始まり。2 と同じく created_at の週で数える）
