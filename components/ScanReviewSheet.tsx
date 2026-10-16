@@ -40,6 +40,46 @@ function BigValue({
   );
 }
 
+/** 読み取った写真 1 枚。タップで縦に大きくする / 戻す（2 枚のときは広げた方が横いっぱいになる） */
+function ScanPhoto({
+  src,
+  alt,
+  label,
+  expanded,
+  onToggle,
+  wide,
+}: {
+  src: string;
+  alt: string;
+  label: string | null;
+  expanded: boolean;
+  onToggle: () => void;
+  wide: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      aria-expanded={expanded}
+      aria-label={`${label ?? "写真"}を${expanded ? "縮小する" : "拡大する"}`}
+      className={`relative block min-w-0 overflow-hidden rounded-2xl border border-border bg-surface focus:outline-none focus-visible:ring-2 focus-visible:ring-accent ${
+        wide ? "col-span-2" : ""
+      }`}
+    >
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={src}
+        alt={alt}
+        className={`mx-auto block w-full object-contain ${expanded ? "max-h-[75dvh]" : "max-h-[45vh]"}`}
+        draggable={false}
+      />
+      {label && (
+        <span className="absolute left-2 top-2 rounded bg-black/60 px-1.5 py-0.5 text-[11px] font-bold text-ink">{label}</span>
+      )}
+    </button>
+  );
+}
+
 /** この値未満の確信度は「要確認」として強調する */
 const LOW_CONFIDENCE = 0.6;
 
@@ -69,9 +109,9 @@ export function batchDistanceMissingNote(mode: "trip" | "odometer"): string {
 interface Props {
   /** /api/analyze の成功レスポンス */
   result: AnalyzeSuccessResponse;
-  /** 解析に使った画像（data URL）。サムネイルとして表示する。2 枚で読み取ったときはレシート */
+  /** 解析に使った画像（data URL）。上部に大きく表示する。2 枚で読み取ったときはレシート */
   imageSrc: string | null;
-  /** 2 枚で読み取ったときのメーターの画像（data URL）。レシートの隣にサムネイルを出す */
+  /** 2 枚で読み取ったときのメーターの画像（data URL）。レシートの隣に並べて大きく出す */
   meterImageSrc?: string | null;
   /** 記録先の車両（距離の入力方式・既定の燃料種別）。省略はトリップモード */
   vehicle?: Pick<Vehicle, "distance_mode" | "default_fuel_type"> | null;
@@ -113,7 +153,7 @@ export default function ScanReviewSheet({
   batch = null,
 }: Props) {
   const mode = distanceModeOf(vehicle);
-  const [imageExpanded, setImageExpanded] = useState(false);
+  const [expandedPhoto, setExpandedPhoto] = useState<"main" | "meter" | null>(null);
   // オドメーターモードでは読み取ったオドメーターを主入力に入れる（トリップモードでは参考表示のみで保存しない）。
   // 燃料種別が読めなければ車両の既定値になる（useRecordForm の recordToDraft）。
   // スキャン結果はオドメーター未入力でも保存できる（odometerOptional。メーターが写っていない・読めないことがあるため）。
@@ -208,7 +248,7 @@ export default function ScanReviewSheet({
       lockBodyScroll
       initialFocusRef={firstFieldRef}
       backdropClassName="fixed inset-0 z-[90] flex items-end justify-center bg-black/70 backdrop-blur-sm sm:items-center sm:p-4"
-      panelClassName="w-full max-w-lg max-h-[92dvh] sm:max-h-[92vh] overflow-y-auto rounded-t-hero sm:rounded-hero border border-line bg-ground shadow-2xl shadow-black/50"
+      panelClassName="w-full max-w-lg max-h-[92dvh] sm:max-h-[92vh] overflow-y-auto overscroll-contain rounded-t-hero sm:rounded-hero border border-line bg-ground shadow-2xl shadow-black/50"
     >
       <div className="space-y-4 p-4 pb-[max(1rem,env(safe-area-inset-bottom))] sm:p-5">
         {/* シートのつまみ（スマホ） */}
@@ -235,46 +275,33 @@ export default function ScanReviewSheet({
           </div>
         )}
 
+        {/* 読み取った写真（最初から大きく出し、値と見比べられるようにする。タップで縦に大きくする） */}
+        {imageSrc && (
+          <div className={meterImageSrc ? "grid grid-cols-2 gap-2" : ""}>
+            <ScanPhoto
+              src={imageSrc}
+              alt={meterImageSrc ? "解析したレシートの写真" : "解析した写真"}
+              label={meterImageSrc ? "レシート" : null}
+              expanded={expandedPhoto === "main"}
+              onToggle={() => setExpandedPhoto((v) => (v === "main" ? null : "main"))}
+              wide={expandedPhoto === "main"}
+            />
+            {meterImageSrc && (
+              <ScanPhoto
+                src={meterImageSrc}
+                alt="解析したメーターの写真"
+                label="メーター"
+                expanded={expandedPhoto === "meter"}
+                onToggle={() => setExpandedPhoto((v) => (v === "meter" ? null : "meter"))}
+                wide={expandedPhoto === "meter"}
+              />
+            )}
+          </div>
+        )}
+
         {/* ヘッダー */}
         <div className="flex items-start gap-3">
-          {imageSrc && meterImageSrc ? (
-            <div className="flex shrink-0 flex-col gap-1.5 sm:flex-row">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={imageSrc}
-                alt="解析したレシートのサムネイル"
-                className="h-16 w-16 shrink-0 rounded-xl border border-border object-cover"
-                draggable={false}
-              />
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={meterImageSrc}
-                alt="解析したメーターのサムネイル"
-                className="h-16 w-16 shrink-0 rounded-xl border border-border object-cover"
-                draggable={false}
-              />
-            </div>
-          ) : imageSrc && batch ? (
-            // 一括読み取りでは写真を拡大して見られるようにする（読み取れなかった写真を見ながら入力するため）
-            <button
-              type="button"
-              onClick={() => setImageExpanded((v) => !v)}
-              aria-expanded={imageExpanded}
-              aria-label={imageExpanded ? "写真を縮小する" : "写真を拡大する"}
-              className="h-16 w-16 shrink-0 overflow-hidden rounded-xl border border-border focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-            >
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={imageSrc} alt="" className="h-full w-full object-cover" draggable={false} />
-            </button>
-          ) : imageSrc ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={imageSrc}
-              alt="解析した画像のサムネイル"
-              className="h-16 w-16 shrink-0 rounded-xl border border-border object-cover"
-              draggable={false}
-            />
-          ) : (
+          {!imageSrc && (
             <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-xl bg-surface">
               <ScanLine className="h-6 w-6 text-faint" aria-hidden="true" />
             </div>
@@ -301,16 +328,6 @@ export default function ScanReviewSheet({
             )}
           </div>
         </div>
-
-        {imageSrc && batch && imageExpanded && (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={imageSrc}
-            alt="読み取った写真"
-            className="max-h-[60dvh] w-full rounded-2xl border border-border bg-surface object-contain"
-            draggable={false}
-          />
-        )}
 
         {/* 一括読み取り: 読み取れなかった写真（手入力かスキップ） */}
         {batch?.readError && (

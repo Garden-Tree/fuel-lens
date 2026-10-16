@@ -133,7 +133,7 @@ export default function ShareCardModal({ model, onClose }: ShareCardModalProps) 
       lockBodyScroll
       // スマホ幅では下から出るシート、PC では中央のダイアログ（車両の管理と同じ）
       backdropClassName="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:p-4 bg-black/70 backdrop-blur-sm animate-in fade-in duration-200"
-      panelClassName="relative w-full max-w-lg bg-ground border border-line rounded-t-hero sm:rounded-hero shadow-2xl shadow-black/50 p-4 pb-[max(1rem,env(safe-area-inset-bottom))] sm:p-5 overflow-y-auto max-h-[92dvh] sm:max-h-[90vh]"
+      panelClassName="relative w-full max-w-lg bg-ground border border-line rounded-t-hero sm:rounded-hero shadow-2xl shadow-black/50 p-4 pb-[max(1rem,env(safe-area-inset-bottom))] sm:p-5 overflow-y-auto overscroll-contain max-h-[92dvh] sm:max-h-[90vh]"
     >
       <Modal.Header icon={<Share2 className="h-5 w-5 text-accent" aria-hidden="true" />} className="mb-4" />
       <Modal.Body>

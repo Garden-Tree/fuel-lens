@@ -231,8 +231,10 @@ describe("ScanReviewSheet（一括読み取り）", () => {
     );
     expect(screen.getByText("この写真は読み取れませんでした")).toBeInTheDocument();
     expect(screen.getByText("レシート/メーターを読み取れませんでした。")).toBeInTheDocument();
+    // 写真は最初から大きく出ている。タップでさらに大きくできる
+    expect(screen.getByRole("img", { name: "解析した写真" })).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "写真を拡大する" }));
-    expect(screen.getByRole("img", { name: "読み取った写真" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "写真を縮小する" })).toHaveAttribute("aria-expanded", "true");
   });
 });
 

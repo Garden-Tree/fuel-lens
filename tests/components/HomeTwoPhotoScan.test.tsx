@@ -108,8 +108,8 @@ describe("ホーム: レシートとメーターを別々に撮る", () => {
 
     // 確認シート（2 枚のサムネイル）
     const review = await screen.findByRole("dialog", { name: "読み取り結果の確認" });
-    expect(within(review).getByRole("img", { name: "解析したレシートのサムネイル" })).toBeInTheDocument();
-    expect(within(review).getByRole("img", { name: "解析したメーターのサムネイル" })).toBeInTheDocument();
+    expect(within(review).getByRole("img", { name: "解析したレシートの写真" })).toBeInTheDocument();
+    expect(within(review).getByRole("img", { name: "解析したメーターの写真" })).toBeInTheDocument();
     expect(screen.queryByRole("dialog", { name: "レシートとメーターを別々に撮る" })).not.toBeInTheDocument();
 
     // 1 枚ずつ小さめの目標で圧縮し、1 回だけ送る（レシート → メーター）
@@ -137,7 +137,7 @@ describe("ホーム: レシートとメーターを別々に撮る", () => {
     await user.click(within(sheet).getByRole("button", { name: "メーターなしで読み取る" }));
 
     const review = await screen.findByRole("dialog", { name: "読み取り結果の確認" });
-    expect(within(review).getByRole("img", { name: "解析した画像のサムネイル" })).toBeInTheDocument();
+    expect(within(review).getByRole("img", { name: "解析した写真" })).toBeInTheDocument();
     expect(compression.fn).toHaveBeenCalledTimes(1);
     expect((compression.fn.mock.calls[0] as unknown as [File, { maxSizeMB: number }])[1].maxSizeMB).toBe(0.8);
     const body = JSON.parse(String((fetchMock.mock.calls[0] as unknown as [string, RequestInit])[1].body));

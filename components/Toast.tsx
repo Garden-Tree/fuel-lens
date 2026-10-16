@@ -204,7 +204,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
             role="dialog"
             aria-modal="true"
             aria-labelledby="confirm-dialog-title"
-            className="w-full max-w-sm max-h-[85dvh] overflow-y-auto rounded-hero border border-line bg-surface p-5 shadow-2xl shadow-black/50"
+            className="w-full max-w-sm max-h-[85dvh] overflow-y-auto overscroll-contain rounded-hero border border-line bg-surface p-5 shadow-2xl shadow-black/50"
           >
             <h2 id="confirm-dialog-title" className="text-base font-bold text-ink">
               {confirmState.options.title ?? '確認'}

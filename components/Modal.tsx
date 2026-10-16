@@ -165,7 +165,7 @@ function ModalHeader({ icon, className = "mb-6" }: { icon?: ReactNode; className
 
 /** スクロールする本文領域 */
 function ModalBody({ children, className = "" }: { children: ReactNode; className?: string }) {
-  return <div className={`flex-1 overflow-y-auto ${className}`}>{children}</div>;
+  return <div className={`flex-1 overflow-y-auto overscroll-contain ${className}`}>{children}</div>;
 }
 
 /** 下部に固定する領域（ボタン行・フォームなど） */
