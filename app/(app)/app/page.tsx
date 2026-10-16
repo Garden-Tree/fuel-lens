@@ -89,8 +89,8 @@ export default function Home() {
   // 写真の一括読み取り（2 枚以上）。最中は 1 枚のスキャンと同じく撮影・アルバム・手動入力を始められない。
   // 未ログインのお試しでは 1 枚ごとに 1 回分を使う（残り回数はサーバーの X-Trial-Remaining で更新する）
   const batch = useBatchScan({ isSignedIn, toast, confirm, onTrialRemaining: trial.setRemaining });
-  // 解析待ちの提携先の紹介（PR）。バイクのときだけ、端末ごとに 7 日に 1 回。解析が終わると自動で閉じる
-  const scanPromo = useScanWaitPromo({ loadingStep: scan.loadingStep, vehicleType: selectedVehicle?.type, batchActive: batch.active });
+  // 解析待ちの提携先の紹介（PR）。バイクのときだけ、端末ごとに 7 日に 1 回。エラー・キャンセルなら自動で閉じ、結果が出たら閉じるまで出したまま（結果の確認シートは閉じた後に出す）
+  const scanPromo = useScanWaitPromo({ loadingStep: scan.loadingStep, vehicleType: selectedVehicle?.type, batchActive: batch.active, resultReady: scan.scanResult !== null });
   // 他の画面・ショートカットから撮影 / アルバムで来たときの案内。画像を選んだ・スキャンが始まった・閉じたら消す
   const [scanPrompt, setScanPrompt] = useState(false);
   const processFile = (file: File) => {
@@ -503,10 +503,10 @@ export default function Home() {
         />
       )}
 
-      <ScanWaitPromoModal promo={scanPromo.promo} onClose={scanPromo.dismiss} onLinkClick={scanPromo.markClicked} />
+      <ScanWaitPromoModal promo={scanPromo.promo} done={scanPromo.done} onClose={scanPromo.dismiss} onLinkClick={scanPromo.markClicked} />
 
       {/* スキャン結果の確認シート（保存は「保存」を押したときのみ） */}
-      {scan.scanResult && (
+      {scan.scanResult && !scanPromo.promo && (
         <ScanReviewSheet
           key={scan.scanResult.key}
           result={scan.scanResult.data}

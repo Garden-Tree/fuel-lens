@@ -6,12 +6,23 @@ import { useScanWaitPromo } from "@/lib/promo/useScanWaitPromo";
 import type { ScanLoadingStep } from "@/lib/scan/useScanPipeline";
 import type { VehicleType } from "@/lib/types";
 
-function Harness({ step, type = "bike", onCancel }: { step: ScanLoadingStep; type?: VehicleType; onCancel?: () => void }) {
-  const p = useScanWaitPromo({ loadingStep: step, vehicleType: type, batchActive: false });
+function Harness({
+  step,
+  type = "bike",
+  onCancel,
+  resultReady = false,
+}: {
+  step: ScanLoadingStep;
+  type?: VehicleType;
+  onCancel?: () => void;
+  resultReady?: boolean;
+}) {
+  const p = useScanWaitPromo({ loadingStep: step, vehicleType: type, batchActive: false, resultReady });
   return (
     <>
       <button type="button" onClick={onCancel}>キャンセル</button>
-      <ScanWaitPromoModal promo={p.promo} onClose={p.dismiss} onLinkClick={p.markClicked} />
+      <ScanWaitPromoModal promo={p.promo} done={p.done} onClose={p.dismiss} onLinkClick={p.markClicked} />
+      {resultReady && !p.promo && <div data-testid="review-sheet" />}
     </>
   );
 }
@@ -33,6 +44,15 @@ describe("ScanWaitPromoModal", () => {
     expect(link.getAttribute("rel")).toContain("sponsored");
     expect(link.getAttribute("href")).toBe(SCAN_WAIT_PROMOS[0].href);
   });
+  it("リンクのない提携先は出さない", () => {
+    render(<ScanWaitPromoModal promo={SCAN_WAIT_PROMOS[1]} onClose={() => {}} />);
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+  it("車用にリンクが入っていれば出す", () => {
+    render(<ScanWaitPromoModal promo={{ ...SCAN_WAIT_PROMOS[1], href: "https://example.com/car" }} onClose={() => {}} />);
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "無料で見積もる" })).toHaveAttribute("href", "https://example.com/car");
+  });
   it("promo が null なら何も出さない", () => {
     render(<ScanWaitPromoModal promo={null} onClose={() => {}} />);
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
@@ -46,7 +66,7 @@ describe("useScanWaitPromo", () => {
   });
   afterEach(() => vi.useRealTimers());
 
-  it("待ち時間のあとに出て、解析が終わると自動で閉じる", () => {
+  it("待ち時間のあとに出て、エラー・キャンセルで解析が終わると自動で閉じる", () => {
     const { rerender } = render(<Harness step="analyze" />);
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     advance(SCAN_WAIT_PROMO_DELAY_MS);
@@ -54,6 +74,28 @@ describe("useScanWaitPromo", () => {
     expect(window.localStorage.getItem(SCAN_WAIT_PROMO_STORAGE_KEY)).not.toBeNull();
     rerender(<Harness step={null} />);
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+  it("結果が届いても閉じず、見出しとボタンが切り替わる。閉じるまで確認シートは出ない", () => {
+    const { rerender } = render(<Harness step="analyze" />);
+    advance(SCAN_WAIT_PROMO_DELAY_MS);
+    expect(screen.getByRole("dialog", { name: "解析が終わるまで少々お待ちください" })).toBeInTheDocument();
+    rerender(<Harness step={null} resultReady />);
+    expect(screen.getByRole("dialog", { name: "解析が終わりました" })).toBeInTheDocument();
+    expect(screen.queryByTestId("review-sheet")).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "無料で見積もる" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "結果を見る" }));
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(screen.getByTestId("review-sheet")).toBeInTheDocument();
+  });
+  it("結果が届いたあとにリンクを押しても閉じない", () => {
+    const { rerender } = render(<Harness step="analyze" />);
+    advance(SCAN_WAIT_PROMO_DELAY_MS);
+    rerender(<Harness step={null} resultReady />);
+    const link = screen.getByRole("link", { name: "無料で見積もる" });
+    link.addEventListener("click", (e) => e.preventDefault());
+    fireEvent.click(link);
+    expect(screen.getByRole("dialog", { name: "解析が終わりました" })).toBeInTheDocument();
+    expect(screen.queryByTestId("review-sheet")).not.toBeInTheDocument();
   });
   it("待ち時間前に終われば出さず、記録もしない", () => {
     const { rerender } = render(<Harness step="analyze" />);
@@ -63,7 +105,7 @@ describe("useScanWaitPromo", () => {
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     expect(window.localStorage.getItem(SCAN_WAIT_PROMO_STORAGE_KEY)).toBeNull();
   });
-  it("車では出さない", () => {
+  it("車はリンク未設定の間は出さない", () => {
     render(<Harness step="analyze" type="car" />);
     advance(SCAN_WAIT_PROMO_DELAY_MS + 100);
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
