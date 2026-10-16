@@ -12,6 +12,8 @@ import { useResolvedAuth } from "@/lib/data/initialAuthContext";
 import { useRecordForm } from "@/lib/useRecordForm";
 import { useRecordEditing } from "@/lib/useRecordEditing";
 import { useScanPipeline } from "@/lib/scan/useScanPipeline";
+import { useScanWaitPromo } from "@/lib/promo/useScanWaitPromo";
+import ScanWaitPromoModal from "@/components/ScanWaitPromoModal";
 import { useImageDropPaste } from "@/lib/scan/useImageDropPaste";
 import { useTrial } from "@/lib/scan/trialContext";
 import { scanAccessOf } from "@/lib/trial";
@@ -87,6 +89,8 @@ export default function Home() {
   // 写真の一括読み取り（2 枚以上）。最中は 1 枚のスキャンと同じく撮影・アルバム・手動入力を始められない。
   // 未ログインのお試しでは 1 枚ごとに 1 回分を使う（残り回数はサーバーの X-Trial-Remaining で更新する）
   const batch = useBatchScan({ isSignedIn, toast, confirm, onTrialRemaining: trial.setRemaining });
+  // 解析待ちの提携先の紹介（PR）。バイクのときだけ、端末ごとに 7 日に 1 回。解析が終わると自動で閉じる
+  const scanPromo = useScanWaitPromo({ loadingStep: scan.loadingStep, vehicleType: selectedVehicle?.type, batchActive: batch.active });
   // 他の画面・ショートカットから撮影 / アルバムで来たときの案内。画像を選んだ・スキャンが始まった・閉じたら消す
   const [scanPrompt, setScanPrompt] = useState(false);
   const processFile = (file: File) => {
@@ -498,6 +502,8 @@ export default function Home() {
           onCancel={() => setTwoImageChoice(null)}
         />
       )}
+
+      <ScanWaitPromoModal promo={scanPromo.promo} onClose={scanPromo.dismiss} onLinkClick={scanPromo.markClicked} />
 
       {/* スキャン結果の確認シート（保存は「保存」を押したときのみ） */}
       {scan.scanResult && (
