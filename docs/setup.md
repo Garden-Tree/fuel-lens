@@ -23,6 +23,7 @@ npm run dev                  # http://localhost:3000
 |---|---|---|
 | `GEMINI_API_KEY` | 必須 | Gemini API（AI 解析）のキー。サーバー専用 |
 | `GEMINI_MODEL` | 任意 | 使用モデル。未設定時は `gemini-3.1-flash-lite` |
+| `GEMINI_FALLBACK_MODEL` | 任意 | 503 などが続いたときの代替モデル。未設定時は `gemini-2.5-flash`。空文字で無効 |
 | `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` | 必須 | Clerk（認証）の公開キー |
 | `CLERK_SECRET_KEY` | 必須 | Clerk のシークレットキー |
 | `NEXT_PUBLIC_CLERK_SUPABASE_JWT_TEMPLATE` | 任意 | Supabase に渡す Clerk トークンの取得方法。`supabase` を設定すると JWT テンプレート方式（開発インスタンス用）、空なら `getToken()` のネイティブ Third-Party Auth（本番インスタンス用） |

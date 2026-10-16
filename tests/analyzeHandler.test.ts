@@ -46,6 +46,7 @@ function makeDeps(overrides: Partial<AnalyzeDeps> = {}) {
     limiter: createRateLimiter({ windowMs: 60_000, max: 5, maxKeys: 10_000, now: () => NOW }),
     trialLimiter: createRateLimiter({ windowMs: 24 * 60 * 60 * 1000, max: 10, maxKeys: 10_000, now: () => NOW }),
     now: () => NOW,
+    sleep: async () => {},
     log,
     newRequestId: () => "req00001",
     ...overrides,
@@ -385,11 +386,12 @@ describe("handleAnalyze", () => {
     gemini.mockRejectedValueOnce(new GeminiCallError("timeout", undefined, new Error("deadline")));
     await expectError(await handleAnalyze(makeReq(goodBody), deps), 504, "UPSTREAM_TIMEOUT");
 
-    gemini.mockRejectedValueOnce(new GeminiCallError("upstream", 500, new Error("secret 500")));
+    gemini.mockRejectedValue(new GeminiCallError("upstream", 500, new Error("secret 500")));
     const upstream = await expectError(await handleAnalyze(makeReq(goodBody), deps), 502, "UPSTREAM_ERROR");
     expect(JSON.stringify(upstream)).not.toContain("secret");
 
     // 分類されていない例外も 502 に寄せる
+    gemini.mockReset();
     gemini.mockRejectedValueOnce(new Error("unclassified"));
     await expectError(await handleAnalyze(makeReq(goodBody), deps), 502, "UPSTREAM_ERROR");
   });
@@ -402,5 +404,102 @@ describe("handleAnalyze", () => {
     });
     await expectError(await handleAnalyze(makeReq(goodBody), deps), 500, "INTERNAL_ERROR");
     expect(log).toHaveBeenCalledWith("error", "[analyze req00001]", "Unexpected error:", expect.any(Error));
+  });
+
+  describe("transient upstream errors: retry and fallback", () => {
+    const e503 = () => new GeminiCallError("upstream", 503, new Error("secret high demand body"));
+    const models = (g: GeminiMock) => g.mock.calls.map((c) => (c[0] as { model: string }).model);
+
+    it("retries the primary model once after a 503 and succeeds", async () => {
+      const sleep = vi.fn(async () => {});
+      const { deps, gemini, log } = makeDeps({ sleep, random: () => 0.5 });
+      gemini.mockRejectedValueOnce(e503());
+      const res = await handleAnalyze(makeReq(goodBody), deps);
+      expect(res.status).toBe(200);
+      expect(models(gemini)).toEqual(["gemini-3.1-flash-lite", "gemini-3.1-flash-lite"]);
+      expect(sleep).toHaveBeenCalledTimes(1);
+      const ms = (sleep.mock.calls[0] as unknown as [number])[0];
+      expect(ms).toBeGreaterThanOrEqual(800);
+      expect(ms).toBeLessThanOrEqual(1500);
+      expect(log).toHaveBeenCalledWith("warn", "[analyze req00001]", expect.stringContaining("attempt 1 failed (upstream, status=503"));
+    });
+
+    it("falls back to the fallback model after two transient failures", async () => {
+      const { deps, gemini, log } = makeDeps();
+      gemini.mockRejectedValueOnce(e503()).mockRejectedValueOnce(e503());
+      const res = await handleAnalyze(makeReq(goodBody), deps);
+      expect(res.status).toBe(200);
+      expect(models(gemini)).toEqual(["gemini-3.1-flash-lite", "gemini-3.1-flash-lite", "gemini-2.5-flash"]);
+      expect(log).toHaveBeenCalledWith("log", "[analyze req00001]", "succeeded with fallback model gemini-2.5-flash");
+    });
+
+    it("uses GEMINI_FALLBACK_MODEL and counts one rate-limit hit for all attempts", async () => {
+      const limiter = { consume: vi.fn(() => ({ allowed: true, retryAfterSec: 0 })) };
+      const { deps, gemini } = makeDeps({
+        env: { GEMINI_API_KEY: "k", GEMINI_FALLBACK_MODEL: "custom-fb" },
+        limiter,
+      });
+      gemini.mockRejectedValueOnce(e503()).mockRejectedValueOnce(e503());
+      expect((await handleAnalyze(makeReq(goodBody), deps)).status).toBe(200);
+      expect(models(gemini)[2]).toBe("custom-fb");
+      expect(limiter.consume).toHaveBeenCalledTimes(1);
+    });
+
+    it("returns the overload message with requestId and no body leak when every attempt fails with 503", async () => {
+      const { deps, gemini } = makeDeps();
+      gemini.mockRejectedValue(e503());
+      const res = await handleAnalyze(makeReq(goodBody), deps);
+      const json = await expectError(res, 502, "UPSTREAM_ERROR");
+      expect(gemini).toHaveBeenCalledTimes(3);
+      expect(json.error).toBe("AIが混み合っています。少し時間をおいてもう一度お試しください。");
+      expect(JSON.stringify(json)).not.toMatch(/secret|gemini/i);
+    });
+
+    it("does not retry quota, timeout, 4xx or unclassified errors", async () => {
+      for (const err of [
+        new GeminiCallError("quota", 429, new Error("q")),
+        new GeminiCallError("timeout", undefined, new Error("t")),
+        new GeminiCallError("upstream", 400, new Error("bad")),
+        new Error("unclassified"),
+      ]) {
+        const { deps, gemini } = makeDeps();
+        gemini.mockRejectedValue(err);
+        await handleAnalyze(makeReq(goodBody), deps);
+        expect(gemini).toHaveBeenCalledTimes(1);
+      }
+    });
+
+    it("retries network errors (no status) and 500", async () => {
+      const { deps, gemini } = makeDeps();
+      gemini
+        .mockRejectedValueOnce(new GeminiCallError("upstream", undefined, new Error("fetch failed")))
+        .mockRejectedValueOnce(new GeminiCallError("upstream", 500, new Error("x")));
+      expect((await handleAnalyze(makeReq(goodBody), deps)).status).toBe(200);
+      expect(gemini).toHaveBeenCalledTimes(3);
+    });
+
+    it("skips the fallback when the env is empty or equals the primary", async () => {
+      for (const env of [
+        { GEMINI_API_KEY: "k", GEMINI_FALLBACK_MODEL: "" },
+        { GEMINI_API_KEY: "k", GEMINI_MODEL: "m1", GEMINI_FALLBACK_MODEL: "m1" },
+      ]) {
+        const { deps, gemini } = makeDeps({ env });
+        gemini.mockRejectedValue(e503());
+        await expectError(await handleAnalyze(makeReq(goodBody), deps), 502, "UPSTREAM_ERROR");
+        expect(gemini).toHaveBeenCalledTimes(2);
+      }
+    });
+
+    it("does not start another attempt when less than 32s of the 55s budget remains", async () => {
+      let t = NOW;
+      const { deps, gemini, log } = makeDeps({ now: () => t, sleep: async () => { t += 1_000; } });
+      gemini.mockImplementation(async () => {
+        t += 24_000; // 遅い失敗: 1 回目で 24s + 待機 1s = 25s 経過、残り 30s < 32s
+        throw e503();
+      });
+      await expectError(await handleAnalyze(makeReq(goodBody), deps), 502, "UPSTREAM_ERROR");
+      expect(gemini).toHaveBeenCalledTimes(1);
+      expect(log).toHaveBeenCalledWith("warn", "[analyze req00001]", expect.stringContaining("not enough time budget"));
+    });
   });
 });
