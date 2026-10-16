@@ -4,6 +4,7 @@
  *
  * - `scan`: manifest のショートカット「スキャン」・他の画面のスキャンメニュー「撮影する」（カメラを開く）
  * - `album`: 他の画面のスキャンメニュー「アルバムから選ぶ」（ファイル選択を開く。カメラは起動しない）
+ * - `pair`: 他の画面のスキャンメニュー「レシートとメーターを別々に撮る」（2 枚の撮影・選択のシートを開く）
  * - `manual`: manifest のショートカット「手動で入力」・他の画面のスキャンメニュー「手動で入力」
  * - `shared`: Service Worker が共有画像を受け取った（`&t=<token>` 付き）
  * - `share-unavailable`: SW 未準備・画像なしで共有を受け取れなかった
@@ -11,11 +12,11 @@
  * /app を表示中のスキャンメニューは URL を経由せず、components/ScanActions.tsx で登録した処理を直接呼ぶ。
  */
 
-export const SHORTCUT_ACTIONS = ["scan", "album", "manual", "shared", "share-unavailable"] as const;
+export const SHORTCUT_ACTIONS = ["scan", "album", "pair", "manual", "shared", "share-unavailable"] as const;
 export type ShortcutAction = (typeof SHORTCUT_ACTIONS)[number];
 
-/** 記録の入口（撮影 / アルバム / 手動入力） */
-export type EntryAction = "scan" | "album" | "manual";
+/** 記録の入口（撮影 / アルバム / 2 枚で撮る / 手動入力） */
+export type EntryAction = "scan" | "album" | "pair" | "manual";
 
 /**
  * 撮影・アルバム・手動入力を今は始められない理由。
@@ -86,7 +87,14 @@ export function shortcutReadinessOf(state: {
 
 /** URL の action を始められなかったときの toast の文言 */
 export function blockedActionMessage(action: EntryAction, reason: EntryBlockReason): string {
-  const what = action === "scan" ? "撮影を開始できません" : action === "album" ? "アルバムを開けません" : "手動入力はできません";
+  const what =
+    action === "scan"
+      ? "撮影を開始できません"
+      : action === "album"
+        ? "アルバムを開けません"
+        : action === "pair"
+          ? "レシートとメーターの撮影を開始できません"
+          : "手動入力はできません";
   switch (reason) {
     case "scanning":
       return `読み取り中のため${what}`;
@@ -135,7 +143,7 @@ export type ShortcutResolution =
 /**
  * `?action=` の値から、いま実行するアクションを決める。
  * - 対応していない値・無し: null（何もしない。URL も書き換えない）
- * - 撮影・アルバム・手動入力: 判定できるまで待ち、できない理由（解析中・確認中・閲覧専用）があれば取り下げる
+ * - 撮影・アルバム・2 枚で撮る・手動入力: 判定できるまで待ち、できない理由（解析中・確認中・閲覧専用）があれば取り下げる
  * - 共有画像: 条件がそろうまで待つ（取り下げない。SW から受け取った画像を落とさないため）
  * - 案内: マウント後に実行
  */
@@ -146,6 +154,7 @@ export function resolveShortcutAction(
   switch (action) {
     case "scan":
     case "album":
+    case "pair":
     case "manual": {
       if (!readiness.evaluable) return { type: "wait" };
       const block = action === "manual" ? readiness.manualBlock : readiness.scanBlock;

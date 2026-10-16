@@ -8,7 +8,7 @@ FuelLens の構成、データの流れ、主要なモジュールの役割を�
 | パス | 役割 |
 |---|---|
 | `app/page.tsx` | ランディングページ（Server Component）。検索向けのタイトル・説明（`title.absolute`。レイアウトのタイトルのテンプレートは使わない）と構造化データ（`WebApplication`）は `lib/landingPage.ts`。対話部分は `components/landing/*`。右上のログインボタン（`HeaderAuthButtons`）はページの読み込み完了後に `ClerkHeaderAuth`（`ClerkProvider` + `SignedIn` / `SignedOut` / `SignInButton`）を動的に読み込む（clerk-js を初期表示に載せないため。読み込むまではボタンを出さない） |
-| `app/(app)/app/page.tsx`、`app/(app)/app/_components/` | ホーム画面（`/app`）。燃費メーターのヒーロー、今月の集計、最近の記録、記録の入口（撮影 / アルバム / 手動）。スキャン（画像の選択・ドロップ・貼り付け）と手動入力・最新記録の編集もここ。ページはフックと部品を組み合わせるだけで、部品は `_components/`（`EfficiencyGauge` / `LatestRecordCard` / `MonthSummarySection` / `RecentRecordsSection` / `ScanEntryList` / `WelcomeCard` / `DropZoneRow` / `ManualEntryCard` / `ScanPanel` / `ScanReadyPrompt` / `RecordCardSkeleton` / `ShortcutActionHandler`）に分割。表示用の純粋関数は `lib/home/`（[メイン画面の構成](#メイン画面の構成app)） |
+| `app/(app)/app/page.tsx`、`app/(app)/app/_components/` | ホーム画面（`/app`）。燃費メーターのヒーロー、今月の集計、最近の記録、記録の入口（撮影 / アルバム / 2 枚で撮る / 手動）。スキャン（画像の選択・ドロップ・貼り付け）と手動入力・最新記録の編集もここ。ページはフックと部品を組み合わせるだけで、部品は `_components/`（`EfficiencyGauge` / `LatestRecordCard` / `MonthSummarySection` / `RecentRecordsSection` / `ScanEntryList` / `WelcomeCard` / `DropZoneRow` / `ManualEntryCard` / `ScanPanel` / `ScanReadyPrompt` / `TwoPhotoScanSheet` / `RecordCardSkeleton` / `ShortcutActionHandler`）に分割。表示用の純粋関数は `lib/home/`（[メイン画面の構成](#メイン画面の構成app)） |
 | `app/(app)/history/page.tsx`、`app/(app)/history/_components/` | 履歴一覧。年・月・並び順のチップ（`HistoryToolbar`）と CSV 出力、月ごとの見出し付きの一覧（`RecordRow`）、行を開いて明細・編集・別車両への移動・削除（`RecordDetail`）。`/history#record-<id>` でその記録を開く。絞り込み・月ごとのまとめは純粋関数 `lib/history/`（[履歴画面の構成](#履歴画面の構成history)） |
 | `app/(app)/stats/page.tsx`、`app/(app)/stats/_components/` | 統計の平均燃費ヒーロー（推移グラフ付き）・費用・月ごとの給油代・単価の推移（recharts）。ページは車両・期間の状態と `buildStatsModel` の結果を部品に渡すだけで、部品は `_components/` に分割（recharts 用の色は `chartTheme.ts`）。期間フィルタ（3 ヶ月 / 6 ヶ月 / 1 年 / 全期間）。スタンド比較の部品は残してあるが画面には出さない（[11 章](#11-統計)） |
 | `app/(app)/settings/page.tsx` | 設定画面（`/settings`）。見出し付きのグループリストで、データ概要・バックアップ・復元・インポート（[8 章](#8-バックアップと復元)）・アカウント（[アカウント削除](#アカウント削除)） |
@@ -16,13 +16,13 @@ FuelLens の構成、データの流れ、主要なモジュールの役割を�
 | `app/manifest.ts` | PWA の Web App Manifest（`/manifest.webmanifest`。[9 章](#9-pwa)） |
 | `app/robots.ts`、`app/sitemap.ts`、`lib/siteUrl.ts` | `/robots.txt`（`/api/`・`/settings`・`/history`・`/stats` を除外）と `/sitemap.xml`（`/`・`/calc`・`/gas-cost`・`/app`・`/privacy`・`/terms`）。サイト URL は `getSiteUrl()`（`NEXT_PUBLIC_APP_URL`、無効・未設定なら `https://fuel-lens.gadelog.com`） |
 | `app/opengraph-image.tsx`、`app/twitter-image.tsx`、`lib/og/renderOgImage.tsx` | SNS 共有用の 1200×630 画像（`next/og` の `ImageResponse`）。2 つの route は同じ `renderOgImage()` を呼ぶだけ。Noto Sans JP / JetBrains Mono をリクエスト時に Google Fonts から取得（[operations.md](./operations.md#4-4-og-画像)）。`app/layout.tsx` の `twitter.card` は `summary_large_image` |
-| `app/api/analyze/route.ts` | Gemini で画像を解析する API（[api-analyze.md](./api-analyze.md)） |
+| `app/api/analyze/route.ts` | Gemini で画像（1 枚、またはレシートとメーターの 2 枚）を解析する API（[api-analyze.md](./api-analyze.md)。本体は `lib/server/analyze/`、プロンプトは `prompt.ts`） |
 | `app/api/account/route.ts`、`lib/server/account/handler.ts` | アカウント削除の API（`DELETE /api/account`。Clerk のユーザーを削除する。[api-account.md](./api-account.md)） |
 | `app/api/keepalive/route.ts` | Supabase 自動停止対策のエンドポイント（[operations.md](./operations.md#3-supabase-の自動停止と-keepalive)） |
 | `app/layout.tsx` | ルートレイアウト。フォント（数字用の JetBrains Mono。日本語は端末のフォント）、`ServiceWorkerRegister` / `WebAnalytics`、`metadata` と `viewport`。Clerk・トースト・Supabase は載せない（公開ページ `/`・`/calc`・`/gas-cost`・`/privacy`・`/terms` を軽くするため） |
 | `app/(app)/layout.tsx` | アプリ画面（`/app`・`/history`・`/stats`・`/settings`。ルートグループなので URL は変わらない）の共通レイアウト。`ClerkProvider`（`localization` は `lib/clerkLocalization.ts`） / `InitialAuthProvider`（サーバーの `auth()` の結果。[2 章「最初の描画」](#2-データフロー)。このため 4 画面は動的描画） / `ToastProvider` / `UserSync` / `SupabaseStatusBanner`、Clerk Frontend API への `preconnect`（`lib/clerkFrontendApi.ts`） |
 | `app/globals.css` | デザイントークン（`@theme`）と `num` などのユーティリティ（[design-system.md](./design-system.md)） |
-| `components/AppShell.tsx` / `components/AppNav.tsx` / `components/ScanActionMenu.tsx` / `components/ScanActions.tsx` | アプリ画面の枠。`AppFrame`（本文の器とナビ）/ `PageHeader`（見出し + 車両チップ）/ `HookErrorLine` / `ReadOnlyCaption`、ナビ（スマホは下部タブバー、PC は左サイドバー）、スキャンメニュー（撮影する / アルバムから選ぶ / 手動で入力）と、ホームがメニューに処理を登録する `ScanActionsProvider` / `RegisterScanActions`（[ナビゲーションとスキャンメニュー](#ナビゲーションとスキャンメニュー)） |
+| `components/AppShell.tsx` / `components/AppNav.tsx` / `components/ScanActionMenu.tsx` / `components/ScanActions.tsx` | アプリ画面の枠。`AppFrame`（本文の器とナビ）/ `PageHeader`（見出し + 車両チップ）/ `HookErrorLine` / `ReadOnlyCaption`、ナビ（スマホは下部タブバー、PC は左サイドバー）、スキャンメニュー（撮影する / アルバムから選ぶ / レシートとメーターを別々に撮る / 手動で入力）と、ホームがメニューに処理を登録する `ScanActionsProvider` / `RegisterScanActions`（[ナビゲーションとスキャンメニュー](#ナビゲーションとスキャンメニュー)） |
 | `components/ui/*` | デザインシステムの部品（`Section` / `GroupedList` / `ListRow` / `ValueRow` / `SegmentedControl` / `Chip` / `IconButton` / `Num` / `Menu` / `MenuItem` / `BrandMark`）。`@/components/ui` から import する |
 | `app/error.tsx` / `app/global-error.tsx` / `app/not-found.tsx` | エラー画面・404 |
 | `components/ScanReviewSheet.tsx` | スキャン結果の確認シート（保存前に確認・修正する） |
@@ -66,7 +66,7 @@ FuelLens の構成、データの流れ、主要なモジュールの役割を�
 | `lib/home/` | ホーム画面の表示用の純粋関数。`hero`（ヒーローのモデルと前回比）/ `gauge`（燃費メーターの目盛りと円弧の座標）/ `month`（今月の集計）/ `recent`（最近の記録の行と日付の書式）。フックは `useCurrentMonthKey` / `useTodayKey`（いまの月 / 今日。画面に戻ってきたときに読み直す）だけ |
 | `lib/history/` | 履歴画面の純粋関数。`recordList`（年・月の絞り込み・並べ替え・数値の書式・行の DOM id と `#record-<id>` の解析）/ `groupByMonth`（月ごとのまとまりと合計） |
 | `lib/importers/csvParse.ts` | CSV 取り込みの共有プリミティブ（`parseCsvRows` / `parseCsvNumber` / `parseFlexibleDate` / `hashString` / `isBlankRow`）。`fuelio.ts` は互換のため再エクスポート |
-| `lib/scan/` | メイン画面のスキャン。`analyzeClient.ts`（`compressToDataUrl` / `requestAnalyze`。React に依存しない I/O）、`shortcuts.ts`（`?action=` の判定 `resolveShortcutAction` / `shortcutReadinessOf`、スキャンメニューの可否 `scanMenuAvailabilityOf`。純粋関数）、フック `useScanPipeline` / `useImageDropPaste` / `useShortcutActions`（[メイン画面の構成](#メイン画面の構成app)） |
+| `lib/scan/` | メイン画面のスキャン。`analyzeClient.ts`（`compressToDataUrl` / `requestAnalyze` / `buildAnalyzeRequestBody`。1 枚と 2 枚の本文を組み立てる。React に依存しない I/O）、`shortcuts.ts`（`?action=` の判定 `resolveShortcutAction` / `shortcutReadinessOf`、スキャンメニューの可否 `scanMenuAvailabilityOf`。純粋関数）、フック `useScanPipeline` / `useImageDropPaste` / `useShortcutActions`（[メイン画面の構成](#メイン画面の構成app)） |
 | `lib/useRecordEditing.ts` | 記録の編集・手動入力のフォームの開閉と保存（重複確認・toast・車両切り替えで閉じる）。/app と /history で共用 |
 | `lib/manualPrefill.ts` | 手動入力の事前入力 `/app?action=manual&distance=…&amount=…&cost=…` の組み立て（`buildManualPrefillHref`。`/calc` から）・解析（`parseManualPrefill`。信頼できない入力として検証）・車両の入力方式への当てはめ（`prefillToRecord`）。純粋関数（[燃費計算ページ](#燃費計算ページcalc)） |
 | `lib/shareInbox.ts` | Web Share Target の受け取り箱。Service Worker が IndexedDB に置いた共有画像を、トークン一致かつ 10 分以内のときだけ取り出して削除する（`takeSharedImage` / `clearSharedImage`。[9 章](#9-pwa)） |
@@ -103,6 +103,13 @@ FuelLens の構成、データの流れ、主要なモジュールの役割を�
   未ログインのお試し読み取りも同じ流れで、保存先はこのブラウザ（`localStore.ts`。ログインすると `migrateLocalData` でアカウントへ移る）。
   残り回数はレイアウトがサーバーで HttpOnly の Cookie から読んだ初期値（`lib/scan/trialContext.tsx` の `TrialProvider`）を、
   `/api/analyze` の `X-Trial-Remaining` で更新する表示用の写しです（判定はサーバーだけ）。
+  - **レシートとメーターを別々に撮る**（1 枚に収まらないとき）: スキャンメニューの「レシートとメーターを別々に撮る」で
+    `TwoPhotoScanSheet` を開き、1. レシート → 2. メーターの順に撮影またはアルバムから選ぶ（それぞれ撮り直し・選び直し、2 枚そろえば入れ替え、メーターを外す）→
+    「2枚を読み取る」で 2 枚を 1 枚 0.6MB 以下に圧縮し（順に 1 枚ずつ）、**1 回の** `POST /api/analyze`（`images: [{ role: "receipt" }, { role: "meter" }]`）で送る →
+    確認シート（レシートとメーターのサムネイルを並べる。項目と保存の流れは 1 枚のときと同じ）。
+    メーターが無いときは「メーターなしで読み取る」でレシートだけを従来の 1 枚の形で送ります（メーターの値は読めずに null になり、確認シートで「要確認」になる）。
+    PC でちょうど 2 枚の画像をドロップしたときも、ドロップした順にレシート / メーターを選んだ状態でこのシートを開きます（読み取りは「2枚を読み取る」を押したときだけ）。
+    メーターの撮り方の案内は車両の距離の入力方式（トリップ / オドメーター）に合わせ、読み取り値の使い分けは 1 枚のときと同じく確認シートが行います。
 - **最初の描画（初期認証状態とキャッシュの先行表示）**: アプリ画面のレイアウト（`app/(app)/layout.tsx`）がサーバーで Clerk の `auth()` を読み、
   `{ signedIn, userId }` を `InitialAuthProvider`（`lib/data/initialAuthContext.tsx`）でクライアントへ渡します。判定は純粋関数 `resolveAuth`（`lib/data/initialAuth.ts`）で、
   使うのは Clerk（clerk-js、数百 KB + Frontend API の往復）の読み込みが終わるまでの間だけです。読み込み後は常に Clerk の値が優先します。
@@ -325,25 +332,26 @@ useVehicles / useFuelRecords
 | 部品・フック | 役割 |
 |---|---|
 | `useVehicleScope` | 選択中の車両とその記録 |
-| `useScanPipeline({ isSignedIn, toast, confirm })`（`lib/scan/`） | スキャンの状態（`loading` / `loadingStep` / `preview` / `sharedPending` / `scanResult`、同期判定の `isScanning()`）と処理（`processImageFile(file, { confirmBeforeAnalyze })` / `processSharedImage(token)` / `startSharedAnalysis` / `clearPreview` / `discardResult` / `abort`）。圧縮 → `requestAnalyze` → 確認シート。HTTP エラーの文言は `lib/analyze.ts` の `analyzeErrorMessage(status, body, { isSignedIn, retryAfter })`（401 は未ログイン / ログイン中で文言を分ける、422、429 は Retry-After の秒数、504、それ以外は requestId 付き）。アンマウント時は解析リクエストを中断する |
-| `useImageDropPaste({ onImage, isBusy, toast })`（`lib/scan/`） | ドロップ先に付ける `dropZoneProps` と `isDragging`、window 全体のペースト（入力欄にフォーカスがあるときは無視）。最新のハンドラは `useEffectEvent` で参照する |
+| `useScanPipeline({ isSignedIn, toast, confirm })`（`lib/scan/`） | スキャンの状態（`loading` / `loadingStep` / `preview` / `previewMeter` / `sharedPending` / `scanResult`（2 枚のときは `meterImage` も）、同期判定の `isScanning()`）と処理（`processImageFile(file, { confirmBeforeAnalyze })` / `processImagePair(receipt, meter \| null)`（レシートとメーターの 2 枚を 1 回の解析に送る。`meter` が null ならレシートだけを 1 枚の形で）/ `processSharedImage(token)` / `startSharedAnalysis` / `clearPreview` / `discardResult` / `abort`）。圧縮 → `requestAnalyze` → 確認シート。HTTP エラーの文言は `lib/analyze.ts` の `analyzeErrorMessage(status, body, { isSignedIn, retryAfter })`（401 は未ログイン / ログイン中で文言を分ける、422、429 は Retry-After の秒数、504、それ以外は requestId 付き）。アンマウント時は解析リクエストを中断する |
+| `useImageDropPaste({ onImage, onImagePair, isBusy, toast })`（`lib/scan/`） | ドロップ先に付ける `dropZoneProps` と `isDragging`、window 全体のペースト（入力欄にフォーカスがあるときは無視）。ちょうど 2 枚の画像のドロップは `onImagePair`（ホームは `TwoPhotoScanSheet` を開く）、それ以外は従来どおり 1 枚目を `onImage`。最新のハンドラは `useEffectEvent` で参照する |
 | `useRecordEditing` | 手動入力・最新記録の編集。確認シートの保存も `addWithDuplicateCheck` を使う |
-| `RegisterScanActions`（`components/ScanActions.tsx`） | 撮影・アルバム・手動入力の処理と可否（`canScan` / `canManual` / `disabledReason`。`scanMenuAvailabilityOf`）をスキャンメニューに登録する（マウント中だけ）。メニューは項目のクリックの中でこれを直接呼ぶ |
-| `ShortcutActionHandler`（`useShortcutActions`） | `?action=scan` / `album` / `manual` / `shared` / `share-unavailable` を `action` が付くたびに 1 回だけ処理し、`router.replace("/app")` でクエリごと消す（他の画面のスキャンメニュー・PWA ショートカット・共有・燃費計算ページから来たとき。`album` は capture なしのファイル選択。`manual` に `distance` / `amount` / `cost` が付いていれば、検証した値を手動入力に入れて開く。[燃費計算ページ](#燃費計算ページcalc)）。撮影・アルバム・手動入力は判定できる（マウント済み・読み込み完了）まで待ち、そのとき解析中・確認中・閲覧専用なら**実行せずに取り下げ**、理由を toast で伝える（例「読み取り中のため撮影を開始できません」「閲覧専用のため手動入力はできません」。後から勝手に開かない）。共有画像は条件がそろうまで待つ。判定は `shortcutReadinessOf` / `resolveShortcutAction`。`useSearchParams` を使うので `<Suspense>` の内側に置き、/app の静的プリレンダーを保つ |
+| `RegisterScanActions`（`components/ScanActions.tsx`） | 撮影・アルバム・2 枚で撮る（`openPair`）・手動入力の処理と可否（`canScan` / `canManual` / `disabledReason`。`scanMenuAvailabilityOf`）をスキャンメニューに登録する（マウント中だけ）。メニューは項目のクリックの中でこれを直接呼ぶ |
+| `ShortcutActionHandler`（`useShortcutActions`） | `?action=scan` / `album` / `pair` / `manual` / `shared` / `share-unavailable` を `action` が付くたびに 1 回だけ処理し、`router.replace("/app")` でクエリごと消す（他の画面のスキャンメニュー・PWA ショートカット・共有・燃費計算ページから来たとき。`album` は capture なしのファイル選択。`pair` は `TwoPhotoScanSheet` を開く（ファイル選択はシートのボタンで開くので案内は出さない）。`manual` に `distance` / `amount` / `cost` が付いていれば、検証した値を手動入力に入れて開く。[燃費計算ページ](#燃費計算ページcalc)）。撮影・アルバム・手動入力は判定できる（マウント済み・読み込み完了）まで待ち、そのとき解析中・確認中・閲覧専用なら**実行せずに取り下げ**、理由を toast で伝える（例「読み取り中のため撮影を開始できません」「閲覧専用のため手動入力はできません」。後から勝手に開かない）。共有画像は条件がそろうまで待つ。判定は `shortcutReadinessOf` / `resolveShortcutAction`。`useSearchParams` を使うので `<Suspense>` の内側に置き、/app の静的プリレンダーを保つ |
 | `ScanReadyPrompt` | `?action=scan` / `album` で来たときにヘッダーの下（全幅）に出す案内「撮影の準備ができました」（撮影する / アルバムから選ぶ / 閉じる）。遷移後はタップの扱いが切れてファイル選択が開かないことがあるため、ボタンのタップの中で開き直せるようにする。画像を選んだ・スキャンが始まった・閉じたら消す |
 | `LatestRecordCard` / `EfficiencyGauge` | ヒーローカード。直前に保存した記録（なければ最新）の燃費を半円メーターで表示し、平均の目盛り・前回比と平均のチップを添える（見出しは「前回の燃費」、スキャンで保存した直後は「スキャンした記録」）。**最新の記録（`records[0]`）の燃費が無く（部分給油・記録漏れなど）、かつこの画面で保存した直後の記録でないときだけ**、燃費の出ている最も新しい記録をメーターに出し、最新の記録は注記で知らせる（`heroDisplayOf`。保存した直後の記録はスキャン・手動入力とも差し替えない）。「編集」を押すとその場で入力フォームのカード（`RecordFormCard`）に切り替わる。燃費が無い記録（部分給油など）は数値の代わりに理由（`efficiencyNullReason`）を出す。モデルは `lib/home/hero.ts`（前回比・平均は `summarize`、目盛りは `lib/home/gauge.ts` の `gaugeScaleOf`。元にするのは直近 10 回の燃費から外れ値（四分位範囲の 1.5 倍の外）を除いた値 `gaugeBasisOf` で、表示中の値と平均は必ず含める） |
 | `ManualEntryCard` | 手動入力のカード（見出し「手動で記録を追加」。`RecordFormCard` を共用） |
 | `WelcomeCard` | 記録が 1 件も無いときのヒーロー（「最初の給油を記録しましょう」） |
 | `MonthSummarySection` | 「今月」（見出しは「10月」など）のグループリスト: 給油代・給油量（回数）・単価（前回比）。見出しの右に「今月の燃費をシェア」（`ShareCardButton`。[シェアカード](#シェアカード今月の燃費をシェア)。ログイン中のキャッシュ表示 `previewing` の間は押せない）。集計は `lib/home/month.ts` の `monthSummaryOf`（ローカル暦）。月は描画時の日付から求め（`useCurrentMonthKey`）、`visibilitychange` / `focus` で読み直すので、開いたまま月をまたいだ PWA でも切り替わる。読み込み完了後にだけ描画するのでハイドレーションには関わらない |
 | `RecentRecordsSection` | 「最近の記録」の 3 件（店舗名・日付・燃料種別・支払総額、右に燃費）。行は `/history#record-<id>` へ、「すべて見る」は `/history` へ。行は `lib/home/recent.ts` の `recentRowOf` |
-| `ScanEntryList` | 記録の入口（撮影する / アルバムから選ぶ / 手動で入力）のグループリスト。記録が無いときは左カラム、あるときは PC の右カラムだけに出す（スマホはタブバーのスキャンボタンから）。未ログインでは撮影・アルバムを無効にして案内を出す |
+| `ScanEntryList` | 記録の入口（撮影する / アルバムから選ぶ / レシートとメーターを別々に撮る / 手動で入力）のグループリスト。記録が無いときは左カラム、あるときは PC の右カラムだけに出す（スマホはタブバーのスキャンボタンから）。未ログインでは撮影・アルバムを無効にして案内を出す |
 | `DropZoneRow` | PC だけに出す細いドロップ先の案内（押すとアルバム）。ドロップ・貼り付け自体はページ全体で受け付ける |
-| `ScanPanel` | 解析中・プレビュー中（次を撮る / 読み取る / 手動で入力）の状態カードと、非表示のファイル入力（カメラ / アルバム）。何もなければ入力だけ。撮影・アルバムは `ref` の `openCamera()` / `openAlbum()` で開く |
+| `ScanPanel` | 解析中・プレビュー中（次を撮る / 読み取る / 手動で入力）の状態カードと、非表示のファイル入力（カメラ / アルバム）。何もなければ入力だけ。撮影・アルバムは `ref` の `openCamera()` / `openAlbum()` で開く。2 枚で読み取るときはレシートとメーターのサムネイルを並べる |
+| `TwoPhotoScanSheet` | レシートとメーターを別々に撮るシート（1. レシート → 2. メーター。それぞれ撮影 / アルバム、撮り直し・選び直し、入れ替え、メーターを外す、「2枚を読み取る」/「メーターなしで読み取る」/「キャンセル」。ボタンは 44px 以上）。次に選ぶ段階を強調して `aria-current="step"` を付け、選んだら次の段階のボタンへフォーカスを移す。サムネイルは選んだファイルを data URL で読む。圧縮と送信は `processImagePair` |
 | `RecordCardSkeleton` | 読み込み中のスケルトン（左カラム。右カラムは `RecentRecordsSkeleton`） |
 
 レイアウトは、スマホが 1 カラム（ヒーロー → 今月 → 最近の記録）、PC（lg 以上）が 2 カラム（左: ヒーローと今月 / 右: 最近の記録・記録の入口・ドロップ先）です。記録が無いときは左にヒーローの代わりに `WelcomeCard`、その下に `ScanEntryList` を出します。
 
-部品のテストは `tests/components/ScanPanel.test.tsx` / `LatestRecordCard.test.tsx` / `HomePage.test.tsx`（`?action=` の案内・取り下げ、手動入力の破棄確認）/ `ScanActions.test.tsx`（メニューからの直接呼び出し）/ `homeMonth.test.tsx` / `ShareCard.test.tsx`（シェアのモーダルの操作）、純粋関数は `tests/home/*.test.ts`（`gauge` / `month` / `heroRecent`）/ `tests/analyze.test.ts` / `scanShortcuts.test.ts` / `scanClient.test.ts`（`requestAnalyze` を fetch のモックで検証）です。
+部品のテストは `tests/components/ScanPanel.test.tsx` / `LatestRecordCard.test.tsx` / `HomePage.test.tsx`（`?action=` の案内・取り下げ、手動入力の破棄確認）/ `ScanActions.test.tsx`（メニューからの直接呼び出し）/ `TwoPhotoScanSheet.test.tsx`（2 枚の選択・入れ替え・メーターなし）/ `HomeTwoPhotoScan.test.tsx`（メニュー・`?action=pair`・2 枚のドロップから 1 回の解析と確認シートまで）/ `homeMonth.test.tsx` / `ShareCard.test.tsx`（シェアのモーダルの操作）、純粋関数は `tests/home/*.test.ts`（`gauge` / `month` / `heroRecent`）/ `tests/analyze.test.ts` / `scanShortcuts.test.ts` / `scanClient.test.ts`（`requestAnalyze` を fetch のモックで検証）です。
 
 ### シェアカード（「今月の燃費をシェア」）
 
@@ -381,16 +389,16 @@ useVehicles / useFuelRecords
 アプリ画面（/app・/history・/stats・/settings）は最上位を `AppFrame`（`components/AppShell.tsx`）で包みます。ランディング（/）では使いません。
 
 - ナビ項目は `APP_NAV_ITEMS`（ホーム / 履歴 / 統計 / 設定。`components/AppNav.tsx`）。スマホ（lg 未満）は下部のタブバー（`AppTabBar`。中央にスキャンボタン）、PC（lg 以上）は左のサイドバー（`AppSidebar`。ロゴ・4 項目・「スキャンして記録」・ログイン / ユーザーボタン）。`PageHeader` はスマホではログイン / ユーザーボタンも右端に出します。
-- スキャンボタンは `ScanActionMenu`（`components/ScanActionMenu.tsx`）を開きます。項目は「撮影する」/「アルバムから選ぶ」/「手動で入力」。スマホはボトムシート、PC はボタン直下のポップオーバー（`ScanMenuAnchor` で位置を渡す）。メニューの開閉は `AppFrame` の state です。
-- 未ログインの撮影・アルバム（とドロップ・貼り付けの案内）は `lib/trial.ts` の `scanAccessOf` で決めます（スキャンメニュー・ホームの記録の入口・`DropZoneRow` で共通）。
+- スキャンボタンは `ScanActionMenu`（`components/ScanActionMenu.tsx`）を開きます。項目は「撮影する」/「アルバムから選ぶ」/「レシートとメーターを別々に撮る」/「手動で入力」。スマホはボトムシート、PC はボタン直下のポップオーバー（`ScanMenuAnchor` で位置を渡す）。メニューの開閉は `AppFrame` の state です。
+- 未ログインの撮影・アルバム・2 枚で撮る（とドロップ・貼り付けの案内）は `lib/trial.ts` の `scanAccessOf` で決めます（スキャンメニュー・ホームの記録の入口・`DropZoneRow` で共通）。
   - お試しが無効（`TRIAL_COOKIE_SECRET` 未設定）: 撮影・アルバムを無効にし、「AIスキャンはログイン後に使えます。手動入力はログインなしでも使えます。」と案内します（従来どおり）。
   - お試しが残っている: 撮影・アルバムを使え、「お試しであと N 回読み取れます。ログインすると続けて使えます。」と添えます。
   - 使い切った（または `/api/analyze` が 401 `TRIAL_EXHAUSTED` を返した）: 撮影・アルバムを無効にし、「お試しの読み取りは3回までです。ログインすると続けて使えます。手動入力はログインなしでも使えます。」と案内します。
     ホームの上にはログインの案内（`app/(app)/app/_components/TrialLoginPrompt.tsx`。Clerk の `SignInButton` のモーダル、確認シートを開いている間は出さない、「閉じる」で消せる）も出し、
     ログインするとクラウドに保存されること、このブラウザの記録はログイン時に自動でアカウントへ移されること（`migrateLocalData`）を伝えます。
   - 閲覧専用・キャッシュの先行表示・障害時の扱いはログイン中だけのもので、お試しには関係しません。
-- **/app を表示中**は、ホームが `RegisterScanActions`（`components/ScanActions.tsx`。`AppFrame` が `ScanActionsProvider` を描画する）で登録した `openCamera` / `openAlbum` / `openManual` を、メニューの項目のクリックハンドラの中で同期的に呼びます（ファイル入力の `click()` はユーザーのタップの中でないとブラウザに黙って無視されるため）。解析中・確認中・読み込み中・閲覧専用は `canScan` / `canManual` に従って項目を無効にし、理由を 1 行添えます。「手動で入力」は、手動入力・編集のフォームを開いていれば「入力中の内容を破棄して新しく入力しますか？」を確認してから開きます。
-- **他の画面**では、項目は `/app?action=scan|album|manual` への遷移です。/app の `ShortcutActionHandler`（`useShortcutActions`）が処理し、撮影・アルバムは開くのを試したうえで「撮影の準備ができました」の案内（`ScanReadyPrompt`）を出します。始められない状態なら取り下げて toast で理由を伝えます。
+- **/app を表示中**は、ホームが `RegisterScanActions`（`components/ScanActions.tsx`。`AppFrame` が `ScanActionsProvider` を描画する）で登録した `openCamera` / `openAlbum` / `openPair` / `openManual` を、メニューの項目のクリックハンドラの中で同期的に呼びます（ファイル入力の `click()` はユーザーのタップの中でないとブラウザに黙って無視されるため）。解析中・確認中・読み込み中・閲覧専用は `canScan` / `canManual` に従って項目を無効にし、理由を 1 行添えます。「手動で入力」は、手動入力・編集のフォームを開いていれば「入力中の内容を破棄して新しく入力しますか？」を確認してから開きます。
+- **他の画面**では、項目は `/app?action=scan|album|pair|manual` への遷移です。/app の `ShortcutActionHandler`（`useShortcutActions`）が処理し、撮影・アルバムは開くのを試したうえで「撮影の準備ができました」の案内（`ScanReadyPrompt`）を出します。始められない状態なら取り下げて toast で理由を伝えます。
 - `aria-current="page"` で現在の項目を示し、現在の画面の判定は `isNavItemActive`（パスの前方一致）です。
 
 ### 燃費計算ページ（`/calc`）

@@ -101,7 +101,26 @@ export const MAX_BODY_BYTES = 4 * 1024 * 1024;
 /** Base64 文字列の上限（≒4MB の画像。クライアントは 0.8MB 以下に圧縮する） */
 export const MAX_IMAGE_BASE64_LENGTH = Math.ceil((MAX_BODY_BYTES / 3) * 4);
 
+/**
+ * 2 枚（レシート + メーター）で送るときの 1 枚あたりの上限（デコード後 1.5MB）。
+ * クライアントは 1 枚 0.6MB 以下に圧縮する（lib/scan/analyzeClient.ts の PAIR_IMAGE_COMPRESSION_OPTIONS）
+ */
+export const MAX_PAIR_IMAGE_BYTES = 1.5 * 1024 * 1024;
+export const MAX_PAIR_IMAGE_BASE64_LENGTH = Math.ceil((MAX_PAIR_IMAGE_BYTES / 3) * 4);
+/** 2 枚の Base64 文字数の合計の上限（本文を MAX_BODY_BYTES より手前に収める。Vercel の 4.5MB 制限の内側） */
+export const MAX_PAIR_TOTAL_BASE64_LENGTH = 3.5 * 1024 * 1024;
+
 export type SupportedImageMime = "image/jpeg" | "image/png" | "image/webp";
+
+/**
+ * 画像の役割。
+ * - combined: 1 枚の写真（レシートとメーターが一緒に写っている。従来の形）
+ * - receipt / meter: 2 枚で送るときのレシートの写真 / メーターの写真
+ */
+export type AnalyzeImageRole = "combined" | "receipt" | "meter";
+/** 2 枚で送るときの役割（`images[].role`） */
+export const PAIR_IMAGE_ROLES = ["receipt", "meter"] as const;
+export type PairImageRole = (typeof PAIR_IMAGE_ROLES)[number];
 
 /** 妥当性チェックのしきい値 */
 export const PLAUSIBILITY_LIMITS = {
@@ -208,7 +227,13 @@ function decodeBase64Head(base64: string, chars = 32): Uint8Array {
  * - Base64 文字集合と長さを検証する
  * - 先頭バイトのマジックナンバーで JPEG/PNG/WebP を判定し、その MIME を返す
  */
-export function parseImagePayload(image: unknown): ParsedImage {
+export function parseImagePayload(
+  image: unknown,
+  {
+    maxBase64Length = MAX_IMAGE_BASE64_LENGTH,
+    tooLargeMessage = "画像サイズが大きすぎます。4MB以下の画像を使用してください。",
+  }: { maxBase64Length?: number; tooLargeMessage?: string } = {}
+): ParsedImage {
   if (typeof image !== "string" || image.length === 0) {
     return { ok: false, status: 400, error: "画像データが不正です。Base64形式の文字列を送信してください。" };
   }
@@ -236,8 +261,8 @@ export function parseImagePayload(image: unknown): ParsedImage {
     return { ok: false, status: 400, error: "画像データが不正です。Base64形式の文字列を送信してください。" };
   }
 
-  if (payload.length > MAX_IMAGE_BASE64_LENGTH) {
-    return { ok: false, status: 413, error: "画像サイズが大きすぎます。4MB以下の画像を使用してください。" };
+  if (payload.length > maxBase64Length) {
+    return { ok: false, status: 413, error: tooLargeMessage };
   }
 
   let mimeType: SupportedImageMime | null = null;
@@ -254,6 +279,102 @@ export function parseImagePayload(image: unknown): ParsedImage {
   const approxBytes = (payload.length * 3) / 4 - padding;
 
   return { ok: true, base64: payload, mimeType, approxBytes };
+}
+
+/** 検証済みの画像 1 枚と、その役割 */
+export type AnalyzeImage = {
+  role: AnalyzeImageRole;
+  base64: string;
+  mimeType: SupportedImageMime;
+  approxBytes: number;
+};
+
+/**
+ * リクエスト本文から読み取った画像。
+ * - single: 1 枚（`image`、旧クライアントの `imageBase64`）。役割は combined
+ * - pair: 2 枚（`images`）。必ず [レシート, メーター] の順に並べ替えて返す
+ */
+export type ParsedAnalyzeImages =
+  | { ok: true; mode: "single"; images: [AnalyzeImage] }
+  | { ok: true; mode: "pair"; images: [AnalyzeImage, AnalyzeImage] }
+  | { ok: false; status: 400 | 413 | 415; code: "INVALID_IMAGE" | "PAYLOAD_TOO_LARGE"; error: string };
+
+export const PAIR_SHAPE_ERROR_MESSAGE =
+  "画像の指定が不正です。レシートとメーターの画像を1枚ずつ送信してください。";
+export const PAIR_IMAGE_TOO_LARGE_MESSAGE =
+  "画像サイズが大きすぎます。2枚で送るときは1枚あたり1.5MB以下の画像を使用してください。";
+export const PAIR_TOTAL_TOO_LARGE_MESSAGE =
+  "画像サイズが大きすぎます。2枚の合計が大きすぎるため、画像を小さくして再度お試しください。";
+
+/**
+ * /api/analyze の本文（JSON.parse 済みのオブジェクト）から画像を取り出して検証する。
+ *
+ * 受け付ける形は 2 通りだけ（docs/api-analyze.md）:
+ * - 1 枚: `{ image: "<data URL または Base64>" }`（`imageBase64` も可）
+ * - 2 枚: `{ images: [{ role: "receipt", image: "..." }, { role: "meter", image: "..." }] }`
+ *   （順序は問わない。役割はちょうど receipt と meter が 1 枚ずつ。未知のキー・3 枚以上・役割の重複は 400）
+ *
+ * `image` と `images` の両方がある・`images` が配列でない・要素数が 2 でないなどは 400 INVALID_IMAGE。
+ * 2 枚のときは 1 枚あたりの上限（MAX_PAIR_IMAGE_BASE64_LENGTH、超えたら 413 INVALID_IMAGE）と
+ * 合計の上限（MAX_PAIR_TOTAL_BASE64_LENGTH、超えたら 413 PAYLOAD_TOO_LARGE）も検査する。
+ */
+export function parseAnalyzeImages(body: Record<string, unknown>): ParsedAnalyzeImages {
+  const shapeError = (): ParsedAnalyzeImages => ({
+    ok: false,
+    status: 400,
+    code: "INVALID_IMAGE",
+    error: PAIR_SHAPE_ERROR_MESSAGE,
+  });
+  const { image, imageBase64, images } = body;
+
+  if (images === undefined) {
+    // 1 枚（従来の形）。`image` が正。旧クライアント互換のため `imageBase64` も受け付ける
+    const parsed = parseImagePayload(image ?? imageBase64);
+    if (!parsed.ok) return { ok: false, status: parsed.status, code: "INVALID_IMAGE", error: parsed.error };
+    const { base64, mimeType, approxBytes } = parsed;
+    return { ok: true, mode: "single", images: [{ role: "combined", base64, mimeType, approxBytes }] };
+  }
+
+  // 2 枚。1 枚の形と混ぜない
+  if (image !== undefined || imageBase64 !== undefined) return shapeError();
+  if (!Array.isArray(images) || images.length !== PAIR_IMAGE_ROLES.length) return shapeError();
+
+  const byRole = new Map<PairImageRole, unknown>();
+  for (const entry of images) {
+    if (!isPlainObject(entry)) return shapeError();
+    const keys = Object.keys(entry);
+    if (keys.some((k) => k !== "role" && k !== "image")) return shapeError();
+    const role = entry.role;
+    if (typeof role !== "string" || !(PAIR_IMAGE_ROLES as readonly string[]).includes(role)) return shapeError();
+    if (byRole.has(role as PairImageRole)) return shapeError();
+    byRole.set(role as PairImageRole, entry.image);
+  }
+
+  // 合計の上限は 1 枚ずつのデコード前に見る（大きすぎる本文を解析しない）
+  let total = 0;
+  for (const value of byRole.values()) {
+    if (typeof value === "string") total += value.length;
+  }
+  if (total > MAX_PAIR_TOTAL_BASE64_LENGTH + 256) {
+    // +256 は data URL の接頭辞の分の余裕
+    return { ok: false, status: 413, code: "PAYLOAD_TOO_LARGE", error: PAIR_TOTAL_TOO_LARGE_MESSAGE };
+  }
+
+  const parsedImages: AnalyzeImage[] = [];
+  for (const role of PAIR_IMAGE_ROLES) {
+    const parsed = parseImagePayload(byRole.get(role), {
+      maxBase64Length: MAX_PAIR_IMAGE_BASE64_LENGTH,
+      tooLargeMessage: PAIR_IMAGE_TOO_LARGE_MESSAGE,
+    });
+    if (!parsed.ok) return { ok: false, status: parsed.status, code: "INVALID_IMAGE", error: parsed.error };
+    const { base64, mimeType, approxBytes } = parsed;
+    parsedImages.push({ role, base64, mimeType, approxBytes });
+  }
+  const [receipt, meter] = parsedImages;
+  if (receipt.base64.length + meter.base64.length > MAX_PAIR_TOTAL_BASE64_LENGTH) {
+    return { ok: false, status: 413, code: "PAYLOAD_TOO_LARGE", error: PAIR_TOTAL_TOO_LARGE_MESSAGE };
+  }
+  return { ok: true, mode: "pair", images: [receipt, meter] };
 }
 
 // ---------------------------------------------------------------------------

@@ -5,7 +5,7 @@ import {
   hasAnyCoreValue,
   hostFromUrl,
   isAllowedOrigin,
-  parseImagePayload,
+  parseAnalyzeImages,
   plausibilityWarnings,
   sanitizeAIResponse,
   type AnalyzeErrorResponse,
@@ -35,6 +35,12 @@ export function isTransientGeminiError(error: unknown): boolean {
   if (kind === "timeout") return status === 504;
   return status === undefined || status === 500 || status === 503 || status === 504;
 }
+
+const NOTHING_EXTRACTED_MESSAGE =
+  "レシート/メーターを読み取れませんでした。文字がはっきり写るように撮り直すか、「手動で入力」から記録してください。";
+/** 2 枚で送ったとき（役割の取り違えもありうるので、選び方の確認も促す） */
+const NOTHING_EXTRACTED_PAIR_MESSAGE =
+  "レシート/メーターを読み取れませんでした。1枚目にレシート、2枚目にメーターの写真を選んでいるか確認し、文字がはっきり写るように撮り直すか、「手動で入力」から記録してください。";
 
 export type AnalyzeEnv = {
   GEMINI_API_KEY?: string;
@@ -191,13 +197,19 @@ export async function handleAnalyze(req: Request, deps: AnalyzeDeps): Promise<Re
       return errorResponse(400, { error: "リクエスト本文が不正です。", code: "INVALID_BODY", requestId });
     }
 
-    // `image` が正。旧クライアント互換のため `imageBase64` も受け付ける
-    const { image, imageBase64 } = body as { image?: unknown; imageBase64?: unknown };
-    const parsed = parseImagePayload(image ?? imageBase64);
+    // 1 枚（`image`。旧クライアント互換で `imageBase64` も）か、2 枚（`images`: レシート + メーター）。
+    // 2 枚でも Gemini 呼び出しは 1 回（レートリミットも 1 回分。上で消費済み）
+    const parsed = parseAnalyzeImages(body as Record<string, unknown>);
     if (!parsed.ok) {
-      return errorResponse(parsed.status, { error: parsed.error, code: "INVALID_IMAGE", requestId });
+      return errorResponse(parsed.status, { error: parsed.error, code: parsed.code, requestId });
     }
-    log("log", `image ${parsed.mimeType} ~${Math.round(parsed.approxBytes / 1024)} KB user=${userId ? "yes" : "trial"}`);
+    const { mode, images } = parsed;
+    log(
+      "log",
+      `${mode} ${images.map((img) => `${img.role}:${img.mimeType} ~${Math.round(img.approxBytes / 1024)} KB`).join(" ")} user=${userId ? "yes" : "trial"}`
+    );
+    // 再試行・代替モデルでも同じ画像（1 枚または 2 枚）を送る
+    const promptImages = images.map(({ role, base64, mimeType }) => ({ role, base64, mimeType }));
 
     // ---- Gemini 呼び出し ----
     const model = env.GEMINI_MODEL || DEFAULT_GEMINI_MODEL;
@@ -234,8 +246,7 @@ export async function handleAnalyze(req: Request, deps: AnalyzeDeps): Promise<Re
           result = await deps.gemini({
             apiKey,
             model: usedModel,
-            base64: parsed.base64,
-            mimeType: parsed.mimeType,
+            images: promptImages,
           });
           break;
         } catch (error) {
@@ -327,7 +338,7 @@ export async function handleAnalyze(req: Request, deps: AnalyzeDeps): Promise<Re
     if (!hasAnyCoreValue(data)) {
       log("warn", "No core values extracted", data);
       return errorResponse(422, {
-        error: "レシート/メーターを読み取れませんでした。文字がはっきり写るように撮り直すか、「手動で入力」から記録してください。",
+        error: mode === "pair" ? NOTHING_EXTRACTED_PAIR_MESSAGE : NOTHING_EXTRACTED_MESSAGE,
         code: "NOTHING_EXTRACTED",
         requestId,
       });

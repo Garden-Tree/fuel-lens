@@ -23,6 +23,15 @@ export const IMAGE_COMPRESSION_OPTIONS: Readonly<CompressionOptions> = {
   fileType: "image/jpeg",
 };
 
+/**
+ * レシートとメーターを別々に撮ったとき（2 枚で送る）の圧縮設定。1 枚 0.6MB 以下・長辺 1200px の JPEG。
+ * 2 枚の合計を /api/analyze の上限（1 枚 1.5MB・合計 Base64 3.5MB。lib/analyze.ts）に余裕を持って収める
+ */
+export const PAIR_IMAGE_COMPRESSION_OPTIONS: Readonly<CompressionOptions> = {
+  ...IMAGE_COMPRESSION_OPTIONS,
+  maxSizeMB: 0.6,
+};
+
 /** Blob を data URL に読み込む。読めなければ IMAGE_READ_ERROR_MESSAGE の Error */
 export function readAsDataUrl(blob: Blob): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -61,6 +70,26 @@ export async function compressToDataUrl(
   return readAsDataUrl(compressed);
 }
 
+/**
+ * /api/analyze に送る画像。
+ * - 文字列: 1 枚（レシートとメーターが一緒に写った写真、またはレシートだけ）
+ * - { receipt, meter }: レシートとメーターを別々に撮った 2 枚（1 リクエストで送る）
+ */
+export type AnalyzeInput = string | { receipt: string; meter: string };
+
+/** /api/analyze の本文（docs/api-analyze.md の 2 つの形）を組み立てる */
+export function buildAnalyzeRequestBody(input: AnalyzeInput):
+  | { image: string }
+  | { images: [{ role: "receipt"; image: string }, { role: "meter"; image: string }] } {
+  if (typeof input === "string") return { image: input };
+  return {
+    images: [
+      { role: "receipt", image: input.receipt },
+      { role: "meter", image: input.meter },
+    ],
+  };
+}
+
 /** /api/analyze の HTTP 結果。本文は JSON として読めなければ null（中身は信頼しない） */
 export type AnalyzeHttpResult = {
   ok: boolean;
@@ -80,12 +109,12 @@ export type RequestAnalyzeOptions = {
 };
 
 /**
- * 画像（data URL）を POST /api/analyze に送り、ステータス・本文・Retry-After を返す。
+ * 画像（data URL。1 枚、またはレシートとメーターの 2 枚）を POST /api/analyze に送り、ステータス・本文・Retry-After を返す。
  * HTTP エラー（4xx / 5xx）は投げずに返す（メッセージは lib/analyze.ts の analyzeErrorMessage で作る）。
  * 投げるのは、タイムアウト（ANALYZE_TIMEOUT_MESSAGE）、接続失敗（ANALYZE_NETWORK_ERROR_MESSAGE）、呼び出し側の中断（AbortError）だけ。
  */
 export async function requestAnalyze(
-  dataUrl: string,
+  input: AnalyzeInput,
   { signal, timeoutMs = ANALYZE_TIMEOUT_MS }: RequestAnalyzeOptions = {}
 ): Promise<AnalyzeHttpResult> {
   const controller = new AbortController();
@@ -112,7 +141,7 @@ export async function requestAnalyze(
       res = await fetch("/api/analyze", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ image: dataUrl }),
+        body: JSON.stringify(buildAnalyzeRequestBody(input)),
         signal: controller.signal,
       });
     } catch (error) {
