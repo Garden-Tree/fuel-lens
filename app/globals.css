@@ -80,13 +80,17 @@ html {
   scrollbar-gutter: stable;
 }
 
-/*
- * iOS のゴムバンド（端まで引っ張ると画面全体が弾む）で、position: fixed の下部タブバーまで一緒に動いて見えるのを防ぐ。
- * ページ全体の端スクロールの連鎖・バウンスを止める（引っ張って更新も無効。再表示時の更新は lib/useReturnRefresh.ts が行う）。
- */
-html,
-body {
-  overscroll-behavior: none;
+/* iOS が横幅の変化などで文字サイズを自動で拡大しないようにする（ピンチズームは有効のまま） */
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+/* ダブルタップ拡大（ページが勝手にズームして文字が大きく見える）を止める。ピンチズームは有効のまま */
+button,
+a,
+[role="button"] {
+  touch-action: manipulation;
 }
 
 body {

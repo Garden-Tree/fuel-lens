@@ -39,6 +39,20 @@ function setup(overrides: Partial<AnalyzeSuccessResponse> = {}) {
 }
 
 describe("ScanReviewSheet", () => {
+  it("開いている間は背面の body を固定し、閉じると元のスクロール位置へ戻す", () => {
+    const scrollTo = vi.spyOn(window, "scrollTo").mockImplementation(() => {});
+    Object.defineProperty(window, "scrollY", { value: 240, configurable: true });
+    const props = { result: makeResult(), imageSrc: null, onSave: vi.fn(), onDiscard: vi.fn() };
+    const { unmount } = renderWithProviders(<ScanReviewSheet {...props} />);
+    expect(document.body.style.position).toBe("fixed");
+    expect(document.body.style.top).toBe("-240px");
+    unmount();
+    expect(document.body.style.position).toBe("");
+    expect(document.body.style.top).toBe("");
+    expect(scrollTo).toHaveBeenCalledWith(0, 240);
+    scrollTo.mockRestore();
+  });
+
   it("読み取り結果をフォームに流し込み、確信度が低い項目だけ「要確認」にする", () => {
     setup();
     expect(screen.getByRole("dialog", { name: "読み取り結果の確認" })).toBeInTheDocument();

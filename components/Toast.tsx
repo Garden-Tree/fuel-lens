@@ -12,6 +12,7 @@ import {
 } from 'react';
 import { useBackdropClose } from '@/lib/useBackdropClose';
 import { useFocusTrap } from '@/lib/useFocusTrap';
+import { useBodyScrollLock } from '@/lib/useBodyScrollLock';
 
 /**
  * アプリ共通の通知（トースト）と確認ダイアログ。
@@ -144,6 +145,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   const confirmPanelRef = useRef<HTMLDivElement>(null);
   const cancelButtonRef = useRef<HTMLButtonElement>(null);
   const okButtonRef = useRef<HTMLButtonElement>(null);
+  useBodyScrollLock(confirmState !== null);
   useFocusTrap(confirmPanelRef, {
     active: confirmState !== null,
     initialFocusRef: confirmState?.options.danger ? cancelButtonRef : okButtonRef,
