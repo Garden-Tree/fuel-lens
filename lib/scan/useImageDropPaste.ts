@@ -15,10 +15,11 @@ export type UseImageDropPasteOptions = {
   /** 画像ファイルを受け取ったとき（ドロップ・ペースト） */
   onImage: (file: File) => void | Promise<void>;
   /**
-   * ちょうど 2 枚の画像がドロップされたとき（レシートとメーターを別々に撮った写真）。
-   * ドロップされた順（1 枚目をレシート候補）で呼ぶ。省略時は従来どおり 1 枚目だけを onImage に渡す
+   * 2 つ以上のファイルを受け取ったとき。画像以外・上限の確認と、使い方（ちょうど 2 枚の画像ならレシート + メーターの組か
+   * 2 件の給油の一括読み取りかを選ぶ、3 枚以上は一括読み取り）は呼び出し側が決める。
+   * 省略時は従来どおり先頭の 1 つだけを onImage に渡す
    */
-  onImagePair?: (first: File, second: File) => void;
+  onImages?: (files: File[]) => void;
   /** スキャン中か（同期的に判定する。true の間は受け取った画像を無視する） */
   isBusy: () => boolean;
   /** useToast().toast。lib から components へ依存しないよう、呼び出し側から渡す */
@@ -26,11 +27,12 @@ export type UseImageDropPasteOptions = {
 };
 
 /**
- * 画像のドラッグ＆ドロップ（ドロップ先の要素に dropZoneProps を付ける。ちょうど 2 枚の画像なら onImagePair）と、
+ * 画像のドラッグ＆ドロップ（ドロップ先の要素に dropZoneProps を付ける）と、
  * クリップボードからのペースト（window 全体。入力欄にフォーカスがあるときは無視）を受け付ける。
  * 画像以外は警告の toast を出す。スキャン中の再入は黙って無視する。
+ * 2 つ以上のファイルは onImages に渡す（渡されていれば）。
  */
-export function useImageDropPaste({ onImage, onImagePair, isBusy, toast }: UseImageDropPasteOptions): {
+export function useImageDropPaste({ onImage, onImages, isBusy, toast }: UseImageDropPasteOptions): {
   isDragging: boolean;
   dropZoneProps: DropZoneProps;
 } {
@@ -43,10 +45,16 @@ export function useImageDropPaste({ onImage, onImagePair, isBusy, toast }: UseIm
     if (document.activeElement?.tagName === "INPUT" || document.activeElement?.tagName === "TEXTAREA") {
       return;
     }
-    const file = e.clipboardData?.files?.[0];
+    const files = Array.from(e.clipboardData?.files ?? []);
+    const file = files[0];
     if (!file) return;
     // スキャン中の再入は無視する
     if (isBusy()) return;
+    if (files.length > 1 && onImages) {
+      e.preventDefault();
+      onImages(files);
+      return;
+    }
     if (!file.type.startsWith("image/")) {
       toast("画像ファイルのみペースト可能です。", { type: "warning" });
       return;
@@ -88,14 +96,13 @@ export function useImageDropPaste({ onImage, onImagePair, isBusy, toast }: UseIm
       setIsDragging(false);
       dragCounter.current = 0;
 
-      const files = e.dataTransfer.files;
-      const file = files?.[0];
+      const files = Array.from(e.dataTransfer.files ?? []);
+      const file = files[0];
       if (!file) return;
       // スキャン中の再入は無視する
       if (isBusy()) return;
-      // ちょうど 2 枚の画像: レシートとメーターを別々に撮った写真として扱う（役割はシートで確認・入れ替えできる）
-      if (onImagePair && files.length === 2 && files[0].type.startsWith("image/") && files[1].type.startsWith("image/")) {
-        onImagePair(files[0], files[1]);
+      if (files.length > 1 && onImages) {
+        onImages(files);
         return;
       }
       if (!file.type.startsWith("image/")) {

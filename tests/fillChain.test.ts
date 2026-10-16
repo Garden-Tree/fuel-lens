@@ -421,6 +421,41 @@ describe("applyFillChain — order and purity", () => {
     expect(effById(applyFillChain(trip, TRIP))).toEqual({ t1: null, t2: 20 });
   });
 
+  it("older records saved later (bulk upload of old receipts, any order) chain by date, not by created_at", () => {
+    // 時系列: 1/10 1000km 満タン → 2/10 1300km 部分 → 3/10 1600km 満タン → 4/10 1900km 満タン（最後だけ先に登録済み）
+    const chronological = [
+      { id: "o1", date: "2026-01-10", odometer: 1000, fuel_amount: 20, is_full: true },
+      { id: "o2", date: "2026-02-10", odometer: 1300, fuel_amount: 10, is_full: false },
+      { id: "o3", date: "2026-03-10", odometer: 1600, fuel_amount: 20, is_full: true },
+      { id: "o4", date: "2026-04-10", odometer: 1900, fuel_amount: 20, is_full: true },
+    ];
+    const savedInOrder = chronological.map((r, i) => rec({ ...r, created_at: `2026-04-1${i}T00:00:00Z` }));
+    // 一括読み取りで古い写真を新しい順・ばらばらに保存した（created_at は日付と逆順）
+    const createdAt: Record<string, string> = {
+      o4: "2026-04-10T00:00:00Z",
+      o2: "2026-10-15T09:00:00Z",
+      o3: "2026-10-15T09:01:00Z",
+      o1: "2026-10-15T09:02:00Z",
+    };
+    const savedLater = chronological.map(r => rec({ ...r, created_at: createdAt[r.id] }));
+    for (const [list, mode] of [
+      [savedInOrder, ODO],
+      [savedLater, ODO],
+    ] as const) {
+      const out = applyFillChain([...list].reverse(), mode);
+      expect(distById(out)).toEqual({ o4: 300, o3: 300, o2: 300, o1: null });
+      // o3 は部分給油 o2 を合算: 600km / 30L = 20.00
+      expect(effById(out)).toEqual({ o4: 15, o3: 20, o2: null, o1: null });
+    }
+
+    // トリップモードでも、古い部分給油を後から足すと次の満タン給油に合算される（保存順に依らない）
+    const tripLater = [
+      rec({ id: "t3", date: "2026-03-10", total_distance: 300, fuel_amount: 20, created_at: "2026-03-10T00:00:00Z" }),
+      rec({ id: "t2", date: "2026-02-10", total_distance: 300, fuel_amount: 10, is_full: false, created_at: "2026-10-15T09:00:00Z" }),
+    ];
+    expect(effById(applyFillChain(tripLater, TRIP))).toEqual({ t3: 20, t2: null });
+  });
+
   it("is per vehicle: the caller groups records (applyFillChainByVehicle keeps vehicles separate)", () => {
     const list = [
       rec({ id: "a1", vehicle_id: "va", date: "2026-01-01", odometer: 1000, fuel_amount: 20 }),

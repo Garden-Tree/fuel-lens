@@ -15,6 +15,15 @@ import { useScanPipeline } from "@/lib/scan/useScanPipeline";
 import { useImageDropPaste } from "@/lib/scan/useImageDropPaste";
 import { useTrial } from "@/lib/scan/trialContext";
 import { scanAccessOf } from "@/lib/trial";
+import { useBatchScan } from "@/lib/scan/useBatchScan";
+import {
+  BATCH_BLOCKED_MESSAGES,
+  BATCH_SIGNED_OUT_MESSAGE,
+  emptyAnalyzeResult,
+  overLimitMessage,
+  selectBatchImages,
+  trialBatchLimitMessage,
+} from "@/lib/scan/batch";
 import {
   DISCARD_FORM_CONFIRM_MESSAGE,
   SHARE_UNAVAILABLE_MESSAGE,
@@ -36,6 +45,8 @@ import DropZoneRow from "./_components/DropZoneRow";
 import ScanReadyPrompt from "./_components/ScanReadyPrompt";
 import TrialLoginPrompt from "./_components/TrialLoginPrompt";
 import TwoPhotoScanSheet from "./_components/TwoPhotoScanSheet";
+import BatchScanCard from "./_components/BatchScanCard";
+import TwoImageChoiceDialog from "./_components/TwoImageChoiceDialog";
 
 const subscribeNothing = () => () => {};
 
@@ -45,8 +56,11 @@ const subscribeNothing = () => () => {};
  * - useVehicleScope: 選択中の車両とその記録（連鎖計算済み・日付の降順）
  * - useScanPipeline: 圧縮 → /api/analyze → 確認シート（ScanReviewSheet）。保存は確認シートの「保存」のみ
  *   （未ログインのお試し読み取りも同じ流れで、保存先はこのブラウザ。残り回数は useTrial の表示用の写し）
- * - useImageDropPaste: 画像のドロップ（ページ全体）・ペースト（ちょうど 2 枚のドロップは 2 枚で読み取るシートへ）
+ * - useImageDropPaste: 画像のドロップ（ページ全体）・ペースト（2 枚以上は processFiles で振り分ける）
  * - TwoPhotoScanSheet: レシートとメーターを別々に撮る（2 枚を 1 回の解析に送る。scan.processImagePair）
+ * - useBatchScan: 写真を 3 枚以上選んだとき（アルバム・ドロップ・ペースト）の一括読み取り。1 枚ずつ確認シートを出し、
+ *   「保存して次へ / この写真をスキップ / 残りを中止」で進める（BatchScanCard・ScanReviewSheet の batch）。
+ *   ちょうど 2 枚のときは TwoImageChoiceDialog で「レシートとメーターの組」か「2 件の一括読み取り」かを選ぶ
  * - useRecordEditing: 手動入力・最新記録の編集（重複確認付きの保存）
  * - RegisterScanActions: スキャンメニュー（AppFrame）に撮影・アルバム・2 枚で撮る・手動入力の処理を登録する（メニューがタップの中で直接呼ぶ）
  * - ShortcutActionHandler（Suspense の内側）: `?action=` の PWA ショートカット・他の画面のスキャンメニュー・共有。
@@ -70,14 +84,18 @@ export default function Home() {
   const scan = useScanPipeline({ isSignedIn, toast, confirm, onTrialRemaining: trial.setRemaining });
   // お試しを使い切ったときのログインの案内を「閉じる」で消したか（この表示中だけ）
   const [trialPromptDismissed, setTrialPromptDismissed] = useState(false);
+  // 写真の一括読み取り（2 枚以上）。最中は 1 枚のスキャンと同じく撮影・アルバム・手動入力を始められない。
+  // 未ログインのお試しでは 1 枚ごとに 1 回分を使う（残り回数はサーバーの X-Trial-Remaining で更新する）
+  const batch = useBatchScan({ isSignedIn, toast, confirm, onTrialRemaining: trial.setRemaining });
   // 他の画面・ショートカットから撮影 / アルバムで来たときの案内。画像を選んだ・スキャンが始まった・閉じたら消す
   const [scanPrompt, setScanPrompt] = useState(false);
   const processFile = (file: File) => {
     setScanPrompt(false);
+    if (batch.isActive()) return;
     return scan.processImageFile(file);
   };
   // レシートとメーターを別々に撮るシート（key は開くたびに増やし、前回の選択を残さない）。
-  // initial は PC で 2 枚をドロップしたとき（ドロップした順に レシート / メーター の候補にする。シートで入れ替えられる）
+  // initial は 2 枚の写真で「レシートとメーターの組として読む」を選んだとき（選んだ順に レシート / メーター の候補にする。シートで入れ替えられる）
   const [pairSheet, setPairSheet] = useState<{ key: number; initial?: { receipt: File; meter: File } } | null>(null);
   const pairSheetKey = useRef(0);
   const openPairSheet = (initial?: { receipt: File; meter: File }) => {
@@ -85,14 +103,6 @@ export default function Home() {
     pairSheetKey.current += 1;
     setPairSheet({ key: pairSheetKey.current, initial });
   };
-  const { isDragging, dropZoneProps } = useImageDropPaste({
-    onImage: processFile,
-    onImagePair: (first, second) => {
-      if (availability.canScan) openPairSheet({ receipt: first, meter: second });
-    },
-    isBusy: scan.isScanning,
-    toast,
-  });
 
   // スキャン・手動入力の直後に保存した記録を優先表示する（fromScan: 見出しを「スキャンした記録」にする）
   const [active, setActive] = useState<{ id: string; fromScan: boolean } | null>(null);
@@ -113,11 +123,81 @@ export default function Home() {
   // AI スキャン（撮影・アルバム・ドロップ）の可否と案内。ログイン中は常に使える
   const access = scanAccessOf(signedOut, trial);
 
+  // ちょうど 2 枚の写真が選ばれたときの読み取り方の選択（レシート + メーターの組 / 2 件の一括読み取り）
+  const [twoImageChoice, setTwoImageChoice] = useState<readonly [File, File] | null>(null);
+
+  // 複数枚の AI 読み取り（2 枚の組・一括）を今は始められない理由。始められれば null。
+  // 未ログインはお試しが残っているときだけ（無効なら従来どおりログインの案内。API は呼ばない）
+  const multiScanBlock = (): string | null => {
+    if (signedOut && access.locked) return trial.enabled ? (access.note ?? BATCH_SIGNED_OUT_MESSAGE) : BATCH_SIGNED_OUT_MESSAGE;
+    if (!mounted || !authLoaded || isLoading || previewing) return BATCH_BLOCKED_MESSAGES.loading;
+    if (readOnly) return BATCH_BLOCKED_MESSAGES.readOnly;
+    if (scan.isScanning() || batch.isActive()) return BATCH_BLOCKED_MESSAGES.busy;
+    if (scan.scanResult) return "確認中の読み取り結果を保存または破棄してから、次の画像を読み込んでください。";
+    return null;
+  };
+
+  // 一括読み取りを始める（images は 2 枚以上・上限内）。
+  // 未ログインのお試しでは 1 枚ごとに 1 回分を使うので、残り回数までに切り詰め、残りはログインを案内する
+  const startBatch = (images: readonly File[]) => {
+    const block = multiScanBlock();
+    if (block) {
+      toast(block, { type: "warning" });
+      return;
+    }
+    let targets = images;
+    if (signedOut && targets.length > trial.remaining) {
+      toast(trialBatchLimitMessage(trial.remaining, targets.length - trial.remaining), { type: "warning" });
+      targets = targets.slice(0, trial.remaining);
+    }
+    if (targets.length === 1) {
+      void processFile(targets[0]);
+      return;
+    }
+    scan.clearPreview();
+    batch.start(targets);
+  };
+
+  // 写真が 2 枚以上選ばれた（アルバム・ドロップ・ペースト）。1 枚なら従来の読み取り、
+  // ちょうど 2 枚なら読み取り方を選ぶダイアログ、3 枚以上は一括読み取り。
+  // 未ログイン（お試しが無い）・閲覧専用・読み込み中・読み取り中・確認中は始めずに理由を伝える
+  const processFiles = (files: File[]) => {
+    setScanPrompt(false);
+    const { images, nonImages, overLimit } = selectBatchImages(files);
+    if (images.length === 0) {
+      toast("画像ファイルのみ読み込めます。", { type: "warning" });
+      return;
+    }
+    if (nonImages > 0) toast(`画像以外のファイル ${nonImages} 件は読み込みませんでした`, { type: "warning" });
+    if (images.length === 1) {
+      void processFile(images[0]);
+      return;
+    }
+    const block = multiScanBlock();
+    if (block) {
+      toast(block, { type: "warning" });
+      return;
+    }
+    if (images.length === 2) {
+      setTwoImageChoice([images[0], images[1]]);
+      return;
+    }
+    if (overLimit > 0) toast(overLimitMessage(overLimit), { type: "warning" });
+    startBatch(images);
+  };
+
+  const { isDragging, dropZoneProps } = useImageDropPaste({
+    onImage: processFile,
+    onImages: processFiles,
+    isBusy: () => scan.isScanning() || batch.isActive(),
+    toast,
+  });
+
   // 撮影・アルバム・手動入力の可否（スキャンメニュー・`?action=` で共通）
   const readiness = shortcutReadinessOf({
     mounted,
     dataLoading: isLoading || previewing,
-    scanning: scan.loading,
+    scanning: scan.loading || batch.active,
     reviewing: scan.scanResult !== null,
     readOnly,
     authLoaded,
@@ -133,7 +213,13 @@ export default function Home() {
     if (availability.canScan) scanPanelRef.current?.openAlbum();
   };
   const openPair = () => {
-    if (availability.canScan) openPairSheet();
+    if (!availability.canScan) return;
+    // 未ログインでお試しが無い（無効・使い切った）ときは開かずに案内する（`?action=pair` で来たときなど）
+    if (access.locked) {
+      if (access.note) toast(access.note, { type: "warning" });
+      return;
+    }
+    openPairSheet();
   };
 
   // 手動入力を始める。手動入力・編集のフォームを開いていれば、破棄してよいか確認する。
@@ -160,7 +246,9 @@ export default function Home() {
   // 確認シートの「保存」（重複確認でキャンセルならシートは開いたまま。失敗は throw してシートを開いたままにする）
   const handleScanSave = async (record: RecordInput) => {
     try {
-      const added = await editing.addWithDuplicateCheck({ ...record, source: "scan" });
+      // 記録の入口（計測用）: 2 枚（レシート + メーター）で読み取ったら "pair"、1 枚なら "scan"
+      const source = scan.scanResult?.meterImage ? "pair" : "scan";
+      const added = await editing.addWithDuplicateCheck({ ...record, source });
       if (!added) return;
       setActive({ id: added.id, fromScan: true });
       scan.discardResult();
@@ -171,6 +259,23 @@ export default function Home() {
       throw err;
     }
   };
+
+  // 一括読み取りの確認シートの「保存して次へ」（通常の保存と同じく重複確認付き。キャンセルならシートは開いたまま）
+  const handleBatchSave = async (record: RecordInput) => {
+    try {
+      // 記録の入口（計測用）: 一括読み取りの確認シートから保存したものは "batch"
+      const added = await editing.addWithDuplicateCheck({ ...record, source: "batch" });
+      if (!added) return;
+      setActive({ id: added.id, fromScan: true });
+      batch.markSaved();
+    } catch (err) {
+      console.error(err);
+      toast(err instanceof Error ? err.message : "保存に失敗しました", { type: "error" });
+      throw err;
+    }
+  };
+  const batchItem = batch.currentItem;
+  const batchReviewing = batchItem !== null && (batchItem.status === "ready" || batchItem.status === "failed");
 
   // 表示するレコード: 直前に保存した記録（一覧に無ければ最新）、無ければ最新
   const displayRecord = (active && records.find(r => r.id === active.id)) || records[0];
@@ -190,7 +295,7 @@ export default function Home() {
         onPair={openPair}
         onManual={() => void requestManualEntry()}
         access={access}
-        scanning={scan.loading}
+        scanning={scan.loading || batch.active}
         readOnly={readOnly}
         distanceMode={distanceMode}
       />
@@ -276,6 +381,13 @@ export default function Home() {
           </div>
         )}
 
+        {/* 写真の一括読み取りの状態カード（確認シートの後ろ。読み取り中・回数制限の待ちの間に見える） */}
+        {batch.state && batch.state.phase === "running" && (
+          <div className="mb-3 lg:mb-6">
+            <BatchScanCard state={batch.state} onSkip={batch.skip} onAbort={() => void batch.requestAbort()} />
+          </div>
+        )}
+
         {/* 解析中・プレビューの状態カード（無ければ何も出さない）と、非表示のファイル入力 */}
         <div className={scan.loading || scan.preview ? "mb-3 lg:mb-6" : undefined}>
           <ScanPanel
@@ -287,6 +399,7 @@ export default function Home() {
             sharedPending={scan.sharedPending}
             readOnly={readOnly}
             onSelectFile={(file) => void processFile(file)}
+            onSelectFiles={processFiles}
             onClearPreview={scan.clearPreview}
             onAnalyzeShared={scan.startSharedAnalysis}
             onManualEntry={() => void requestManualEntry()}
@@ -345,7 +458,7 @@ export default function Home() {
                 </>
               )
             )}
-            <DropZoneRow isDragging={isDragging} onClick={openAlbum} disabled={scan.loading} locked={access.locked} />
+            <DropZoneRow isDragging={isDragging} onClick={openAlbum} disabled={scan.loading || batch.active} locked={access.locked} />
           </div>
         </div>
       </div>
@@ -364,6 +477,28 @@ export default function Home() {
         />
       )}
 
+      {/* ちょうど 2 枚の写真: レシートとメーターの組として読むか、2 件の給油として一括で読むかを選ぶ */}
+      {twoImageChoice && (
+        <TwoImageChoiceDialog
+          onPair={() => {
+            const [receipt, meter] = twoImageChoice;
+            setTwoImageChoice(null);
+            const block = multiScanBlock();
+            if (block) {
+              toast(block, { type: "warning" });
+              return;
+            }
+            openPairSheet({ receipt, meter });
+          }}
+          onBatch={() => {
+            const files = twoImageChoice;
+            setTwoImageChoice(null);
+            startBatch(files);
+          }}
+          onCancel={() => setTwoImageChoice(null)}
+        />
+      )}
+
       {/* スキャン結果の確認シート（保存は「保存」を押したときのみ） */}
       {scan.scanResult && (
         <ScanReviewSheet
@@ -376,6 +511,26 @@ export default function Home() {
           readOnly={readOnly}
           onSave={handleScanSave}
           onDiscard={scan.discardResult}
+        />
+      )}
+
+      {/* 一括読み取りの確認シート（1 枚ずつ。読み取れなかった写真は空の結果で開き、写真を見ながら手入力できる） */}
+      {batch.state && batchItem && batchReviewing && (
+        <ScanReviewSheet
+          key={`batch-${batch.runId}-${batchItem.index}`}
+          result={batchItem.result ?? emptyAnalyzeResult()}
+          imageSrc={batchItem.dataUrl}
+          vehicle={selectedVehicle}
+          records={records}
+          readOnly={readOnly}
+          onSave={handleBatchSave}
+          onDiscard={batch.skip}
+          batch={{
+            index: batchItem.index,
+            total: batch.state.items.length,
+            readError: batchItem.status === "failed" ? batchItem.error : null,
+            onAbort: () => void batch.requestAbort(),
+          }}
         />
       )}
     </AppFrame>

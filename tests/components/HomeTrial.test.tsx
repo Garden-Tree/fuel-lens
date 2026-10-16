@@ -130,6 +130,57 @@ describe("未ログインのお試し読み取り（ホーム）", () => {
     expect(screen.queryByRole("region", { name: "お試しの読み取り（3回）を使い切りました" })).not.toBeInTheDocument();
   });
 
+  it("お試しが無効なら「レシートとメーターを別々に撮る」も押せない", () => {
+    renderHome({ enabled: false, remaining: 0 });
+    expect(screen.getByRole("button", { name: /レシートとメーターを別々に撮る/ })).toBeDisabled();
+  });
+
+  it("お試しが残っていれば「レシートとメーターを別々に撮る」を使える", () => {
+    renderHome({ enabled: true, remaining: 2 });
+    expect(screen.getByRole("button", { name: /レシートとメーターを別々に撮る/ })).toBeEnabled();
+  });
+
+  it("一括読み取りは残り回数までに切り詰め、残りはログインが必要と伝える", async () => {
+    const user = userEvent.setup();
+    api.requestAnalyze.mockResolvedValue({
+      ok: true,
+      status: 200,
+      body: { date: "2026-10-12", fuel_amount: 20, total_cost: 3400, price_per_unit: 170, total_distance: 300, requestId: "r3" },
+      retryAfter: null,
+      trialRemaining: 1,
+    });
+    renderHome({ enabled: true, remaining: 2 });
+    const photo = (name: string) => new File(["x"], name, { type: "image/jpeg" });
+    await user.upload(screen.getByLabelText("画像ファイルを選択"), [photo("a.jpg"), photo("b.jpg"), photo("c.jpg")]);
+
+    expect(await screen.findByText(/お試しで読み取れるのはあと 2 回のため、最初の 2 枚だけ読み取ります。残りの 1 枚はログインすると読み取れます/)).toBeInTheDocument();
+    const sheet = await screen.findByRole("dialog", { name: /^読み取り結果の確認/ });
+    expect(within(sheet).getByText("1 / 2 枚目")).toBeInTheDocument();
+    // 表示用の残り回数はサーバーの値（X-Trial-Remaining）で更新する
+    expect(await screen.findByText(/お試しであと 1 回読み取れます/)).toBeInTheDocument();
+  });
+
+  it("残り 1 回で 2 枚を一括で読むと、1 枚目だけを通常の読み取りにする", async () => {
+    const user = userEvent.setup();
+    api.requestAnalyze.mockResolvedValue({
+      ok: true,
+      status: 200,
+      body: { date: "2026-10-12", fuel_amount: 20, total_cost: 3400, price_per_unit: 170, total_distance: 300, requestId: "r4" },
+      retryAfter: null,
+      trialRemaining: 0,
+    });
+    renderHome({ enabled: true, remaining: 1 });
+    const photo = (name: string) => new File(["x"], name, { type: "image/jpeg" });
+    await user.upload(screen.getByLabelText("画像ファイルを選択"), [photo("a.jpg"), photo("b.jpg")]);
+    const chooser = await screen.findByRole("dialog", { name: "2枚の写真をどう読み取りますか？" });
+    await user.click(within(chooser).getByRole("button", { name: /2件の給油として一括で読む/ }));
+
+    expect(await screen.findByText(/最初の 1 枚だけ読み取ります/)).toBeInTheDocument();
+    const sheet = await screen.findByRole("dialog", { name: "読み取り結果の確認" });
+    expect(within(sheet).queryByText(/枚目/)).not.toBeInTheDocument();
+    expect(api.requestAnalyze).toHaveBeenCalledTimes(1);
+  });
+
   it("使い切った状態で開いたら最初からログインを案内する", () => {
     renderHome({ enabled: true, remaining: 0 });
     expect(screen.getByRole("region", { name: "お試しの読み取り（3回）を使い切りました" })).toBeInTheDocument();

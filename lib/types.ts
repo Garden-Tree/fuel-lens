@@ -77,17 +77,19 @@ export type FuelRecord = {
 
 /**
  * 記録の入口（FuelRecord.source）。
- * scan = 撮影・アルバムの読み取り結果の保存、manual = 手動入力、calc = 燃費計算ページから引き継いだ手動入力、
- * import = Fuelio / FuelLens CSV の取り込み、restore = バックアップ JSON の復元（元の値が無いとき）。
+ * scan = 撮影・アルバムの読み取り結果（1 枚）の保存、batch = 写真の一括読み取りの確認シートからの保存、
+ * pair = レシートとメーターを別々に撮った 2 枚の読み取り結果の保存、manual = 手動入力、
+ * calc = 燃費計算ページから引き継いだ手動入力、import = Fuelio / FuelLens CSV の取り込み、
+ * restore = バックアップ JSON の復元（元の値が無いとき）。
  *
- * 値は今後ほかのブランチで増えることがある（"batch" / "pair" / "trial" など）。増やすときは RECORD_SOURCES に足す。
+ * 値は今後ほかのブランチで増えることがある（"trial" など）。増やすときは RECORD_SOURCES に足す。
  * 型を知らない値（古いアプリが新しいアプリのバックアップを読む場合など）は sanitizeRecordSource が null にする。
  * DB の列は text（0005 の CHECK は null か 20 文字以下）なので、値の追加でマイグレーションは要らない
  */
-export type RecordSource = "scan" | "manual" | "calc" | "import" | "restore";
+export type RecordSource = "scan" | "batch" | "pair" | "manual" | "calc" | "import" | "restore";
 
 /** RecordSource の一覧 */
-export const RECORD_SOURCES: readonly RecordSource[] = ["scan", "manual", "calc", "import", "restore"];
+export const RECORD_SOURCES: readonly RecordSource[] = ["scan", "batch", "pair", "manual", "calc", "import", "restore"];
 
 /** fuel_records に 0004 / 0005 で追加した列 */
 export type NewRecordField = "odometer" | "is_full" | "missed_previous" | "fuel_type" | "memo" | "source";

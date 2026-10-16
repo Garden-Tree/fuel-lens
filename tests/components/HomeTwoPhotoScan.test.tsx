@@ -30,6 +30,7 @@ const compression = vi.hoisted(() => ({ fn: vi.fn(async (file: File) => file) })
 vi.mock("browser-image-compression", () => ({ default: compression.fn }));
 
 const VEHICLE: Vehicle = { id: "v1", user_id: "u1", name: "マイカー", type: "car", distance_mode: "trip", default_fuel_type: null };
+const addRecord = vi.hoisted(() => vi.fn(async (record: Record<string, unknown>) => ({ ...record, id: "new1" })));
 vi.mock("@/lib/useVehicleScope", () => ({
   useVehicleScope: (): VehicleScope =>
     ({
@@ -49,7 +50,7 @@ vi.mock("@/lib/useVehicleScope", () => ({
       scopeKey: "v1:trip",
       vehicleActions: { addVehicle: vi.fn(), addVehicles: vi.fn(), updateVehicle: vi.fn(), deleteVehicle: vi.fn() },
       recordActions: {
-        addRecord: vi.fn(),
+        addRecord,
         addRecords: vi.fn(),
         updateRecord: vi.fn(),
         deleteRecord: vi.fn(),
@@ -150,11 +151,36 @@ describe("ホーム: レシートとメーターを別々に撮る", () => {
     expect(nav.replace).toHaveBeenCalledWith("/app");
   });
 
-  it("PC で画像を 2 枚ドロップすると、ドロップした順に レシート / メーター を選んだ状態でシートを開く", async () => {
+  it("2 枚の読み取り結果を保存すると、記録の入口は pair になる", async () => {
+    const user = userEvent.setup();
+    addRecord.mockClear();
+    renderWithProviders(<Home />);
+    await user.click(screen.getByRole("button", { name: SCAN_BUTTON_LABEL }));
+    await user.click(
+      within(screen.getByRole("dialog", { name: "記録する" })).getByRole("button", { name: /レシートとメーターを別々に撮る/ })
+    );
+    const sheet = screen.getByRole("dialog", { name: "レシートとメーターを別々に撮る" });
+    await user.click(within(sheet).getByRole("button", { name: "レシートを撮影" }));
+    await user.upload(within(sheet).getByLabelText("カメラで撮影（2枚で読み取る）"), receiptFile);
+    await user.click(within(sheet).getByRole("button", { name: "メーターをアルバムから選ぶ" }));
+    await user.upload(within(sheet).getByLabelText("画像ファイルを選択（2枚で読み取る）"), meterFile);
+    await user.click(within(sheet).getByRole("button", { name: "2枚を読み取る" }));
+
+    const review = await screen.findByRole("dialog", { name: "読み取り結果の確認" });
+    await user.click(within(review).getByRole("button", { name: "保存" }));
+    await waitFor(() => expect(addRecord).toHaveBeenCalledTimes(1));
+    expect(addRecord.mock.calls[0][0]).toMatchObject({ source: "pair", fuel_amount: 40 });
+  });
+
+  it("PC で画像を 2 枚ドロップすると読み取り方を聞き、「レシートとメーターの組として読む」でドロップした順に選んだ状態のシートを開く", async () => {
+    const user = userEvent.setup();
     renderWithProviders(<Home />);
     fireEvent.drop(screen.getByRole("heading", { name: "記録する" }), {
       dataTransfer: { files: [receiptFile, meterFile], items: [] },
     });
+    const chooser = await screen.findByRole("dialog", { name: "2枚の写真をどう読み取りますか？" });
+    expect(within(chooser).getByRole("button", { name: /2件の給油として一括で読む/ })).toBeInTheDocument();
+    await user.click(within(chooser).getByRole("button", { name: /レシートとメーターの組として読む/ }));
     const sheet = await screen.findByRole("dialog", { name: "レシートとメーターを別々に撮る" });
     expect(within(sheet).getByRole("button", { name: "2枚を読み取る" })).toBeEnabled();
     expect(within(sheet).getByRole("button", { name: "レシートとメーターを入れ替える" })).toBeInTheDocument();
