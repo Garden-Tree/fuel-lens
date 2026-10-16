@@ -333,7 +333,7 @@ describe("handleAnalyze", () => {
   it("uses the default model when GEMINI_MODEL is unset", async () => {
     const { deps, gemini } = makeDeps();
     await handleAnalyze(makeReq(goodBody), deps);
-    expect(gemini.mock.calls[0][0].model).toBe("gemini-3.1-flash-lite");
+    expect(gemini.mock.calls[0][0].model).toBe("gemini-3.5-flash-lite");
   });
 
   it("includes plausibility warnings as { code, message }", async () => {
@@ -416,7 +416,7 @@ describe("handleAnalyze", () => {
       gemini.mockRejectedValueOnce(e503());
       const res = await handleAnalyze(makeReq(goodBody), deps);
       expect(res.status).toBe(200);
-      expect(models(gemini)).toEqual(["gemini-3.1-flash-lite", "gemini-3.1-flash-lite"]);
+      expect(models(gemini)).toEqual(["gemini-3.5-flash-lite", "gemini-3.5-flash-lite"]);
       expect(sleep).toHaveBeenCalledTimes(1);
       const ms = (sleep.mock.calls[0] as unknown as [number])[0];
       expect(ms).toBeGreaterThanOrEqual(800);
@@ -429,7 +429,7 @@ describe("handleAnalyze", () => {
       gemini.mockRejectedValueOnce(e503()).mockRejectedValueOnce(e503());
       const res = await handleAnalyze(makeReq(goodBody), deps);
       expect(res.status).toBe(200);
-      expect(models(gemini)).toEqual(["gemini-3.1-flash-lite", "gemini-3.1-flash-lite", "gemini-2.5-flash"]);
+      expect(models(gemini)).toEqual(["gemini-3.5-flash-lite", "gemini-3.5-flash-lite", "gemini-2.5-flash"]);
       expect(log).toHaveBeenCalledWith("log", "[analyze req00001]", "succeeded with fallback model gemini-2.5-flash");
     });
 

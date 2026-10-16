@@ -76,7 +76,7 @@ Content-Type: application/json
 
 ## Gemini への指示
 
-- モデルは `GEMINI_MODEL`（未設定時は `gemini-3.1-flash-lite`）。`temperature: 0`、
+- モデルは `GEMINI_MODEL`（未設定時は `gemini-3.5-flash-lite`）。`temperature: 0`、
   `responseMimeType: "application/json"` と `responseSchema` で構造化 JSON を出力させます。
 - Gemini 呼び出しのタイムアウトは 30 秒、ルート全体の `maxDuration` は 60 秒です。
 - **再試行と代替モデル**: 一時的な上流エラー（HTTP 503・500・504 とネットワークエラー）のときだけ、約 1 秒（0.8〜1.5 秒のゆらぎ）待って主モデルを 1 回再試行し、
@@ -193,7 +193,7 @@ Gemini のエラー本文はクライアントへ返しません。詳細はサ�
 | 変数 | 用途 |
 |---|---|
 | `GEMINI_API_KEY` | 必須。未設定なら 500 `SERVER_MISCONFIGURED` |
-| `GEMINI_MODEL` | 使用モデル。既定 `gemini-3.1-flash-lite` |
+| `GEMINI_MODEL` | 使用モデル。既定 `gemini-3.5-flash-lite` |
 | `GEMINI_FALLBACK_MODEL` | 主モデルが一時的に失敗し続けたときの代替モデル。既定 `gemini-2.5-flash`。空文字または主モデルと同じなら代替しない |
 | `TRIAL_COOKIE_SECRET` | 未ログインのお試し読み取りの Cookie 署名鍵。設定すると端末ごとに 3 回まで（IP ごとに 1 日 10 回の上限つき）。未設定ならお試しは無効（未ログインは 401）。変えると発行済みの Cookie は無効になり回数が数え直しになる |
 | `NEXT_PUBLIC_APP_URL` | Origin チェックで追加で許可するホスト（リバースプロキシやカスタムドメインで `Host` が異なる場合） |

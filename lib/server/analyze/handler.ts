@@ -18,7 +18,7 @@ import type { callGemini } from "./geminiClient";
 import { clientIpOf, type RateLimiter } from "./rateLimit";
 import { decodeTrialCookie, readCookie, trialSetCookie } from "./trialCookie";
 
-export const DEFAULT_GEMINI_MODEL = "gemini-3.1-flash-lite";
+export const DEFAULT_GEMINI_MODEL = "gemini-3.5-flash-lite";
 /** 主モデルが一時的に失敗し続けたときの代替モデルの既定 */
 export const DEFAULT_GEMINI_FALLBACK_MODEL = "gemini-2.5-flash";
 
