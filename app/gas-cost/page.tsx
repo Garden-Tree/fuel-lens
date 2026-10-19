@@ -2,7 +2,16 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { Camera, ChevronRight } from "lucide-react";
 import { PublicPageHeader } from "@/components/LegalPage";
-import { GAS_COST_FAQS, GAS_COST_PATH, buildGasCostJsonLd } from "@/lib/gasCostPage";
+import {
+  COMMUTE_EXAMPLE,
+  EXAMPLE_PRICE,
+  GAS_COST_FAQS,
+  GAS_COST_PATH,
+  QUICK_TABLE_EFFICIENCIES,
+  buildGasCostJsonLd,
+  buildQuickTable,
+  commuteExample,
+} from "@/lib/gasCostPage";
 import GasCostCalculator from "./_components/GasCostCalculator";
 import { aiAvailabilityCopy } from "@/lib/landingPage";
 import { isTrialEnabled } from "@/lib/server/analyze/trialCookie";
@@ -28,6 +37,8 @@ export const metadata: Metadata = {
 };
 
 export default function GasCostPage() {
+  const quickTable = buildQuickTable();
+  const commute = commuteExample();
   return (
     <div className="min-h-screen bg-ground font-sans text-ink">
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: buildGasCostJsonLd() }} />
@@ -44,6 +55,80 @@ export default function GasCostPage() {
         </div>
 
         <div className="mt-12 space-y-10 text-[15px] leading-7 text-ink/90 [&_h2]:mb-3 [&_h2]:text-lg [&_h2]:font-bold [&_h2]:text-ink [&_li]:mt-1.5 [&_ol]:list-decimal [&_ol]:pl-5 [&_p+p]:mt-2 [&_p+ul]:mt-2 [&_strong]:text-ink [&_ul]:list-disc [&_ul]:pl-5">
+          <section>
+            <h2>距離と燃費ごとのガソリン代の目安</h2>
+            <p>
+              単価 <span className="num">{EXAMPLE_PRICE}</span> 円/L で計算した例です。実際の単価で計算するときは上のツールを使ってください。
+            </p>
+            <div className="mt-3 overflow-x-auto rounded-2xl border border-line bg-surface">
+              <table className="w-full border-collapse text-right text-sm">
+                <caption className="sr-only">距離と燃費ごとのガソリン代（円）。単価 {EXAMPLE_PRICE} 円/L の例</caption>
+                <thead>
+                  <tr className="border-b border-line text-sub">
+                    <th scope="col" className="px-2.5 py-2.5 text-left font-medium">距離＼燃費</th>
+                    {QUICK_TABLE_EFFICIENCIES.map((eff) => (
+                      <th key={eff} scope="col" className="whitespace-nowrap px-2.5 py-2.5 font-medium">
+                        <span className="num">{eff}</span> km/L
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {quickTable.map(({ distance, costs }) => (
+                    <tr key={distance} className="border-b border-line last:border-b-0">
+                      <th scope="row" className="whitespace-nowrap px-2.5 py-2.5 text-left font-medium text-ink">
+                        <span className="num">{distance.toLocaleString("ja-JP")}</span> km
+                      </th>
+                      {costs.map((cost, i) => (
+                        <td key={QUICK_TABLE_EFFICIENCIES[i]} className="whitespace-nowrap px-2.5 py-2.5">
+                          <span className="num">{cost}</span> 円
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <p className="mt-2 text-xs text-sub">1 円未満は四捨五入。往復の場合は、距離を 2 倍にした行を見てください。</p>
+          </section>
+
+          <section>
+            <h2>距離からガソリン代を出す手順</h2>
+            <ol>
+              <li>地図アプリで目的地までの走行距離（km）を調べます。往復なら片道の距離を 2 倍にします（ツールの「往復」でも同じです）。</li>
+              <li>
+                自分の車の燃費（km/L）を確かめます。実燃費は
+                <Link href="/calc" className="text-accent underline underline-offset-2 hover:no-underline">
+                  満タン法 燃費計算ツール
+                </Link>
+                で測れます。
+              </li>
+              <li>給油するスタンドのガソリン単価（円/L）を確認します。</li>
+              <li>距離・燃費・単価を上のツールに入力すると、ガソリン代がすぐに出ます。</li>
+            </ol>
+          </section>
+
+          <section>
+            <h2>よくある使い方</h2>
+            <ul>
+              <li>
+                <strong>帰省・旅行の往復。</strong>片道の距離を入れて「往復」を選ぶと、2 倍にして計算します。
+              </li>
+              <li>
+                <strong>通勤の月額。</strong>片道の距離 × 2 × 出勤日数で月の走行距離を出して計算します。たとえば片道{" "}
+                <span className="num">{COMMUTE_EXAMPLE.oneWayKm}</span> km、燃費 <span className="num">{COMMUTE_EXAMPLE.efficiency}</span> km/L、
+                単価 <span className="num">{EXAMPLE_PRICE}</span> 円/L（例）なら、1 日 <span className="num">{commute.perDay}</span> 円、
+                月 <span className="num">{COMMUTE_EXAMPLE.days}</span> 日出勤で <span className="num">{commute.perMonth}</span> 円です。
+              </li>
+              <li>
+                <strong>割り勘。</strong>人数を入れると、ガソリン代を人数で割った 1 人あたりの金額が出ます。
+              </li>
+              <li>
+                <strong>業務の交通費精算。</strong>1km あたりのガソリン代（単価 ÷ 燃費）を出せるので、走行距離にかけて 1 回あたりの目安を求められます。
+              </li>
+            </ul>
+          </section>
+
           <section>
             <h2>計算式</h2>
             <div className="rounded-2xl border border-line bg-surface px-4 py-4 text-center">
