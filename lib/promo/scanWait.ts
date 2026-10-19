@@ -23,7 +23,9 @@ export const SCAN_WAIT_PROMOS: readonly ScanWaitPromo[] = [
   {
     id: "insweb-bike",
     vehicleTypes: ["bike"],
-    href: "https://px.a8.net/svt/ejp?a8mat=3NPG18+31JS36+2PS+1HM30Y",
+    // A8 の副サイト「FuelLens（燃費記録アプリ）」（サイト ID 003）で作ったリンク。ガデログ用のリンクは使わない
+    // （広告主の条件で、掲載したサイトの URL を A8 の「広告掲載URL管理」から提出する）
+    href: "https://px.a8.net/svt/ejp?a8mat=3NPG18+31JTMQ+2PS+1HM30Y",
     title: "解析が終わるまで少々お待ちください",
     body: "バイク保険、更新の前に見直していますか？ インズウェブでは複数の保険会社の見積りを一度にとれます（無料）。",
     cta: "無料で見積もる",
