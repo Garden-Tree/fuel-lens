@@ -216,5 +216,5 @@ export function buildGasCostJsonLd(): string {
       },
     ],
   };
-  return JSON.stringify(data).replace(/</g, "\u003c");
+  return JSON.stringify(data).replace(/</g, "\\u003c");
 }

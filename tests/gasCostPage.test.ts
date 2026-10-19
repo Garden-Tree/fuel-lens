@@ -135,4 +135,17 @@ describe("早見表", () => {
     expect(buildGasCostJsonLd()).not.toContain("<");
     expect(() => JSON.parse(buildGasCostJsonLd())).not.toThrow();
   });
+
+  it("FAQ に </script> が含まれても JSON-LD に < が残らない", () => {
+    const original = GAS_COST_FAQS.slice();
+    GAS_COST_FAQS.push({ q: "</script><b>q</b>", a: "</script><script>alert(1)</script>" });
+    try {
+      const json = buildGasCostJsonLd();
+      expect(json).not.toContain("<");
+      expect(json).toContain("\\u003c/script>");
+      expect(JSON.parse(json)["@graph"].length).toBeGreaterThan(0);
+    } finally {
+      GAS_COST_FAQS.splice(0, GAS_COST_FAQS.length, ...original);
+    }
+  });
 });

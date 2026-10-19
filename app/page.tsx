@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { PUBLIC_TOOL_LINKS } from "@/lib/publicNav";
 import {
   Sparkles,
   Calculator,
@@ -247,6 +248,10 @@ export default function LandingPage() {
               <p className="text-sm text-sub leading-relaxed">
                 これまでに記録した全データをワンクリックでCSV形式で出力可能。Excelで自由にグラフを編集したり、家計簿ソフトに取り込んだりできます。
               </p>
+              <Link href="/expense" className="mt-3 inline-flex min-h-10 items-center gap-1 text-sm font-medium text-accent hover:underline">
+                経費のための記録にも
+                <ChevronRight className="w-4 h-4" aria-hidden="true" />
+              </Link>
             </div>
 
             {/* 特徴カード 6 */}
@@ -382,8 +387,9 @@ export default function LandingPage() {
             <a href="#demo" className="hover:text-ink transition px-2 py-3 sm:p-0">デモ</a>
             <a href="#how-to" className="hover:text-ink transition px-2 py-3 sm:p-0">使い方</a>
             <a href="#faq" className="hover:text-ink transition px-2 py-3 sm:p-0">よくある質問</a>
-            <Link href="/calc" className="hover:text-ink transition px-2 py-3 sm:p-0">燃費計算</Link>
-            <Link href="/gas-cost" className="hover:text-ink transition px-2 py-3 sm:p-0">ガソリン代計算</Link>
+            {PUBLIC_TOOL_LINKS.map((l) => (
+              <Link key={l.href} href={l.href} className="hover:text-ink transition px-2 py-3 sm:p-0">{l.label}</Link>
+            ))}
             <Link href="/privacy" className="hover:text-ink transition px-2 py-3 sm:p-0">プライバシーポリシー</Link>
             <Link href="/terms" className="hover:text-ink transition px-2 py-3 sm:p-0">利用規約</Link>
           </div>
