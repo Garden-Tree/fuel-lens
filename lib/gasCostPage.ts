@@ -121,6 +121,43 @@ export function computeGasCost(input: GasCostInput): GasCostResult {
   };
 }
 
+/** 早見表・FAQ の例に使う単価（円/L）。実際の単価ではなく計算の説明用 */
+export const EXAMPLE_PRICE = 170;
+/** 早見表の行（距離 km）と列（燃費 km/L） */
+export const QUICK_TABLE_DISTANCES = [50, 100, 200, 300, 500, 1000] as const;
+export const QUICK_TABLE_EFFICIENCIES = [10, 15, 20, 25] as const;
+
+/** 例の単価でのガソリン代（表示用の文字列）。電卓と同じ computeGasCost で求めるので丸めも一致する */
+export function exampleCost(distanceKm: number, efficiencyKmPerL: number, roundTrip = false): string {
+  return (
+    computeGasCost({
+      distance: String(distanceKm),
+      efficiency: String(efficiencyKmPerL),
+      price: String(EXAMPLE_PRICE),
+      people: "",
+      roundTrip,
+    }).cost ?? ""
+  );
+}
+
+/** 早見表: 行ごとに距離と、燃費ごとのガソリン代（円）の表示文字列 */
+export function buildQuickTable(): { distance: number; costs: string[] }[] {
+  return QUICK_TABLE_DISTANCES.map((distance) => ({
+    distance,
+    costs: QUICK_TABLE_EFFICIENCIES.map((eff) => exampleCost(distance, eff)),
+  }));
+}
+
+/** 通勤の月額の例: 片道 15 km・燃費 15 km/L・月 20 日出勤 */
+export const COMMUTE_EXAMPLE = { oneWayKm: 15, efficiency: 15, days: 20 } as const;
+export function commuteExample(): { perDay: string; perMonth: string } {
+  const { oneWayKm, efficiency, days } = COMMUTE_EXAMPLE;
+  return {
+    perDay: exampleCost(oneWayKm, efficiency, true),
+    perMonth: exampleCost(oneWayKm * 2 * days, efficiency),
+  };
+}
+
 /** ページの FAQ と JSON-LD の FAQPage で共有する */
 export const GAS_COST_FAQS: FaqEntry[] = [
   {
@@ -134,6 +171,14 @@ export const GAS_COST_FAQS: FaqEntry[] = [
   {
     q: "車の燃費がわからないときはどうすればいいですか？",
     a: "実際の走り方での燃費（実燃費）は、カタログ燃費と異なることが多いです。満タン給油から次の満タン給油までに走った距離を給油量で割る満タン法で自分の車の実燃費を測ると、より正確に見積もれます。",
+  },
+  {
+    q: "100km 走るとガソリン代はいくらですか？",
+    a: `ガソリン代 = 100 ÷ 燃費（km/L）× 単価（円/L）です。たとえば燃費 15 km/L、単価 ${EXAMPLE_PRICE} 円/L（例）なら約 ${exampleCost(100, 15)} 円です。燃費と単価が違えば金額も変わるので、早見表やツールで確かめてください。`,
+  },
+  {
+    q: "高速道路の料金も含まれますか？",
+    a: "いいえ、このツールで計算するのはガソリン代だけです。高速料金や駐車場代は含まれないので、必要に応じて別に足してください。",
   },
   {
     q: "1km あたりのガソリン代はいくらですか？",
