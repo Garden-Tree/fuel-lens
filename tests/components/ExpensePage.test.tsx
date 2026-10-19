@@ -22,7 +22,7 @@ describe("/expense", () => {
     expect(screen.getByRole("link", { name: "国税庁" })).toHaveAttribute("href", "https://www.nta.go.jp/");
     const nav = screen.getByRole("navigation", { name: "関連ページ" });
     const hrefs = within(nav).getAllByRole("link").map((a) => a.getAttribute("href"));
-    expect(hrefs).toEqual(["/", "/calc", "/gas-cost", "/privacy"]);
+    expect(hrefs).toEqual(["/", "/calc", "/gas-cost", "/annual-gas-cost", "/fuel-convert", "/privacy", "/terms"]);
     expect(screen.getByRole("link", { name: /アプリを使う/ })).toHaveAttribute("href", "/app");
   });
 

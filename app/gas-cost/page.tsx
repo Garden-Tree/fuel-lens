@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { otherToolLinks } from "@/lib/publicNav";
 import { Camera, ChevronRight } from "lucide-react";
 import { PublicPageHeader } from "@/components/LegalPage";
 import {
@@ -157,6 +158,17 @@ export default function GasCostPage() {
               </li>
             </ul>
             <p className="mt-3 text-sm text-sub">高速料金や駐車場代は含みません。必要に応じて別に足してください。</p>
+            <p className="mt-3 text-sm text-sub">
+              月額・年額を出すなら{" "}
+              <Link href="/annual-gas-cost" className="text-accent underline underline-offset-2 hover:no-underline">
+                年間ガソリン代の計算ツール
+              </Link>
+              へ。L/100km や mpg の燃費しか分からないときは{" "}
+              <Link href="/fuel-convert" className="text-accent underline underline-offset-2 hover:no-underline">
+                燃費の単位換算ツール
+              </Link>
+              で km/L にそろえてください。
+            </p>
           </section>
 
           <section>
@@ -220,7 +232,9 @@ export default function GasCostPage() {
 
         <nav aria-label="関連ページ" className="mt-12 flex flex-wrap gap-x-6 gap-y-2 border-t border-line pt-6 text-sm text-sub">
           <Link href="/" className="inline-flex min-h-10 items-center hover:text-ink">FuelLens のトップ</Link>
-          <Link href="/calc" className="inline-flex min-h-10 items-center hover:text-ink">満タン法 燃費計算ツール</Link>
+          {otherToolLinks("/gas-cost").map((l) => (
+            <Link key={l.href} href={l.href} className="inline-flex min-h-10 items-center hover:text-ink">{l.label}</Link>
+          ))}
           <Link href="/privacy" className="inline-flex min-h-10 items-center hover:text-ink">プライバシーポリシー</Link>
           <Link href="/terms" className="inline-flex min-h-10 items-center hover:text-ink">利用規約</Link>
         </nav>

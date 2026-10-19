@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { otherToolLinks } from "@/lib/publicNav";
 import { Camera, ChevronRight } from "lucide-react";
 import { PublicPageHeader } from "@/components/LegalPage";
 import { RECORDS_CSV_HEADERS } from "@/lib/csv";
@@ -175,9 +176,11 @@ export default function ExpensePage() {
 
         <nav aria-label="関連ページ" className="mt-12 flex flex-wrap gap-x-6 gap-y-2 border-t border-line pt-6 text-sm text-sub">
           <Link href="/" className="inline-flex min-h-10 items-center hover:text-ink">FuelLens のトップ</Link>
-          <Link href="/calc" className="inline-flex min-h-10 items-center hover:text-ink">満タン法 燃費計算ツール</Link>
-          <Link href="/gas-cost" className="inline-flex min-h-10 items-center hover:text-ink">ガソリン代計算ツール</Link>
+          {otherToolLinks("/expense").map((l) => (
+            <Link key={l.href} href={l.href} className="inline-flex min-h-10 items-center hover:text-ink">{l.label}</Link>
+          ))}
           <Link href="/privacy" className="inline-flex min-h-10 items-center hover:text-ink">プライバシーポリシー</Link>
+          <Link href="/terms" className="inline-flex min-h-10 items-center hover:text-ink">利用規約</Link>
         </nav>
       </main>
     </div>

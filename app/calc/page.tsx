@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { otherToolLinks } from "@/lib/publicNav";
 import { Camera, ChevronRight } from "lucide-react";
 import { PublicPageHeader } from "@/components/LegalPage";
 import { CALC_FAQS, CALC_PATH, buildCalcJsonLd } from "@/lib/calcPage";
@@ -74,6 +75,13 @@ export default function CalcPage() {
                 ガソリン代計算ツール
               </Link>
               をどうぞ。
+            </p>
+            <p className="mt-2 text-sm text-sub">
+              L/100km や mpg で表された燃費は{" "}
+              <Link href="/fuel-convert" className="text-accent underline underline-offset-2 hover:no-underline">
+                燃費の単位換算ツール
+              </Link>
+              で km/L にできます。
             </p>
           </section>
 
@@ -152,7 +160,9 @@ export default function CalcPage() {
 
         <nav aria-label="関連ページ" className="mt-12 flex flex-wrap gap-x-6 gap-y-2 border-t border-line pt-6 text-sm text-sub">
           <Link href="/" className="inline-flex min-h-10 items-center hover:text-ink">FuelLens のトップ</Link>
-          <Link href="/gas-cost" className="inline-flex min-h-10 items-center hover:text-ink">ガソリン代計算ツール</Link>
+          {otherToolLinks("/calc").map((l) => (
+            <Link key={l.href} href={l.href} className="inline-flex min-h-10 items-center hover:text-ink">{l.label}</Link>
+          ))}
           <Link href="/privacy" className="inline-flex min-h-10 items-center hover:text-ink">プライバシーポリシー</Link>
           <Link href="/terms" className="inline-flex min-h-10 items-center hover:text-ink">利用規約</Link>
         </nav>
