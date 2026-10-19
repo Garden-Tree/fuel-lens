@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { GAS_COST_FAQS, buildGasCostJsonLd, computeGasCost, type GasCostInput } from "@/lib/gasCostPage";
+import { GAS_COST_FAQS, buildGasCostJsonLd, buildQuickTable, commuteExample, computeGasCost, type GasCostInput } from "@/lib/gasCostPage";
 
 const base: GasCostInput = { distance: "300", efficiency: "15", price: "170", people: "", roundTrip: false };
 
@@ -109,5 +109,43 @@ describe("buildGasCostJsonLd", () => {
       name: GAS_COST_FAQS[0].q,
       acceptedAnswer: { "@type": "Answer", text: GAS_COST_FAQS[0].a },
     });
+  });
+});
+
+describe("早見表", () => {
+  it("セルの値は computeGasCost と一致する", () => {
+    const table = buildQuickTable();
+    expect(table.map((r) => r.distance)).toEqual([50, 100, 200, 300, 500, 1000]);
+    // 燃費 10 / 15 / 20 / 25 km/L の順
+    const cell = (d: number, i: number) => table.find((r) => r.distance === d)!.costs[i];
+    expect(cell(300, 1)).toBe("3,400");
+    expect(cell(1000, 0)).toBe("17,000");
+    expect(cell(100, 1)).toBe(computeGasCost({ ...base, distance: "100" }).cost);
+    expect(cell(50, 3)).toBe(computeGasCost({ ...base, distance: "50", efficiency: "25" }).cost);
+    expect(cell(500, 2)).toBe(computeGasCost({ ...base, distance: "500", efficiency: "20" }).cost);
+  });
+
+  it("通勤の例は往復 × 日数で計算される", () => {
+    expect(commuteExample()).toEqual({ perDay: "340", perMonth: "6,800" });
+  });
+
+  it("FAQ の 100km の例は表と同じ値で、JSON-LD は < をエスケープする", () => {
+    const faq = GAS_COST_FAQS.find((f) => f.q.startsWith("100km"))!;
+    expect(faq.a).toContain(buildQuickTable()[1].costs[1]);
+    expect(buildGasCostJsonLd()).not.toContain("<");
+    expect(() => JSON.parse(buildGasCostJsonLd())).not.toThrow();
+  });
+
+  it("FAQ に </script> が含まれても JSON-LD に < が残らない", () => {
+    const original = GAS_COST_FAQS.slice();
+    GAS_COST_FAQS.push({ q: "</script><b>q</b>", a: "</script><script>alert(1)</script>" });
+    try {
+      const json = buildGasCostJsonLd();
+      expect(json).not.toContain("<");
+      expect(json).toContain("\\u003c/script>");
+      expect(JSON.parse(json)["@graph"].length).toBeGreaterThan(0);
+    } finally {
+      GAS_COST_FAQS.splice(0, GAS_COST_FAQS.length, ...original);
+    }
   });
 });
