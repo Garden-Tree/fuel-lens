@@ -16,14 +16,25 @@ describe("/expense", () => {
     expect(items).toEqual([...RECORDS_CSV_HEADERS]);
   });
 
-  it("FAQ を 4 問表示し、国税庁へのリンクと関連ページを出す", () => {
+  it("FAQ を 6 問表示し、国税庁へのリンクと関連ページを出す", () => {
     render(<ExpensePage />);
-    expect(screen.getAllByRole("term")).toHaveLength(4);
+    expect(screen.getAllByRole("term")).toHaveLength(6);
     expect(screen.getByRole("link", { name: "国税庁" })).toHaveAttribute("href", "https://www.nta.go.jp/");
     const nav = screen.getByRole("navigation", { name: "関連ページ" });
     const hrefs = within(nav).getAllByRole("link").map((a) => a.getAttribute("href"));
     expect(hrefs).toEqual(["/", "/calc", "/gas-cost", "/annual-gas-cost", "/fuel-convert", "/privacy", "/terms"]);
     expect(screen.getByRole("link", { name: /アプリを使う/ })).toHaveAttribute("href", "/app");
+  });
+
+  it("按分の例・距離単価の表・ガソリン代計算へのリンクを出す", () => {
+    render(<ExpensePage />);
+    expect(screen.getByRole("heading", { name: /按分の考え方/ })).toBeInTheDocument();
+    expect(screen.getByText("7,200")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /1km あたりのガソリン代の目安/ })).toBeInTheDocument();
+    expect(screen.getByRole("table")).toBeInTheDocument();
+    // 関連ページのナビにも同名のリンクがあるので、本文中の（下線つきの）ほうを見る
+    const link = screen.getAllByRole("link", { name: "ガソリン代計算" }).find((a) => a.className.includes("underline"));
+    expect(link).toHaveAttribute("href", "/gas-cost");
   });
 
   it("お試しの有無で AI の読み取りの案内を切り替える", () => {

@@ -1,12 +1,18 @@
 import { describe, expect, it } from "vitest";
 import { RECORDS_CSV_HEADERS, buildRecordsCsv } from "@/lib/csv";
 import {
+  APPORTION_EXAMPLE_MONTHLY_COST,
+  APPORTION_EXAMPLE_TOTAL_KM,
+  APPORTION_EXAMPLE_WORK_KM,
   EXPENSE_CANONICAL_URL,
   EXPENSE_CSV_COLUMNS_TEXT,
   EXPENSE_DESCRIPTION,
   EXPENSE_PATH,
   EXPENSE_TITLE,
+  apportionByDistance,
   buildExpenseJsonLd,
+  costPerKm,
+  costPerKmTable,
   expenseFaqs,
 } from "@/lib/expensePage";
 import { aiAvailabilityCopy } from "@/lib/landingPage";
@@ -34,18 +40,53 @@ describe("expensePage の定数", () => {
 });
 
 describe("expenseFaqs", () => {
-  it("4 問で、CSV の答えに列名が入る", () => {
+  it("6 問で、CSV の答えに列名が入る", () => {
     for (const trial of [true, false]) {
       const faqs = expenseFaqs(trial);
-      expect(faqs).toHaveLength(4);
+      expect(faqs).toHaveLength(6);
       const csvFaq = faqs.find((f) => f.q.includes("CSV"));
       for (const col of RECORDS_CSV_HEADERS) expect(csvFaq?.a).toContain(col);
     }
   });
 
   it("無料の答えはお試しの有無で landingPage と同じ注記を使う", () => {
-    expect(expenseFaqs(true)[3].a).toContain(aiAvailabilityCopy(true).faqFreeNote);
-    expect(expenseFaqs(false)[3].a).toContain(aiAvailabilityCopy(false).faqFreeNote);
+    expect(expenseFaqs(true)[5].a).toContain(aiAvailabilityCopy(true).faqFreeNote);
+    expect(expenseFaqs(false)[5].a).toContain(aiAvailabilityCopy(false).faqFreeNote);
+  });
+});
+
+describe("按分と距離単価の計算", () => {
+  it("例: 12,000 円・1,000km のうち 600km → 60%・7,200 円", () => {
+    expect(
+      apportionByDistance(APPORTION_EXAMPLE_MONTHLY_COST, APPORTION_EXAMPLE_TOTAL_KM, APPORTION_EXAMPLE_WORK_KM)
+    ).toEqual({ ratioPercent: 60, workCost: 7200, privateCost: 4800 });
+  });
+
+  it("割り切れない割合は小数第 1 位、金額は四捨五入で、仕事分とプライベート分の合計が合う", () => {
+    expect(apportionByDistance(10000, 300, 100)).toEqual({ ratioPercent: 33.3, workCost: 3333, privateCost: 6667 });
+  });
+
+  it("不正な入力は null", () => {
+    expect(apportionByDistance(12000, 0, 0)).toBeNull();
+    expect(apportionByDistance(12000, 1000, 1200)).toBeNull();
+    expect(apportionByDistance(12000, 1000, -1)).toBeNull();
+    expect(apportionByDistance(-1, 1000, 500)).toBeNull();
+    expect(apportionByDistance(Number.NaN, 1000, 500)).toBeNull();
+  });
+
+  it("1km あたりのガソリン代は 単価 ÷ 燃費", () => {
+    expect(costPerKm(170, 20)).toBe(8.5);
+    expect(costPerKm(170, 0)).toBeNull();
+    expect(costPerKm(0, 20)).toBeNull();
+  });
+
+  it("早見表は 燃費 × 単価 の並びで小数第 1 位", () => {
+    const table = costPerKmTable();
+    expect(table.map((r) => r.efficiency)).toEqual([10, 15, 20, 25]);
+    expect(table[0].costs).toEqual(["15.0", "17.0", "19.0"]);
+    expect(table[1].costs).toEqual(["10.0", "11.3", "12.7"]);
+    expect(table[2].costs).toEqual(["7.5", "8.5", "9.5"]);
+    expect(table[3].costs).toEqual(["6.0", "6.8", "7.6"]);
   });
 });
 
@@ -57,7 +98,7 @@ describe("buildExpenseJsonLd", () => {
     expect(types).toEqual(["WebPage", "WebApplication", "FAQPage"]);
     expect(data["@graph"][0].url).toBe(EXPENSE_CANONICAL_URL);
     const faqPage = data["@graph"][2];
-    expect(faqPage.mainEntity).toHaveLength(4);
+    expect(faqPage.mainEntity).toHaveLength(6);
     expect(faqPage.mainEntity[0]).toEqual({
       "@type": "Question",
       name: faqs[0].q,
