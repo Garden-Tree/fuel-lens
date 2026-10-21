@@ -4,6 +4,8 @@
  * - 写真の読み取り項目: lib/server/analyze/prompt.ts（date / gas_station / fuel_amount / price_per_unit / total_cost ほか）
  * - CSV の列: lib/csv.ts の RECORDS_CSV_HEADERS（設定画面の「全車両のCSVを書き出す」）
  * - 写真は保存しない: app/privacy/page.tsx
+ * - 月ごとの給油代: app/(app)/stats の MonthlyCostChart（lib/stats/series.ts の buildMonthlyCostSeries、支払総額の月別合計）
+ * - 区間距離（CSV の「走行距離(km)」）・メモ・複数車両: lib/types.ts、lib/csv.ts。仕事とプライベートの走行距離の区別は記録しない
  * - AI の読み取りの可否（お試しの有無）: lib/landingPage.ts の aiAvailabilityCopy（静的描画なのでビルド時の値）
  * 税務の助言はしない（原本の保存要件や経費の範囲は国税庁の案内や税理士に確認してもらう）。
  */
@@ -24,10 +26,59 @@ export const EXPENSE_PAGE_TITLE = "ガソリン代の経費記録アプリ｜レ
 
 /** 検索結果の説明文（110〜120 字程度）。お試しの有無に触れない（どちらでも正しい文言） */
 export const EXPENSE_DESCRIPTION =
-  "ガソリンスタンドのレシートを撮るだけで、AIが日付・店名・給油量・単価・金額を読み取って記録。配達員や個人事業主、営業車の自腹精算に。記録はCSVで書き出し、Excelやスプレッドシートで集計できます。写真は保存しません。";
+  "ガソリンスタンドのレシートを撮るだけで、AIが日付・店名・金額などを読み取って記録。配達員や個人事業主、営業車の自腹精算に。CSVで書き出して按分の計算もでき、Excelやスプレッドシートで集計できます。写真は保存しません。";
 
 /** 全車両 CSV の列の並び（表示用の文字列）。CSV の実装（lib/csv.ts）と同じ定数から作る */
 export const EXPENSE_CSV_COLUMNS_TEXT = RECORDS_CSV_HEADERS.join("・");
+
+/** 按分の例: 1 か月のガソリン代 (円) */
+export const APPORTION_EXAMPLE_MONTHLY_COST = 12000;
+/** 按分の例: 1 か月の総走行距離 (km) */
+export const APPORTION_EXAMPLE_TOTAL_KM = 1000;
+/** 按分の例: うち仕事で走った距離 (km) */
+export const APPORTION_EXAMPLE_WORK_KM = 600;
+
+export type ApportionResult = {
+  /** 仕事の割合 (%)。小数は第 1 位まで */
+  ratioPercent: number;
+  /** 仕事に使った分のガソリン代 (円)。1 円未満を四捨五入 */
+  workCost: number;
+  /** プライベート分のガソリン代 (円)。合計から仕事分を引いた残り */
+  privateCost: number;
+};
+
+/**
+ * 走行距離の割合でガソリン代を按分する例の計算。割合の決め方の正解を示すものではない（距離以外に使用日数などで決める方法もある）。
+ * 入力が不正（総距離が 0 以下、仕事の距離が 0 未満または総距離超え、金額が負）なら null。
+ */
+export function apportionByDistance(totalCost: number, totalKm: number, workKm: number): ApportionResult | null {
+  if (![totalCost, totalKm, workKm].every(Number.isFinite)) return null;
+  if (totalCost < 0 || totalKm <= 0 || workKm < 0 || workKm > totalKm) return null;
+  const workCost = Math.round((totalCost * workKm) / totalKm);
+  return {
+    ratioPercent: Math.round((workKm / totalKm) * 1000) / 10,
+    workCost,
+    privateCost: Math.round(totalCost) - workCost,
+  };
+}
+
+/** 1km あたりのガソリン代 (円/km) = 単価 (円/L) ÷ 燃費 (km/L)。入力が 0 以下・非数なら null */
+export function costPerKm(pricePerLiter: number, efficiency: number): number | null {
+  if (!Number.isFinite(pricePerLiter) || !Number.isFinite(efficiency) || pricePerLiter <= 0 || efficiency <= 0) return null;
+  return pricePerLiter / efficiency;
+}
+
+/** 距離単価の早見表の燃費 (km/L) と単価 (円/L)。/gas-cost の早見表の燃費・単価に合わせる */
+export const COST_PER_KM_EFFICIENCIES = [10, 15, 20, 25] as const;
+export const COST_PER_KM_PRICES = [150, 170, 190] as const;
+
+/** 距離単価の早見表。行 = 燃費、列 = 単価。表示は小数第 1 位（円/km） */
+export function costPerKmTable(): { efficiency: number; costs: string[] }[] {
+  return COST_PER_KM_EFFICIENCIES.map((efficiency) => ({
+    efficiency,
+    costs: COST_PER_KM_PRICES.map((price) => (costPerKm(price, efficiency) ?? 0).toFixed(1)),
+  }));
+}
 
 /** ページの FAQ と JSON-LD の FAQPage で共有する。AI の読み取りの可否はお試しの有無で変わる */
 export function expenseFaqs(trialEnabled: boolean): FaqEntry[] {
@@ -44,6 +95,14 @@ export function expenseFaqs(trialEnabled: boolean): FaqEntry[] {
     {
       q: "CSV にはどんな項目が入りますか？",
       a: `設定画面の「全車両のCSVを書き出す」では、${EXPENSE_CSV_COLUMNS_TEXT}の列が入ります。履歴画面からは、選んでいる車両の記録だけを書き出せます（車両の列はありません）。`,
+    },
+    {
+      q: "仕事用とプライベート兼用の車のガソリン代は、どう按分しますか？",
+      a: "一般には、仕事で使った走行距離や使用日数の割合でガソリン代を分ける方法がよく使われます。割合を決めた根拠（走行距離の記録など）は残しておくと説明しやすくなります。ただし、割合の決め方や経費にできる範囲は状況によって異なるため、国税庁の案内、税務署、税理士に確認してください。",
+    },
+    {
+      q: "月ごとのガソリン代の合計は出せますか？",
+      a: "はい。アプリの統計画面に「月ごとの給油代」のグラフがあり、月別の支払総額を確認できます。CSV に書き出して、表計算ソフトで集計することもできます。",
     },
     {
       q: "無料で使えますか？",

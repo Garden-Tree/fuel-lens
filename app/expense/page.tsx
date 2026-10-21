@@ -4,11 +4,19 @@ import { otherToolLinks } from "@/lib/publicNav";
 import { Camera, ChevronRight } from "lucide-react";
 import { PublicPageHeader } from "@/components/LegalPage";
 import { RECORDS_CSV_HEADERS } from "@/lib/csv";
+import { GAS_COST_PATH } from "@/lib/gasCostPage";
 import {
+  APPORTION_EXAMPLE_MONTHLY_COST,
+  APPORTION_EXAMPLE_TOTAL_KM,
+  APPORTION_EXAMPLE_WORK_KM,
+  COST_PER_KM_EFFICIENCIES,
+  COST_PER_KM_PRICES,
   EXPENSE_DESCRIPTION,
   EXPENSE_PAGE_TITLE,
   EXPENSE_PATH,
+  apportionByDistance,
   buildExpenseJsonLd,
+  costPerKmTable,
   expenseFaqs,
 } from "@/lib/expensePage";
 import { aiAvailabilityCopy } from "@/lib/landingPage";
@@ -44,6 +52,8 @@ export default function ExpensePage() {
   const trialEnabled = isTrialEnabled();
   const aiCopy = aiAvailabilityCopy(trialEnabled);
   const faqs = expenseFaqs(trialEnabled);
+  const example = apportionByDistance(APPORTION_EXAMPLE_MONTHLY_COST, APPORTION_EXAMPLE_TOTAL_KM, APPORTION_EXAMPLE_WORK_KM);
+  const perKmTable = costPerKmTable();
   return (
     <div className="min-h-screen bg-ground font-sans text-ink">
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: buildExpenseJsonLd(faqs) }} />
@@ -119,6 +129,102 @@ export default function ExpensePage() {
             </p>
             <p className="text-sm text-sub">
               1km あたりのガソリン代は、単価（円/L）÷ 燃費（km/L）で求められます（燃費が記録されている行のみ）。
+            </p>
+          </section>
+
+          <section>
+            <h2>仕事とプライベートで使う車のガソリン代（按分の考え方）</h2>
+            <p>
+              1 台の車やバイクを仕事とプライベートの両方で使うときは、ガソリン代を仕事の割合で分ける（按分する）方法がよく使われます。
+              割合は、走行距離や使用日数などをもとに決めます。どのように割合を決めたかが分かる記録を残しておくと、あとから説明しやすくなります。
+            </p>
+            {example && (
+              <>
+                <p className="mt-3 font-bold text-ink">計算の例（走行距離で分ける場合）</p>
+                <ul>
+                  <li>
+                    1 か月のガソリン代が <span className="num">{APPORTION_EXAMPLE_MONTHLY_COST.toLocaleString("ja-JP")}</span> 円、
+                    走行距離が <span className="num">{APPORTION_EXAMPLE_TOTAL_KM.toLocaleString("ja-JP")}</span> km、
+                    うち仕事で走った距離が <span className="num">{APPORTION_EXAMPLE_WORK_KM.toLocaleString("ja-JP")}</span> km とします。
+                  </li>
+                  <li>
+                    仕事の割合は <span className="num">{APPORTION_EXAMPLE_WORK_KM}</span> ÷ <span className="num">{APPORTION_EXAMPLE_TOTAL_KM.toLocaleString("ja-JP")}</span> ＝{" "}
+                    <span className="num">{example.ratioPercent}</span>%。
+                  </li>
+                  <li>
+                    仕事分は <span className="num">{APPORTION_EXAMPLE_MONTHLY_COST.toLocaleString("ja-JP")}</span> 円 × <span className="num">{example.ratioPercent}</span>% ＝{" "}
+                    <span className="num">{example.workCost.toLocaleString("ja-JP")}</span> 円（残りの <span className="num">{example.privateCost.toLocaleString("ja-JP")}</span> 円がプライベート分）。
+                  </li>
+                </ul>
+              </>
+            )}
+            <p className="mt-3 text-sm text-sub">
+              これはあくまで計算の例です。割合の決め方や、経費にできる範囲は人によって異なります。
+              国税庁の案内や税務署、税理士に確認してください（案内へのリンクは下の「領収書の保管について」にあります）。
+            </p>
+          </section>
+
+          <section>
+            <h2>FuelLens での記録のしかた</h2>
+            <ol>
+              <li>給油のたびにレシートを撮って記録します。1 件ごとに日付・店名・給油量・単価・支払総額が残ります。</li>
+              <li>トリップメーターを一緒に写す（または手で入力する）と、前回の給油からの区間距離も記録されます。CSV の「走行距離(km)」の列です。</li>
+              <li>アプリの統計画面の「月ごとの給油代」で、月別の支払総額を確認できます。</li>
+              <li>設定画面の「全車両のCSVを書き出す」で CSV にして、Excel やスプレッドシートで月ごとの合計に仕事の割合を掛けます。</li>
+            </ol>
+            <p className="mt-3">
+              仕事用とプライベート用で車両を分けて登録すれば、車両ごとに記録できます。1 件ごとに「メモ」も残せるので、用途などを書き添えておけます。
+            </p>
+            <p className="text-sm text-sub">
+              FuelLens は、1 回の走行が仕事かプライベートかを区別して記録する機能は持っていません。仕事で走った距離は、運転日報など別の記録で残してください。
+            </p>
+          </section>
+
+          <section>
+            <h2>会社員の自腹精算・1km あたりのガソリン代の目安</h2>
+            <p>
+              営業車や自家用車のガソリン代を自腹で立て替えるときは、1km あたりのガソリン代がめやすになります。
+              1km あたりのガソリン代は、単価（円/L）÷ 燃費（km/L）で求められます。単価と燃費ごとの目安は次のとおりです。
+            </p>
+            <div className="mt-3 overflow-x-auto rounded-2xl border border-line bg-surface">
+              <table className="w-full border-collapse text-right text-sm">
+                <caption className="sr-only">燃費と単価ごとの 1km あたりのガソリン代（円）</caption>
+                <thead>
+                  <tr className="border-b border-line text-sub">
+                    <th scope="col" className="px-2.5 py-2.5 text-left font-medium">燃費＼単価</th>
+                    {COST_PER_KM_PRICES.map((price) => (
+                      <th key={price} scope="col" className="whitespace-nowrap px-2.5 py-2.5 font-medium">
+                        <span className="num">{price}</span> 円/L
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {perKmTable.map(({ efficiency, costs }) => (
+                    <tr key={efficiency} className="border-b border-line last:border-b-0">
+                      <th scope="row" className="whitespace-nowrap px-2.5 py-2.5 text-left font-medium text-ink">
+                        <span className="num">{efficiency}</span> km/L
+                      </th>
+                      {costs.map((cost, i) => (
+                        <td key={COST_PER_KM_PRICES[i]} className="whitespace-nowrap px-2.5 py-2.5">
+                          <span className="num">{cost}</span> 円/km
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <p className="mt-2 text-xs text-sub">
+              単価 {COST_PER_KM_PRICES.join("・")} 円/L、燃費 {COST_PER_KM_EFFICIENCIES.join("・")} km/L の例です。小数第 2 位を四捨五入しています。
+              会社の精算ルールで決まった単価がある場合は、そちらに従ってください。
+            </p>
+            <p className="mt-2">
+              距離や燃費を自分の値で計算したいときは、
+              <Link href={GAS_COST_PATH} className={linkClass}>
+                ガソリン代計算
+              </Link>
+              を使ってください。
             </p>
           </section>
 
