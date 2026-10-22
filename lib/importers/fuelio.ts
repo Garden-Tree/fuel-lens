@@ -270,6 +270,8 @@ export function parseFuelioCsv(text: string): ParseFuelioResult {
     if ((cost == null || cost === 0) && volumePrice != null && volumePrice > 0 && fuel != null && fuel > 0) {
       cost = roundYen(volumePrice * fuel);
     }
+    // Price 列にも小数が入ることがある（1117.23 など）。FuelLens は円のみなので整数円にする
+    if (cost != null) cost = roundYen(cost);
     if (cost === 0) cost = null;
     if ((fuel == null || fuel === 0) && (cost == null || cost === 0)) {
       skippedInvalid += 1;

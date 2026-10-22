@@ -44,7 +44,7 @@ function GroupHeader({ group }: { group: Pick<MonthGroup<FuelRecord>, "label" | 
     <div className="flex items-baseline justify-between gap-3 px-4 pt-1.5 text-[13px] text-sub">
       <h2 className="font-bold text-ink/80">{group.label}</h2>
       <span>
-        <span className="num">{group.count}</span>回・<span className="num">¥{group.totalCost.toLocaleString("ja-JP")}</span>
+        <span className="num">{group.count}</span>回・<span className="num">¥{Math.round(group.totalCost).toLocaleString("ja-JP")}</span>
       </span>
     </div>
   );

@@ -11,8 +11,10 @@ import { parseBackup } from "@/lib/backup";
 import { calculateFuelMetrics } from "@/lib/calculations";
 import { applyFillChain, distanceModeOf, normalizeRecord } from "@/lib/fillChain";
 import { groupByMonth } from "@/lib/history/groupByMonth";
+import { formatYen as formatHistoryYen } from "@/lib/history/recordList";
 import { heroModelOf } from "@/lib/home/hero";
 import { monthSummaryOf } from "@/lib/home/month";
+import { formatYen as formatHomeYen } from "@/lib/home/recent";
 import { fuelioToBackup, parseFuelioCsv, type ParsedFuelio } from "@/lib/importers/fuelio";
 import { isUnclassifiedRecord, matchesSelectedVehicle, sortRecordsByDateDesc } from "@/lib/recordFilters";
 import { executeRestore, type AddRecords, type AddVehicles } from "@/lib/restore";
@@ -350,5 +352,30 @@ describe("既定車両がすでにある状態へ取り込み", () => {
     // 方式を odometer に切り替えると、保存データはそのままで燃費が出る
     const switched = applyFillChain(stores.records, { distance_mode: "odometer" });
     expect(switched.filter(r => finite(r.fuel_efficiency))).toHaveLength(25);
+  });
+});
+
+describe("円の丸め", () => {
+  it("Fuelio の Price が小数でも整数円で取り込む（単価は丸めた金額から導出）", () => {
+    const csv = [
+      '"## Vehicle"',
+      '"Name","Tank1Capacity"',
+      '"Frac","14"',
+      '"## Log"',
+      '"Data","Odo (km)","Fuel (litres)","Full","Price (optional)","UniqueId"',
+      '"2026-05-01","1000","6.5","1","1117.23","a"',
+      '"2026-05-10","1250","6.5","1","1117.5","b"',
+    ].join("\n");
+    const parsed = parse(csv);
+    expect(parsed.records.map(r => r.total_cost)).toEqual([1117, 1118]);
+    expect(parsed.records[0].price_per_unit).toBe(calculateFuelMetrics(null, 6.5, 1117).price_per_unit);
+  });
+
+  it("金額の表示は整数円（保存済みの小数も ¥1,117 と出す）", () => {
+    expect(formatHistoryYen(1117.23)).toBe("¥1,117");
+    expect(formatHistoryYen(1117.5)).toBe("¥1,118");
+    expect(formatHistoryYen(null)).toBeNull();
+    expect(formatHomeYen(1117.23)).toBe("¥1,117");
+    expect(formatHomeYen(1117.5)).toBe("¥1,118");
   });
 });

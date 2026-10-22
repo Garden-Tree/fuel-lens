@@ -16,7 +16,7 @@ function CustomCostTooltip({ active, payload, label }: MonthlyCostTooltipProps) 
     return (
       <div className={CHART_TOOLTIP_CLASS}>
         <p className="num text-xs text-sub">{label}</p>
-        <p className="num mt-0.5 text-xl font-bold text-money">¥{payload[0].value.toLocaleString()}</p>
+        <p className="num mt-0.5 text-xl font-bold text-money">¥{Math.round(payload[0].value).toLocaleString("ja-JP")}</p>
       </div>
     );
   }

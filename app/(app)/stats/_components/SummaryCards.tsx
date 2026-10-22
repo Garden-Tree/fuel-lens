@@ -84,7 +84,7 @@ export function CostSummary({ summary, className = "" }: { summary: StatsSummary
   return (
     <Section title="費用" className={className}>
       <GroupedList>
-        <ValueRow label="給油代の合計" value={`¥${summary.totalCost.toLocaleString()}`} tone="money" />
+        <ValueRow label="給油代の合計" value={`¥${Math.round(summary.totalCost).toLocaleString("ja-JP")}`} tone="money" />
         <ValueRow label="1kmあたり" value={summary.costPerKm != null ? `¥${summary.costPerKm.toFixed(1)}` : "--"} />
         <ValueRow
           label="平均単価"
