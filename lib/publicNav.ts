@@ -5,6 +5,7 @@ export const PUBLIC_TOOL_LINKS = [
   { href: "/annual-gas-cost", label: "年間ガソリン代" },
   { href: "/fuel-convert", label: "燃費の単位換算" },
   { href: "/expense", label: "経費のガソリン代記録" },
+  { href: "/fuelio", label: "Fuelio からの乗り換え" },
 ] as const;
 
 export function otherToolLinks(currentPath: string) {
