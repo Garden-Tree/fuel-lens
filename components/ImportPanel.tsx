@@ -3,6 +3,7 @@
 import { useMemo, useRef, useState, type ChangeEvent } from "react";
 import { Bike, Car, FileInput, FileSpreadsheet, Loader2 } from "lucide-react";
 
+import ImportNextStepCard, { type ImportNextStepCardProps } from "@/components/ImportNextStepCard";
 import RestoreCounts from "@/components/RestoreCounts";
 import {
   inputClass,
@@ -146,6 +147,8 @@ export default function ImportPanel({
     toast,
     onDone,
   });
+  // 取り込み成功（記録を 1 件以上追加）の後に出す「次の給油」の案内。失敗時・0 件のときは null
+  const [nextStep, setNextStep] = useState<Omit<ImportNextStepCardProps, "onDismiss"> | null>(null);
   const [vehicleName, setVehicleName] = useState("");
   const [vehicleType, setVehicleType] = useState<VehicleType>("car");
 
@@ -171,6 +174,7 @@ export default function ImportPanel({
     if (!file || importDisabled) return;
 
     setPending(null);
+    setNextStep(null);
     if (file.size > BACKUP_MAX_TEXT_LENGTH) {
       toast("ファイルが大きすぎます。", { type: "error" });
       return;
@@ -237,6 +241,9 @@ export default function ImportPanel({
   const handleImport = async () => {
     if (!pending || !preview || importDisabled || nameError) return;
     const { counts } = preview.plan;
+    const existingTarget = findVehicleByName(vehicles, vehicleName);
+    const appendsToTripVehicle =
+      !!existingTarget && existingTarget.type === vehicleType && existingTarget.distance_mode !== "odometer";
     const ok = await confirm(
       `車両 ${counts.vehiclesNew} 台と記録 ${counts.recordsNew} 件を追加します。\n既存の記録は削除・変更されません。`,
       { title: "CSV から取り込み", confirmLabel: "取り込む" }
@@ -245,7 +252,14 @@ export default function ImportPanel({
 
     // 成功・失敗とも古い計画は破棄する（失敗時は途中まで追加済みの可能性があるため。
     // もう一度ファイルを選ぶと、追加済みの分は重複としてスキップされ、残りだけが計画される）
-    await runRestore({ backup: preview.backup, kind: "import", onSettled: () => setPending(null) });
+    const result = await runRestore({ backup: preview.backup, kind: "import", onSettled: () => setPending(null) });
+    if (result && result.recordsAdded > 0) {
+      // Fuelio の取り込み先はオドメーター入力方式（既存のトリップ入力方式の車両へ追加する場合を除く）。
+      // FuelLens の CSV は方式が分からないので汎用の文言にする
+      const odometerMode =
+        pending.source.kind === "fuelio" && !appendsToTripVehicle;
+      setNextStep({ recordsAdded: result.recordsAdded, vehiclesAdded: result.vehiclesAdded, odometerMode });
+    }
   };
 
   const source = pending?.source;
@@ -428,6 +442,7 @@ export default function ImportPanel({
         )}
       </GroupedList>
       <p className={noticeClass}>取り込みは追記のみで既存の記録は削除しません。同じ記録はスキップします。</p>
+      {nextStep && <ImportNextStepCard {...nextStep} onDismiss={() => setNextStep(null)} />}
       {readOnly && (
         <p role="status" className="px-4 text-[11px] text-warn">
           閲覧専用（クラウド接続待ち）のため取り込めません
