@@ -1,0 +1,13 @@
+"## Vehicle"
+"Name","Description","DistUnit","FuelUnit","ConsumptionUnit","ImportCSVDateFormat","VIN","Insurance","Plate","Make","Model","Year","TankCount","Tank1Type","Tank2Type","Active","Tank1Capacity","Tank2Capacity","FuelUnitTank2","FuelConsumptionTank2","guid","lastupdated"
+"Prius","","0","0","3","yyyy-MM-dd","","","","Toyota","Prius","2019","0","1","0","1.0","43","0","0","0","guid-car","0"
+
+"## Log"
+"Data","Odo (km)","Fuel (litres)","Full","Price (optional)","km/l (optional)","latitude (optional)","longitude (optional)","City (optional)","Notes (optional)","Missed","TankNumber","FuelType","VolumePrice","StationID (optional)","ExcludeDistance","UniqueId","TankCalc","Weather","guid","lastupdated"
+"2026-08-09","48210.0","36.40","1","6370","","0.0","0.0","Nerima","","0","1","0","175","0","0.0","2001","0.0","0","g2001","0"
+"## CostCategories"
+"CostTypeID","Name","priority","color","guid","lastupdated"
+"1","Service","0","0","g","0"
+"## Costs"
+"CostTitle","Date","Odo","CostTypeID","Notes","Cost"
+"Oil","2026-05-01","13000","1","","3000"
