@@ -53,26 +53,13 @@ export const FUELIO_COLUMN_MAPPINGS: readonly FuelioColumnMapping[] = [
   { fuelio: "City", fuellens: "店舗名" },
 ];
 
-/** ページの FAQ と JSON-LD の FAQPage で共有する。AI の読み取りの可否はお試しの有無で変わる */
+/**
+ * ページの FAQ と JSON-LD の FAQPage で共有する。本文（書き出し・取り込み・取り込まれる内容・重複と既存データ）で答えていることは載せない。
+ * AI の読み取りの可否はお試しの有無で変わる。
+ */
 export function fuelioFaqs(trialEnabled: boolean): FaqEntry[] {
   const ai = aiAvailabilityCopy(trialEnabled);
   return [
-    {
-      q: "取り込むと Fuelio のデータは消えますか？",
-      a: "いいえ。FuelLens は Fuelio のアプリやデータには触れません。選んだ CSV ファイルを読み込むだけなので、Fuelio 側の記録はそのまま残ります。",
-    },
-    {
-      q: "同じ CSV を何度取り込んでも重複しませんか？",
-      a: "重複しません。同じ記録（同じ ID、または同じ車両・同じ日付・ほぼ同じ給油量・同じ支払総額）は取り込み時にスキップされます。取り込みは追記のみで、FuelLens にある既存の記録は削除も上書きもされません。",
-    },
-    {
-      q: "ログインしないと取り込めませんか？",
-      a: "ログインなしでも取り込めます。その場合はこのブラウザに保存されます。ログインしている場合はクラウドのデータへ追加されます。",
-    },
-    {
-      q: "マイルやガロンで記録していても取り込めますか？",
-      a: "いいえ。距離がマイル、給油量がリットル以外の CSV には対応していません。Fuelio の設定で km とリットルにしてから書き出してください。",
-    },
     {
       q: "無料で使えますか？",
       a: `はい、すべての基本機能を無料で使えます${ai.faqFreeNote}。手入力と記録の保存は登録なしでも使えます。`,

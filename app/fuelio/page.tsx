@@ -56,8 +56,7 @@ export default function FuelioPage() {
           <span className="mt-1 block text-lg text-sub">Fuelio の CSV を取り込んで、給油記録を引き継ぐ</span>
         </h1>
         <p className="mt-3 text-[15px] leading-7 text-sub">
-          FuelLens は、Fuelio で書き出した CSV を設定画面から取り込めます。これまでの給油記録を引き継いで、そのまま続きを記録できます。
-          取り込みは追記のみで、FuelLens にある既存の記録は消えません。
+          FuelLens は、Fuelio で書き出した CSV を設定画面から取り込めます。給油記録を引き継いで、そのまま続きを記録できます。
         </p>
         <p className="mt-2 text-xs leading-5 text-sub">
           FuelLens は Fuelio とは関係のない、別のサービスです。Fuelio の名称は、それぞれの権利者のものです。
@@ -67,16 +66,15 @@ export default function FuelioPage() {
           <section>
             <h2>Fuelio で CSV を書き出す</h2>
             <p>
-              Fuelio の公式ヘルプには、CSV の書き出しは「Settings / Backup / Export CSV」から行うと案内されています。
-              書き出したファイルは、端末の Fuelio フォルダの中の <span className="num">backup-csv</span> フォルダに保存されると書かれています。
-              メニューの名前や場所はアプリのバージョンや言語で異なることがあるので、詳しくは
+              Fuelio の公式ヘルプでは、CSV の書き出しは「Settings / Backup / Export CSV」からと案内されています。
+              メニューの名前はバージョンや言語で異なることがあるので、詳しくは
               <a href={FUELIO_HELP_URL} target="_blank" rel="noopener noreferrer" className={linkClass}>
                 Fuelio の公式ヘルプ
               </a>
               を確認してください。
             </p>
             <p>
-              距離はキロメートル（km）、給油量はリットル（L）で書き出してください。マイルやガロンの CSV には対応していません。
+              距離は km、給油量は L で書き出してください。マイルやガロンの CSV には対応していません。
             </p>
           </section>
 
@@ -90,22 +88,22 @@ export default function FuelioPage() {
                 画面の「インポート」にある「Fuelio の CSV を選ぶ」を押して、書き出した CSV ファイルを選びます。
               </li>
               <li>
-                取り込み先の車両名と種別（自動車・バイク）を確認します。Fuelio の車両名と、容量や車種名から推定した種別が入っているので、必要なら直せます。
-                名前と種別が同じ車両が FuelLens にすでにあれば、その車両に追加されます。
+                取り込み先の車両名と種別（自動車・バイク）を確認します。Fuelio の情報から推定した値が入っているので、必要なら直せます。
+                名前と種別が同じ車両がすでにあれば、その車両に追加されます。
               </li>
               <li>
-                追加される車両と記録の件数、注意書きを確認して「取り込む」を押します。確認のメッセージで「取り込む」を選ぶと追加されます。
+                件数と注意書きを確認して「取り込む」を押します。
               </li>
             </ol>
             <p className="mt-3">
-              ログインしなくても取り込めます。ログインなしのときはこのブラウザに、ログイン中はクラウドのデータに追加されます。
+              ログインなしでも取り込めます（このブラウザに保存。ログイン中はクラウドのデータに追加）。
               ファイルの大きさは <span className="num">{FUELIO_MAX_FILE_MB}</span> MB まで、記録は <span className="num">{FUELIO_MAX_RECORDS_TEXT}</span> 件までです。
             </p>
           </section>
 
           <section>
             <h2>取り込まれる内容</h2>
-            <p>Fuelio の CSV のうち、車両の情報（1 台目）と給油記録（Log）を読み込みます。列は次のように対応します。</p>
+            <p>Fuelio の CSV のうち、車両の情報（1 台目）と給油記録（Log）を読み込みます。</p>
             <div className="mt-3 overflow-x-auto rounded-2xl border border-line bg-surface">
               <table className="w-full border-collapse text-left text-sm">
                 <caption className="sr-only">Fuelio の列と FuelLens の項目の対応</caption>
@@ -130,50 +128,43 @@ export default function FuelioPage() {
             </div>
             <ul className="mt-3">
               <li>
-                <strong>車両はオドメーター方式で作られます。</strong>積算距離を入力する方式の車両です。ただし、すでにある車両に追加するときは、その車両の設定のままです。
-                トリップ入力方式の車両に追加した場合は、取り込んだ記録の区間距離と燃費は計算されません。
+                <strong>車両はオドメーター方式で作られます。</strong>すでにある車両に追加するときは、その車両の設定のままです。
+                トリップ入力方式の車両に追加した記録は、区間距離と燃費が計算されません。
               </li>
               <li>
-                <strong>燃費は積算距離の差から計算し直します。</strong>Fuelio に入っていた燃費の値は使わず、満タン法で求めます。部分給油は次の満タン給油でまとめて計算します。
-                最初の 1 件は前回の積算距離がないので、走行距離と燃費は出ません。
+                <strong>燃費は積算距離の差から計算し直します。</strong>Fuelio の燃費の値は使わず、満タン法で求めます。部分給油は次の満タン給油でまとめて計算します。
+                最初の 1 件、記録漏れ（Missed）の給油、積算距離が前回以下の記録は燃費が出ません。
               </li>
               <li>
-                <strong>燃料タンクが 2 つある車両は、1 本目のタンクの記録だけを取り込みます。</strong>2 本目以降のタンクの記録は対象外です。
+                <strong>対象外のデータ。</strong>タンクが 2 つある車両は 1 本目の記録だけです。日付や給油量・金額が読めない行と、その他の費用の記録は取り込みません。
               </li>
-              <li>日付が読めない行と、給油量も金額も読めない行は読み飛ばします。</li>
-              <li>記録漏れ（Missed）の給油と、積算距離が前回以下の記録は、走行距離と燃費が出ません。</li>
-              <li>給油の記録だけが対象です。Fuelio のその他の費用などの記録は取り込みません。</li>
             </ul>
-            <p className="mt-3">
-              取り込みの前に、車両・記録の件数と上のような注意書きが画面に出ます。内容を確かめてから取り込めます。
-            </p>
           </section>
 
           <section>
             <h2>重複と既存データの扱い</h2>
-            <p>
-              取り込みは追記のみです。FuelLens にある記録を削除したり上書きしたりしません。
-              同じ記録（同じ ID、または同じ車両・同じ日付・ほぼ同じ給油量・同じ支払総額）は取り込み時にスキップされるので、同じ CSV をもう一度選んでも二重には増えません。
-            </p>
-            <p>
-              同じ日に同じ給油量と金額の別の給油が FuelLens にすでにあるときは、同じ記録とみなしてスキップされます。
-            </p>
+            <ul>
+              <li>
+                <strong>追記のみ。</strong>FuelLens にある記録は削除も上書きもされません。Fuelio 側の記録にも触れないので、そのまま残ります。
+              </li>
+              <li>
+                <strong>同じ記録はスキップ。</strong>同じ ID、または同じ車両・日付・ほぼ同じ給油量・同じ支払総額の記録はスキップされるので、同じ CSV をもう一度選んでも二重には増えません。
+                同じ日に同じ給油量と金額の別の給油があるときも、同じ記録とみなされます。
+              </li>
+            </ul>
           </section>
 
           <section>
             <h2>乗り換えたあとにできること</h2>
             <ul>
               <li>
-                <strong>写真で記録。</strong>レシートとトリップメーターが写った写真を撮ると、AI が給油量・金額・区間距離などを読み取ります。読み取った値は保存前に確認して直せます。
+                <strong>写真で記録。</strong>レシートとトリップメーターの写真から、AI が給油量・金額・区間距離などを読み取ります。
               </li>
               <li>
-                <strong>統計とグラフ。</strong>燃費の推移や月ごとの給油代を、アプリの統計画面で見られます。
+                <strong>統計とグラフ。</strong>燃費の推移や月ごとの給油代を統計画面で見られます。
               </li>
               <li>
-                <strong>CSV の書き出し。</strong>記録は設定画面や履歴画面から CSV で書き出せます。
-              </li>
-              <li>
-                <strong>複数の車両。</strong>車とバイクを何台でも登録して、車両ごとに記録できます。
+                <strong>複数の車両。</strong>車とバイクを何台でも登録できます。
               </li>
             </ul>
           </section>

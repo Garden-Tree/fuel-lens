@@ -16,9 +16,9 @@ describe("/expense", () => {
     expect(items).toEqual([...RECORDS_CSV_HEADERS]);
   });
 
-  it("FAQ を 6 問表示し、国税庁へのリンクと関連ページを出す", () => {
+  it("FAQ を 2 問表示し、国税庁へのリンクと関連ページを出す", () => {
     render(<ExpensePage />);
-    expect(screen.getAllByRole("term")).toHaveLength(6);
+    expect(screen.getAllByRole("term")).toHaveLength(2);
     expect(screen.getByRole("link", { name: "国税庁" })).toHaveAttribute("href", "https://www.nta.go.jp/");
     const nav = screen.getByRole("navigation", { name: "関連ページ" });
     const hrefs = within(nav).getAllByRole("link").map((a) => a.getAttribute("href"));

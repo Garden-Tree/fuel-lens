@@ -97,25 +97,8 @@ export default function CalcPage() {
               <li>
                 <strong>満タンにしたらトリップメーターを 0 にリセットする。</strong>次の給油のときの表示が、そのまま区間距離になります。
               </li>
-              <li>
-                <strong>部分給油は次の満タンまで合算する。</strong>途中で満タンにしなかったときは、次に満タンにするまでの距離と給油量をすべて足してから割ります。
-              </li>
             </ul>
             <p className="mt-3 text-sm text-sub">1 回ごとの値はぶれやすいので、数回分を記録して平均を見ると傾向がつかめます。</p>
-          </section>
-
-          <section>
-            <h2>よくある間違い</h2>
-            <ul>
-              <li>
-                <strong>走行距離にオドメーターの値を入れてしまう。</strong>
-                オドメーターは新車からの積算距離です。前回の満タン給油からの区間距離（トリップメーター、または前回とのオドメーターの差）を使います。
-              </li>
-              <li>
-                <strong>部分給油の量だけで割ってしまう。</strong>
-                満タンでない給油の量は走った分より少ないため、燃費が実際より高く出ます。満タンにするまで合算してから計算します。
-              </li>
-            </ul>
           </section>
 
           <section aria-labelledby="calc-cta" className="rounded-hero border border-accent/40 bg-surface p-5 sm:p-6">

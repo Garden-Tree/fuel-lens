@@ -17,9 +17,9 @@ describe("/fuelio", () => {
     expect(within(table).getByRole("rowheader", { name: "Odo" })).toBeInTheDocument();
   });
 
-  it("FAQ を 6 問表示し、Fuelio 公式ヘルプへの下線つきリンクと関連ページを出す", () => {
+  it("FAQ を 2 問表示し、Fuelio 公式ヘルプへの下線つきリンクと関連ページを出す", () => {
     render(<FuelioPage />);
-    expect(screen.getAllByRole("term")).toHaveLength(6);
+    expect(screen.getAllByRole("term")).toHaveLength(2);
     const help = screen.getByRole("link", { name: "Fuelio の公式ヘルプ" });
     expect(help).toHaveAttribute("href", FUELIO_HELP_URL);
     expect(help.className).toContain("underline");

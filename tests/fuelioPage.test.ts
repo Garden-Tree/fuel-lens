@@ -48,8 +48,8 @@ describe("fuelioPage の定数", () => {
 });
 
 describe("fuelioFaqs", () => {
-  it("6 問で、無料の答えはお試しの有無で landingPage と同じ注記を使う", () => {
-    expect(fuelioFaqs(true)).toHaveLength(6);
+  it("2 問で、無料の答えはお試しの有無で landingPage と同じ注記を使う", () => {
+    expect(fuelioFaqs(true).map((f) => f.q)).toEqual(["無料で使えますか？", "iPhone でも使えますか？"]);
     expect(fuelioFaqs(true).find((f) => f.q.includes("無料"))?.a).toContain(aiAvailabilityCopy(true).faqFreeNote);
     expect(fuelioFaqs(false).find((f) => f.q.includes("無料"))?.a).toContain(aiAvailabilityCopy(false).faqFreeNote);
   });
@@ -61,7 +61,7 @@ describe("buildFuelioJsonLd", () => {
     const data = JSON.parse(buildFuelioJsonLd(faqs));
     expect(data["@graph"].map((n: { "@type": string }) => n["@type"])).toEqual(["WebPage", "FAQPage"]);
     expect(data["@graph"][0].url).toBe(FUELIO_CANONICAL_URL);
-    expect(data["@graph"][1].mainEntity).toHaveLength(6);
+    expect(data["@graph"][1].mainEntity).toHaveLength(faqs.length);
   });
 
   it("< をエスケープして </script> で閉じられないようにする", () => {

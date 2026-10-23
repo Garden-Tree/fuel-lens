@@ -78,14 +78,6 @@ export default function FuelConvertPage() {
               米ガロンは <span className="num">{US_GALLON_L}</span> L、英ガロンは <span className="num">{UK_GALLON_L}</span> L、1 マイルは{" "}
               <span className="num">{MILE_KM}</span> km です。ガロンの大きさが米英で違うため、同じ燃費でも mpg (US) と mpg (UK) の数値は変わります。
             </p>
-            <ul className="mt-3">
-              <li>
-                <strong>km/L と mpg は大きいほど良い。</strong>1 単位の燃料で走れる距離を表すので、数値が大きいほど燃費がよいです。
-              </li>
-              <li>
-                <strong>L/100km は少ないほど良い。</strong>100km 走るのに使う燃料の量を表すので、数値が小さいほど燃費がよいです。
-              </li>
-            </ul>
           </section>
 
           <section>

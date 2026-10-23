@@ -51,7 +51,6 @@ export default function AnnualGasCostPage() {
         <p className="mt-2 text-[15px] leading-7 text-sub">
           走行距離、または通勤の片道距離と出勤日数から、1 か月と 1 年のガソリン代を計算します。
           月間の給油量や 1km あたりの金額も出せます。登録は不要で、入力した値は保存されません。
-          年額は、今のガソリン単価が 1 年続いた場合の目安です。
         </p>
 
         <div className="mt-6">
@@ -68,7 +67,6 @@ export default function AnnualGasCostPage() {
             </div>
             <p className="mt-3">
               通勤以外は、月間の走行距離をそのまま使います。年間の走行距離がわかっている場合は 12 で割れば月間になります。
-              ガソリン単価は時期によって変わるため、年額は「今の単価が続いた場合」の目安として見てください。
             </p>
           </section>
 

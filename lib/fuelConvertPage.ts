@@ -144,16 +144,8 @@ export function buildQuickTable(): { kmpl: number; l100km: string; mpgUs: string
   }));
 }
 
-/** ページの FAQ と JSON-LD の FAQPage で共有する */
+/** ページの FAQ と JSON-LD の FAQPage で共有する。換算の式と早見表は本文にあるので載せない */
 export const FUEL_CONVERT_FAQS: FaqEntry[] = [
-  {
-    q: "km/L を L/100km に換算するには？",
-    a: "L/100km = 100 ÷ km/L で求めます。たとえば 15 km/L は 100 ÷ 15 ≒ 6.67 L/100km です。逆に L/100km から km/L にするときも 100 ÷ L/100km で、同じ式になります。",
-  },
-  {
-    q: "km/L を mpg に換算するには？",
-    a: "米国の mpg (US) は km/L × 3.785411784 ÷ 1.609344（≒ km/L × 2.352）、英国の mpg (UK) は km/L × 4.54609 ÷ 1.609344（≒ km/L × 2.825）で求めます。15 km/L は約 35.28 mpg (US)、約 42.37 mpg (UK) です。ガロンの大きさが米英で違うため、同じ燃費でも数値が変わります。",
-  },
   {
     q: "L/100km は小さいほどよいのですか？",
     a: "はい。L/100km は 100km 走るのに必要なガソリンの量なので、小さいほど燃費がよいことを表します。km/L と mpg は 1 単位の燃料で走れる距離なので、大きいほど燃費がよいことを表します。",
