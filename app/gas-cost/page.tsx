@@ -100,46 +100,9 @@ export default function GasCostPage() {
               </table>
             </div>
             <p className="mt-2 text-xs text-sub">
-              単価 <span className="num">{EXAMPLE_PRICE}</span> 円/L の場合の金額です（1 円未満は四捨五入）。単価が違うときは上の計算機で計算してください。
-              往復の場合は、距離を 2 倍にした行を見てください。
+              単価 <span className="num">{EXAMPLE_PRICE}</span> 円/L の場合の金額です（1 円未満は四捨五入）。この単価は計算の説明のための値で、実際の単価は時期や地域、スタンドによって変わります。
+              単価が違うときは上のツールで計算してください。
             </p>
-          </section>
-
-          <section>
-            <h2>距離からガソリン代を出す手順</h2>
-            <ol>
-              <li>地図アプリで目的地までの走行距離（km）を調べます。往復なら片道の距離を 2 倍にします（ツールの「往復」でも同じです）。</li>
-              <li>
-                自分の車の燃費（km/L）を確かめます。実燃費は
-                <Link href="/calc" className="text-accent underline underline-offset-2 hover:no-underline">
-                  満タン法 燃費計算ツール
-                </Link>
-                で測れます。
-              </li>
-              <li>給油するスタンドのガソリン単価（円/L）を確認します。</li>
-              <li>距離・燃費・単価を上のツールに入力すると、ガソリン代がすぐに出ます。</li>
-            </ol>
-          </section>
-
-          <section>
-            <h2>よくある使い方</h2>
-            <ul>
-              <li>
-                <strong>帰省・旅行の往復。</strong>片道の距離を入れて「往復」を選ぶと、2 倍にして計算します。
-              </li>
-              <li>
-                <strong>通勤の月額。</strong>片道の距離 × 2 × 出勤日数で月の走行距離を出して計算します。たとえば片道{" "}
-                <span className="num">{COMMUTE_EXAMPLE.oneWayKm}</span> km、燃費 <span className="num">{COMMUTE_EXAMPLE.efficiency}</span> km/L、
-                単価 <span className="num">{EXAMPLE_PRICE}</span> 円/L（例）なら、1 日 <span className="num">{commute.perDay}</span> 円、
-                月 <span className="num">{COMMUTE_EXAMPLE.days}</span> 日出勤で <span className="num">{commute.perMonth}</span> 円です。
-              </li>
-              <li>
-                <strong>割り勘。</strong>人数を入れると、ガソリン代を人数で割った 1 人あたりの金額が出ます。
-              </li>
-              <li>
-                <strong>業務の交通費精算。</strong>1km あたりのガソリン代（単価 ÷ 燃費）を出せるので、走行距離にかけて 1 回あたりの目安を求められます。
-              </li>
-            </ul>
           </section>
 
           <section>
@@ -154,22 +117,42 @@ export default function GasCostPage() {
               </p>
             </div>
             <p className="mt-3">
-              例の単価（<span className="num">170</span> 円/L）は計算の説明のための値です。実際の単価は時期や地域、スタンドによって変わります。
-              1km あたりのガソリン代（円/km）は、ガソリン単価 ÷ 燃費で求めます。上の例なら約 <span className="num">11.3</span> 円/km です。
+              1km あたりのガソリン代は、ガソリン単価 ÷ 燃費で求めます。上の例なら約 <span className="num">11.3</span> 円/km で、走行距離にかけると業務の交通費精算の目安にもなります。
             </p>
           </section>
 
           <section>
-            <h2>往復と割り勘</h2>
+            <h2>距離からガソリン代を出す手順</h2>
+            <ol>
+              <li>地図アプリで目的地までの走行距離（km）を調べます。</li>
+              <li>
+                自分の車の燃費（km/L）を確かめます。カタログ燃費より実燃費のほうが実際の金額に近くなります。実燃費は
+                <Link href="/calc" className="text-accent underline underline-offset-2 hover:no-underline">
+                  満タン法 燃費計算ツール
+                </Link>
+                で測れます。
+              </li>
+              <li>給油するスタンドのガソリン単価（円/L）を確認します。同じ日でもスタンドによって価格は違います。</li>
+              <li>距離・燃費・単価を上のツールに入力すると、ガソリン代がすぐに出ます。</li>
+            </ol>
+          </section>
+
+          <section>
+            <h2>往復・割り勘・通勤の使い方</h2>
             <ul>
               <li>
-                <strong>往復は距離を 2 倍にする。</strong>「往復」を選ぶと、入力した片道の距離を 2 倍にして計算します。
+                <strong>往復。</strong>片道の距離を入れて「往復」を選ぶと、2 倍にして計算します。
               </li>
               <li>
-                <strong>割り勘はガソリン代を人数で割る。</strong>人数を 2 人以上にすると、1 人あたりの金額を出します（1 円未満は切り上げ）。
+                <strong>割り勘。</strong>人数を 2 人以上にすると、ガソリン代を人数で割った 1 人あたりの金額が出ます（1 円未満は切り上げ）。
+              </li>
+              <li>
+                <strong>通勤の月額。</strong>片道の距離 × 2 × 出勤日数で月の走行距離を出して計算します。たとえば片道{" "}
+                <span className="num">{COMMUTE_EXAMPLE.oneWayKm}</span> km、燃費 <span className="num">{COMMUTE_EXAMPLE.efficiency}</span> km/L、
+                単価 <span className="num">{EXAMPLE_PRICE}</span> 円/L（例）なら、1 日 <span className="num">{commute.perDay}</span> 円、
+                月 <span className="num">{COMMUTE_EXAMPLE.days}</span> 日出勤で <span className="num">{commute.perMonth}</span> 円です。
               </li>
             </ul>
-            <p className="mt-3 text-sm text-sub">高速料金や駐車場代は含みません。必要に応じて別に足してください。</p>
             <p className="mt-3 text-sm text-sub">
               月額・年額を出すなら{" "}
               <Link href="/annual-gas-cost" className="text-accent underline underline-offset-2 hover:no-underline">
@@ -181,25 +164,6 @@ export default function GasCostPage() {
               </Link>
               で km/L にそろえてください。
             </p>
-          </section>
-
-          <section>
-            <h2>正確に出すコツ</h2>
-            <ul>
-              <li>
-                <strong>カタログ燃費より実燃費を使う。</strong>
-                実際の走り方での燃費（実燃費）は、カタログ燃費と異なることが多いです。自分の車の燃費を満タン法で測っておくと、より正確に見積もれます。
-                測り方は
-                <Link href="/calc" className="text-accent underline underline-offset-2 hover:no-underline">
-                  満タン法 燃費計算ツール
-                </Link>
-                で解説しています。
-              </li>
-              <li>
-                <strong>単価は給油するスタンドの価格を入れる。</strong>
-                同じ日でもスタンドによって単価は違います。給油する予定のスタンドの 1L あたりの価格を使います。
-              </li>
-            </ul>
           </section>
 
           <section aria-labelledby="gas-cost-cta" className="rounded-hero border border-accent/40 bg-surface p-5 sm:p-6">

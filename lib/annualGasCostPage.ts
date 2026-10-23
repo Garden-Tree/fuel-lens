@@ -159,18 +159,8 @@ export function commuteExample(): { monthlyKm: string; monthly: string; yearly: 
   return { monthlyKm: r.monthlyDistance ?? "", monthly: r.monthlyCost ?? "", yearly: r.yearlyCost ?? "" };
 }
 
-const faqExample = exampleMonthlyAndYearly(1000, 15);
-
-/** ページの FAQ と JSON-LD の FAQPage で共有する */
+/** ページの FAQ と JSON-LD の FAQPage で共有する。本文（計算式・早見表・通勤の例）で答えていることは載せない */
 export const ANNUAL_GAS_COST_FAQS: FaqEntry[] = [
-  {
-    q: "年間のガソリン代はどうやって計算しますか？",
-    a: `1 か月のガソリン代（月間走行距離 ÷ 燃費 × ガソリン単価）を 12 倍して求めます。年間の走行距離がわかっているときは、その距離で同じ式に当てはめても同じ結果になります。たとえば月 1,000 km を燃費 15 km/L で走り、単価が ${EXAMPLE_PRICE} 円/L（例）なら、月 ${faqExample.monthly} 円、年 ${faqExample.yearly} 円です。`,
-  },
-  {
-    q: "通勤のガソリン代はどう計算しますか？",
-    a: "片道の距離 × 2 × 月の出勤日数で月間の走行距離を出し、あとは同じ式で計算します。このツールの「通勤から」に片道の距離と出勤日数を入れると、月額と年額が出ます。通勤の途中の寄り道や、休日の走行は含まれません。",
-  },
   {
     q: "年間の金額は今後も同じになりますか？",
     a: "ガソリン単価は時期によって変わるため、年額は「今の単価が続いた場合」の目安です。走行距離や燃費が変わっても金額は変わります。実際の燃費は FuelLens などで記録して確かめると、見積もりが正確になります。",

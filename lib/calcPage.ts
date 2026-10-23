@@ -94,12 +94,8 @@ export function calcRecordHref(input: CalcInput): string | null {
 
 export type FaqEntry = { q: string; a: string };
 
-/** ページの FAQ と JSON-LD の FAQPage で共有する */
+/** ページの FAQ と JSON-LD の FAQPage で共有する。本文（満タン法・計算式・正しく測るコツ）で答えていることは載せない */
 export const CALC_FAQS: FaqEntry[] = [
-  {
-    q: "満タン法の燃費はどうやって計算しますか？",
-    a: "満タンまで給油したときにトリップメーターを 0 にし、次に満タンまで給油したときの走行距離を、そのときの給油量で割ります。燃費（km/L）= 区間距離（km）÷ 給油量（L）です。",
-  },
   {
     q: "走行距離にはオドメーターの数字を入れてもいいですか？",
     a: "いいえ。オドメーターは新車からの積算距離です。使うのは前回の満タン給油からの区間距離で、トリップメーターの値か、今回と前回のオドメーターの差を入力してください。",

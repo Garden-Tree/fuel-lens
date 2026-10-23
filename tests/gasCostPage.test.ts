@@ -182,24 +182,21 @@ describe("距離別の目安表", () => {
     expect(GAS_COST_DESCRIPTION.length).toBeLessThanOrEqual(125);
   });
 
-  it("FAQ の 300km の例と距離から計算する式は表と同じ値", () => {
-    const row300 = distanceCostTable().find((r) => r.distance === 300)!;
-    const faq300 = GAS_COST_FAQS.find((f) => f.q.startsWith("300km"))!;
-    expect(faq300.a).toContain(`${row300.costs[1]} 円`);
-    expect(faq300.a).toContain(row300.costs[0]);
-    expect(faq300.a).toContain(row300.costs[2]);
-    const formula = GAS_COST_FAQS.find((f) => f.q === "ガソリン代を距離から計算する式は？")!;
-    expect(formula.a).toContain("走行距離（km）÷ 燃費（km/L）× ガソリン単価（円/L）");
-    expect(formula.a).toContain(distanceCostTable().find((r) => r.distance === 180)!.costs[1]);
+  it("本文に書いている計算式の例（300km・15km/L・170円/L）は computeGasCost と一致する", () => {
+    const r = computeGasCost({ ...base, distance: "300", efficiency: "15", price: String(EXAMPLE_PRICE) });
+    expect(r.fuel).toBe("20.00");
+    expect(r.cost).toBe("3,400");
+    expect(r.costPerKm).toBe("11.3");
   });
 
   it("通勤の例は往復 × 日数で計算される", () => {
     expect(commuteExample()).toEqual({ perDay: "340", perMonth: "6,800" });
   });
 
-  it("FAQ の 100km の例は表と同じ値で、JSON-LD は < をエスケープする", () => {
-    const faq = GAS_COST_FAQS.find((f) => f.q.startsWith("100km"))!;
-    expect(faq.a).toContain(distanceCostTable().find((r) => r.distance === 100)!.costs[1]);
+  it("FAQ は本文で答えていない質問だけで、JSON-LD は < をエスケープする", () => {
+    expect(GAS_COST_FAQS.length).toBeGreaterThanOrEqual(1);
+    expect(GAS_COST_FAQS.length).toBeLessThanOrEqual(4);
+    expect(new Set(GAS_COST_FAQS.map((f) => f.q)).size).toBe(GAS_COST_FAQS.length);
     expect(buildGasCostJsonLd()).not.toContain("<");
     expect(() => JSON.parse(buildGasCostJsonLd())).not.toThrow();
   });

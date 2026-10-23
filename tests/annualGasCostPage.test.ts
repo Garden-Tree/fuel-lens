@@ -157,11 +157,8 @@ describe("定数・FAQ・JSON-LD", () => {
     expect(ANNUAL_GAS_COST_TITLE).toBe("年間ガソリン代");
   });
 
-  it("FAQ の例は早見表と同じ値", () => {
-    const cell = buildMonthlyTable().find((r) => r.distance === 1000)!.cells[1];
-    expect(ANNUAL_GAS_COST_FAQS).toHaveLength(3);
-    expect(ANNUAL_GAS_COST_FAQS[0].a).toContain(cell.monthly);
-    expect(ANNUAL_GAS_COST_FAQS[0].a).toContain(cell.yearly);
+  it("FAQ は本文と重ならない 1 問だけ", () => {
+    expect(ANNUAL_GAS_COST_FAQS.map((f) => f.q)).toEqual(["年間の金額は今後も同じになりますか？"]);
   });
 
   it("WebApplication と FAQPage を持つ JSON になり、< をエスケープする", () => {

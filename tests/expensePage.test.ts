@@ -5,7 +5,6 @@ import {
   APPORTION_EXAMPLE_TOTAL_KM,
   APPORTION_EXAMPLE_WORK_KM,
   EXPENSE_CANONICAL_URL,
-  EXPENSE_CSV_COLUMNS_TEXT,
   EXPENSE_DESCRIPTION,
   EXPENSE_PATH,
   EXPENSE_TITLE,
@@ -34,24 +33,20 @@ describe("expensePage の定数", () => {
     const csv = buildRecordsCsv([], {});
     const headerLine = csv.replace(/^﻿/, "").split("\n")[0];
     expect(headerLine.split(",")).toEqual([...RECORDS_CSV_HEADERS]);
-    expect(EXPENSE_CSV_COLUMNS_TEXT).toBe(RECORDS_CSV_HEADERS.join("・"));
     for (const col of ["日付", "店舗名", "支払総額(円)"]) expect(RECORDS_CSV_HEADERS).toContain(col);
   });
 });
 
 describe("expenseFaqs", () => {
-  it("6 問で、CSV の答えに列名が入る", () => {
+  it("本文と重ならない質問だけを持つ（2 問）", () => {
     for (const trial of [true, false]) {
-      const faqs = expenseFaqs(trial);
-      expect(faqs).toHaveLength(6);
-      const csvFaq = faqs.find((f) => f.q.includes("CSV"));
-      for (const col of RECORDS_CSV_HEADERS) expect(csvFaq?.a).toContain(col);
+      expect(expenseFaqs(trial).map((f) => f.q)).toEqual(["撮った写真は保存されますか？", "無料で使えますか？"]);
     }
   });
 
   it("無料の答えはお試しの有無で landingPage と同じ注記を使う", () => {
-    expect(expenseFaqs(true)[5].a).toContain(aiAvailabilityCopy(true).faqFreeNote);
-    expect(expenseFaqs(false)[5].a).toContain(aiAvailabilityCopy(false).faqFreeNote);
+    expect(expenseFaqs(true)[1].a).toContain(aiAvailabilityCopy(true).faqFreeNote);
+    expect(expenseFaqs(false)[1].a).toContain(aiAvailabilityCopy(false).faqFreeNote);
   });
 });
 
@@ -98,7 +93,7 @@ describe("buildExpenseJsonLd", () => {
     expect(types).toEqual(["WebPage", "WebApplication", "FAQPage"]);
     expect(data["@graph"][0].url).toBe(EXPENSE_CANONICAL_URL);
     const faqPage = data["@graph"][2];
-    expect(faqPage.mainEntity).toHaveLength(6);
+    expect(faqPage.mainEntity).toHaveLength(faqs.length);
     expect(faqPage.mainEntity[0]).toEqual({
       "@type": "Question",
       name: faqs[0].q,
