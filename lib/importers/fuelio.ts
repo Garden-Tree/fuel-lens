@@ -156,7 +156,8 @@ function isFalsyFlag(raw: string | undefined): boolean {
   return s === "0" || s === "0.0" || s === "false" || s === "no";
 }
 
-const round2 = (n: number) => Math.round(n * 100) / 100;
+/** 円は整数にする（単価 × 給油量が 1117.23 円のような端数になると、履歴・統計の金額表示に小数が出る） */
+const roundYen = (n: number) => Math.round(n);
 
 /**
  * Fuelio の FuelType 列を FuelType にする（番号の対応表は未確認のため推測しない。ファイル先頭のコメント参照）。
@@ -267,8 +268,10 @@ export function parseFuelioCsv(text: string): ParseFuelioResult {
     // Fuelio は金額が不明な行を 0 で書き出すので、補えなかった 0 は「不明」（null）にする
     let cost: number | null = price;
     if ((cost == null || cost === 0) && volumePrice != null && volumePrice > 0 && fuel != null && fuel > 0) {
-      cost = round2(volumePrice * fuel);
+      cost = roundYen(volumePrice * fuel);
     }
+    // Price 列にも小数が入ることがある（1117.23 など）。FuelLens は円のみなので整数円にする
+    if (cost != null) cost = roundYen(cost);
     if (cost === 0) cost = null;
     if ((fuel == null || fuel === 0) && (cost == null || cost === 0)) {
       skippedInvalid += 1;
