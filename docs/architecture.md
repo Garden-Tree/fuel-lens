@@ -472,6 +472,7 @@ FAQ（`CALC_FAQS`）はページと構造化データで共有し、`buildCalcJs
 `app/gas-cost/page.tsx` は `/calc` と同じ作りの公開ページ（「ガソリン代 計算」「ガソリン代 割り勘」などの検索からの入口）です。
 計算機 `app/gas-cost/_components/GasCostCalculator.tsx`（クライアント）は走行距離・燃費・ガソリン単価・片道 / 往復・任意の人数から、必要なガソリン量（距離 ÷ 燃費）・ガソリン代（ガソリン量 × 単価、1 円未満を四捨五入）・1km あたりのガソリン代（単価 ÷ 燃費）・割り勘の 1 人あたり（2 人以上のとき。ガソリン代 ÷ 人数を切り上げ）を出し、入力は保存しません。
 検証と計算は `lib/gasCostPage.ts` の `computeGasCost`（数値の読み取りは `parseDraftNumber`、丸めは表示のときだけ）。単価が 50〜400 円/L の範囲外、燃費が 100 km/L 超のときは注意を出します（50cc スクーターがあるので `/calc` の 60 km/L は使わない）。車種別の燃費の目安は載せず、燃費の欄から `/calc` へ案内します。
+「〇〇キロ走るといくら？」の検索に答えるため、距離別の目安表（`distanceCostTable`、10〜1000 km × 燃費 10 / 15 / 20 / 25 km/L、単価は `EXAMPLE_PRICE` = 170 円/L）を計算機の直後に置き、各行は `?km=` つきの `<a>`（`distanceLink`）で計算機へ飛びます。計算機はマウント後に `window.location.search` を `parseDistancePrefill`（表の距離だけを受け付ける）で読んで距離を入れるので、ページは静的のままです。タイトル・説明文は `GAS_COST_PAGE_TITLE` / `GAS_COST_DESCRIPTION`。
 FAQ（`GAS_COST_FAQS`）と構造化データ（`buildGasCostJsonLd`）は `/calc` と同じ形です。`/calc` の計算式の節・関連ページ、ランディングのフッターからリンクしています。テストは `tests/gasCostPage.test.ts` と `tests/components/GasCostCalculator.test.tsx`。
 
 ### 年間ガソリン代ページ（`/annual-gas-cost`）

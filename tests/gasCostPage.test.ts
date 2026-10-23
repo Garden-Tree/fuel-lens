@@ -1,5 +1,19 @@
 import { describe, expect, it } from "vitest";
-import { GAS_COST_FAQS, buildGasCostJsonLd, buildQuickTable, commuteExample, computeGasCost, type GasCostInput } from "@/lib/gasCostPage";
+import {
+  DISTANCE_TABLE_DISTANCES,
+  DISTANCE_TABLE_EFFICIENCIES,
+  EXAMPLE_PRICE,
+  GAS_COST_DESCRIPTION,
+  GAS_COST_FAQS,
+  GAS_COST_PAGE_TITLE,
+  buildGasCostJsonLd,
+  commuteExample,
+  computeGasCost,
+  distanceCostTable,
+  distanceLink,
+  parseDistancePrefill,
+  type GasCostInput,
+} from "@/lib/gasCostPage";
 
 const base: GasCostInput = { distance: "300", efficiency: "15", price: "170", people: "", roundTrip: false };
 
@@ -112,10 +126,11 @@ describe("buildGasCostJsonLd", () => {
   });
 });
 
-describe("早見表", () => {
+describe("距離別の目安表", () => {
   it("セルの値は computeGasCost と一致する", () => {
-    const table = buildQuickTable();
-    expect(table.map((r) => r.distance)).toEqual([50, 100, 200, 300, 500, 1000]);
+    const table = distanceCostTable();
+    expect(table.map((r) => r.distance)).toEqual([10, 14, 20, 30, 50, 100, 150, 180, 200, 300, 500, 1000]);
+    expect(EXAMPLE_PRICE).toBe(170);
     // 燃費 10 / 15 / 20 / 25 km/L の順
     const cell = (d: number, i: number) => table.find((r) => r.distance === d)!.costs[i];
     expect(cell(300, 1)).toBe("3,400");
@@ -123,6 +138,59 @@ describe("早見表", () => {
     expect(cell(100, 1)).toBe(computeGasCost({ ...base, distance: "100" }).cost);
     expect(cell(50, 3)).toBe(computeGasCost({ ...base, distance: "50", efficiency: "25" }).cost);
     expect(cell(500, 2)).toBe(computeGasCost({ ...base, distance: "500", efficiency: "20" }).cost);
+    expect(cell(180, 1)).toBe("2,040");
+    expect(cell(14, 0)).toBe("238");
+  });
+
+  it("全セルが computeGasCost と一致する", () => {
+    for (const { distance, costs } of distanceCostTable()) {
+      expect(costs).toHaveLength(DISTANCE_TABLE_EFFICIENCIES.length);
+      costs.forEach((cost, i) => {
+        const expected = computeGasCost({
+          distance: String(distance),
+          efficiency: String(DISTANCE_TABLE_EFFICIENCIES[i]),
+          price: String(EXAMPLE_PRICE),
+          people: "",
+          roundTrip: false,
+        }).cost;
+        expect(cost).toBe(expected);
+      });
+    }
+  });
+
+  it("行のリンクは計算機への ?km= で、受け取れるのは表の距離だけ", () => {
+    expect(distanceLink(300)).toBe("/gas-cost?km=300#gas-cost-calculator");
+    for (const d of DISTANCE_TABLE_DISTANCES) {
+      expect(parseDistancePrefill(`?km=${d}`)).toBe(String(d));
+    }
+    expect(parseDistancePrefill("")).toBe("");
+    expect(parseDistancePrefill("?km=")).toBe("");
+    expect(parseDistancePrefill("?km=abc")).toBe("");
+    expect(parseDistancePrefill("?km=301")).toBe("");
+    expect(parseDistancePrefill("?km=-300")).toBe("");
+    expect(parseDistancePrefill("?km=300.0")).toBe("");
+    expect(parseDistancePrefill("?km=<script>")).toBe("");
+    expect(parseDistancePrefill("?other=300")).toBe("");
+  });
+
+  it("タイトルと説明文は「〇〇キロ走るといくら」に答える形で、長すぎない", () => {
+    expect(GAS_COST_PAGE_TITLE).toContain("ガソリン代計算");
+    expect(GAS_COST_PAGE_TITLE).toContain("300km");
+    expect(GAS_COST_PAGE_TITLE.endsWith("| FuelLens")).toBe(true);
+    expect(GAS_COST_DESCRIPTION).toContain("300キロ");
+    expect(GAS_COST_DESCRIPTION.length).toBeGreaterThanOrEqual(100);
+    expect(GAS_COST_DESCRIPTION.length).toBeLessThanOrEqual(125);
+  });
+
+  it("FAQ の 300km の例と距離から計算する式は表と同じ値", () => {
+    const row300 = distanceCostTable().find((r) => r.distance === 300)!;
+    const faq300 = GAS_COST_FAQS.find((f) => f.q.startsWith("300km"))!;
+    expect(faq300.a).toContain(`${row300.costs[1]} 円`);
+    expect(faq300.a).toContain(row300.costs[0]);
+    expect(faq300.a).toContain(row300.costs[2]);
+    const formula = GAS_COST_FAQS.find((f) => f.q === "ガソリン代を距離から計算する式は？")!;
+    expect(formula.a).toContain("走行距離（km）÷ 燃費（km/L）× ガソリン単価（円/L）");
+    expect(formula.a).toContain(distanceCostTable().find((r) => r.distance === 180)!.costs[1]);
   });
 
   it("通勤の例は往復 × 日数で計算される", () => {
@@ -131,7 +199,7 @@ describe("早見表", () => {
 
   it("FAQ の 100km の例は表と同じ値で、JSON-LD は < をエスケープする", () => {
     const faq = GAS_COST_FAQS.find((f) => f.q.startsWith("100km"))!;
-    expect(faq.a).toContain(buildQuickTable()[1].costs[1]);
+    expect(faq.a).toContain(distanceCostTable().find((r) => r.distance === 100)!.costs[1]);
     expect(buildGasCostJsonLd()).not.toContain("<");
     expect(() => JSON.parse(buildGasCostJsonLd())).not.toThrow();
   });

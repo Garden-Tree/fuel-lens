@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import GasCostCalculator from "@/app/gas-cost/_components/GasCostCalculator";
@@ -22,6 +22,20 @@ function resultValue(label: string): string {
 }
 
 describe("GasCostCalculator", () => {
+  afterEach(() => window.history.replaceState(null, "", "/"));
+
+  it("?km= が目安表の距離なら距離を入れておく", () => {
+    window.history.replaceState(null, "", "/gas-cost?km=180");
+    const { distance, efficiency } = setup();
+    expect(distance.value).toBe("180");
+    expect(efficiency.value).toBe("");
+  });
+
+  it("?km= が表にない値・不正な値なら入れない", () => {
+    window.history.replaceState(null, "", "/gas-cost?km=abc");
+    expect(setup().distance.value).toBe("");
+  });
+
   it("入力に合わせてガソリン代・ガソリン量・1km あたりを出し、往復で 2 倍にする", async () => {
     const { user, distance, efficiency, price } = setup();
     expect(resultValue("ガソリン代")).toBe("--");

@@ -7,6 +7,11 @@ import { parseDraftNumber } from "./recordDraft";
 import type { FaqEntry } from "./calcPage";
 
 export const GAS_COST_PATH = "/gas-cost";
+/** ページ内の計算機への移動先（距離別の目安表の各行からリンクする） */
+export const GAS_COST_CALCULATOR_ID = "gas-cost-calculator";
+export const GAS_COST_PAGE_TITLE = "ガソリン代計算ツール｜300km走るといくら？距離・燃費・単価から計算 | FuelLens";
+export const GAS_COST_DESCRIPTION =
+  "距離・燃費・ガソリン単価を入れるだけでガソリン代を計算。300キロ・180キロなど距離別の目安表つきで「〇〇キロ走るといくら？」がすぐわかります。往復・割り勘・1kmあたりの金額にも対応。登録不要・無料。";
 /** 構造化データの url に使う本番の絶対 URL（canonical は metadataBase からの相対 `/gas-cost`） */
 export const GAS_COST_CANONICAL_URL = "https://fuel-lens.gadelog.com/gas-cost";
 
@@ -121,11 +126,12 @@ export function computeGasCost(input: GasCostInput): GasCostResult {
   };
 }
 
-/** 早見表・FAQ の例に使う単価（円/L）。実際の単価ではなく計算の説明用 */
+/** 距離別の目安表・FAQ の例に使う単価（円/L）。実際の単価ではなく計算の説明用 */
 export const EXAMPLE_PRICE = 170;
-/** 早見表の行（距離 km）と列（燃費 km/L） */
-export const QUICK_TABLE_DISTANCES = [50, 100, 200, 300, 500, 1000] as const;
-export const QUICK_TABLE_EFFICIENCIES = [10, 15, 20, 25] as const;
+/** 距離別の目安表の行（距離 km）。検索されやすい距離を並べる */
+export const DISTANCE_TABLE_DISTANCES = [10, 14, 20, 30, 50, 100, 150, 180, 200, 300, 500, 1000] as const;
+/** 距離別の目安表の列（燃費 km/L） */
+export const DISTANCE_TABLE_EFFICIENCIES = [10, 15, 20, 25] as const;
 
 /** 例の単価でのガソリン代（表示用の文字列）。電卓と同じ computeGasCost で求めるので丸めも一致する */
 export function exampleCost(distanceKm: number, efficiencyKmPerL: number, roundTrip = false): string {
@@ -140,12 +146,26 @@ export function exampleCost(distanceKm: number, efficiencyKmPerL: number, roundT
   );
 }
 
-/** 早見表: 行ごとに距離と、燃費ごとのガソリン代（円）の表示文字列 */
-export function buildQuickTable(): { distance: number; costs: string[] }[] {
-  return QUICK_TABLE_DISTANCES.map((distance) => ({
+/** 距離別の目安表: 行ごとに距離と、燃費ごとのガソリン代（円）の表示文字列 */
+export function distanceCostTable(): { distance: number; costs: string[] }[] {
+  return DISTANCE_TABLE_DISTANCES.map((distance) => ({
     distance,
-    costs: QUICK_TABLE_EFFICIENCIES.map((eff) => exampleCost(distance, eff)),
+    costs: DISTANCE_TABLE_EFFICIENCIES.map((eff) => exampleCost(distance, eff)),
   }));
+}
+
+/** 目安表の行から計算機へ飛ぶリンク（距離を `?km=` で渡す） */
+export function distanceLink(distanceKm: number): string {
+  return `${GAS_COST_PATH}?km=${distanceKm}#${GAS_COST_CALCULATOR_ID}`;
+}
+
+/**
+ * 計算機の距離の初期値。`?km=` が目安表の距離のどれかと一致するときだけ受け取る（任意の文字列は入れない）。
+ * 該当しなければ空文字。
+ */
+export function parseDistancePrefill(search: string): string {
+  const km = new URLSearchParams(search).get("km");
+  return km !== null && (DISTANCE_TABLE_DISTANCES as readonly number[]).some((d) => String(d) === km) ? km : "";
 }
 
 /** 通勤の月額の例: 片道 15 km・燃費 15 km/L・月 20 日出勤 */
@@ -174,7 +194,15 @@ export const GAS_COST_FAQS: FaqEntry[] = [
   },
   {
     q: "100km 走るとガソリン代はいくらですか？",
-    a: `ガソリン代 = 100 ÷ 燃費（km/L）× 単価（円/L）です。たとえば燃費 15 km/L、単価 ${EXAMPLE_PRICE} 円/L（例）なら約 ${exampleCost(100, 15)} 円です。燃費と単価が違えば金額も変わるので、早見表やツールで確かめてください。`,
+    a: `ガソリン代 = 100 ÷ 燃費（km/L）× 単価（円/L）です。たとえば燃費 15 km/L、単価 ${EXAMPLE_PRICE} 円/L（例）なら約 ${exampleCost(100, 15)} 円です。燃費と単価が違えば金額も変わるので、距離別の目安表やツールで確かめてください。`,
+  },
+  {
+    q: "300km 走るとガソリン代はいくらですか？",
+    a: `燃費 15 km/L、単価 ${EXAMPLE_PRICE} 円/L（例）なら、300 ÷ 15 = 20 L、20 × ${EXAMPLE_PRICE} で ${exampleCost(300, 15)} 円です。燃費が 10 km/L なら約 ${exampleCost(300, 10)} 円、20 km/L なら約 ${exampleCost(300, 20)} 円と、燃費で大きく変わります。往復の場合は、片道 150 km で往復 300 km になるので同じ金額です。`,
+  },
+  {
+    q: "ガソリン代を距離から計算する式は？",
+    a: `ガソリン代（円）= 走行距離（km）÷ 燃費（km/L）× ガソリン単価（円/L）です。先に 1km あたりのガソリン代（単価 ÷ 燃費）を出して、走行距離をかけても同じ結果になります。たとえば単価 ${EXAMPLE_PRICE} 円/L、燃費 15 km/L なら 1km あたり約 11.3 円で、180 km なら約 ${exampleCost(180, 15)} 円です。`,
   },
   {
     q: "高速道路の料金も含まれますか？",
