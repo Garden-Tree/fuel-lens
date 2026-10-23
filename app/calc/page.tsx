@@ -10,9 +10,9 @@ import { isTrialEnabled } from "@/lib/server/analyze/trialCookie";
 
 // ログイン不要の燃費計算ページ（検索からの入口）。計算機だけクライアント部品で、説明と FAQ は静的に描画する。
 
-const TITLE = "満タン法 燃費計算ツール | FuelLens";
+const TITLE = "満タン法 計算ツール｜走行距離と給油量から燃費（km/L）を計算 | FuelLens";
 const DESCRIPTION =
-  "走行距離と給油量を入れるだけで、満タン法の燃費（km/L）をすぐに計算。支払総額からガソリン単価（円/L）と1kmあたりの燃料費も出せます。正しい測り方のコツやよくある間違いも解説。登録不要・無料。";
+  "満タン法の計算がすぐできます。走行距離と給油量を入れるだけで、燃費（km/L）を計算。支払総額からガソリン単価（円/L）と1kmあたりの燃料費も出せます。正しい測り方のコツやよくある間違いも解説。登録不要・無料。";
 
 export const metadata: Metadata = {
   title: { absolute: TITLE },

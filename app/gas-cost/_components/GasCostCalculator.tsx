@@ -1,10 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { useId, useState, type ReactNode } from "react";
+import { useEffect, useId, useState, type ReactNode } from "react";
 import { RotateCcw } from "lucide-react";
 import { SegmentedControl, type SegmentedOption } from "@/components/ui";
-import { computeGasCost, type GasCostField, type GasCostInput } from "@/lib/gasCostPage";
+import { computeGasCost, parseDistancePrefill, type GasCostField, type GasCostInput } from "@/lib/gasCostPage";
 
 const EMPTY: GasCostInput = { distance: "", efficiency: "", price: "", people: "", roundTrip: false };
 
@@ -57,6 +57,12 @@ const PEOPLE_FIELD: FieldDef = {
 export default function GasCostCalculator() {
   const [input, setInput] = useState<GasCostInput>(EMPTY);
   const baseId = useId();
+  // 距離別の目安表のリンク（`?km=300`）から来たときは、距離だけ入れておく。ページ自体は静的なので、マウント後に読む
+  useEffect(() => {
+    const km = parseDistancePrefill(window.location.search);
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- URL はサーバーで読めないため、マウント後に一度だけ反映する
+    if (km) setInput((prev) => (prev.distance === "" ? { ...prev, distance: km } : prev));
+  }, []);
   const result = computeGasCost(input);
   const isEmpty =
     input.distance === "" && input.efficiency === "" && input.price === "" && input.people === "" && !input.roundTrip;

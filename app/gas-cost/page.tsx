@@ -5,13 +5,17 @@ import { Camera, ChevronRight } from "lucide-react";
 import { PublicPageHeader } from "@/components/LegalPage";
 import {
   COMMUTE_EXAMPLE,
+  DISTANCE_TABLE_EFFICIENCIES,
   EXAMPLE_PRICE,
+  GAS_COST_CALCULATOR_ID,
+  GAS_COST_DESCRIPTION,
   GAS_COST_FAQS,
+  GAS_COST_PAGE_TITLE,
   GAS_COST_PATH,
-  QUICK_TABLE_EFFICIENCIES,
   buildGasCostJsonLd,
-  buildQuickTable,
   commuteExample,
+  distanceCostTable,
+  distanceLink,
 } from "@/lib/gasCostPage";
 import GasCostCalculator from "./_components/GasCostCalculator";
 import { aiAvailabilityCopy } from "@/lib/landingPage";
@@ -19,9 +23,8 @@ import { isTrialEnabled } from "@/lib/server/analyze/trialCookie";
 
 // ログイン不要のガソリン代計算ページ（検索からの入口）。計算機だけクライアント部品で、説明と FAQ は静的に描画する。
 
-const TITLE = "ガソリン代計算ツール（距離・燃費・単価／往復・割り勘対応）| FuelLens";
-const DESCRIPTION =
-  "走行距離・燃費・ガソリン単価を入れるだけで、必要なガソリン量とガソリン代をすぐに計算。往復の距離や割り勘の1人あたりの金額、1kmあたりのガソリン代も出せます。計算式と、見積もりを正確にするコツもわかりやすく解説。登録不要・無料。";
+const TITLE = GAS_COST_PAGE_TITLE;
+const DESCRIPTION = GAS_COST_DESCRIPTION;
 
 export const metadata: Metadata = {
   title: { absolute: TITLE },
@@ -38,7 +41,7 @@ export const metadata: Metadata = {
 };
 
 export default function GasCostPage() {
-  const quickTable = buildQuickTable();
+  const distanceTable = distanceCostTable();
   const commute = commuteExample();
   return (
     <div className="min-h-screen bg-ground font-sans text-ink">
@@ -51,23 +54,23 @@ export default function GasCostPage() {
           往復の距離や、割り勘したときの 1 人あたりの金額も出せます。登録は不要で、入力した値は保存されません。
         </p>
 
-        <div className="mt-6">
+        <div id={GAS_COST_CALCULATOR_ID} className="mt-6 scroll-mt-4">
           <GasCostCalculator />
         </div>
 
         <div className="mt-12 space-y-10 text-[15px] leading-7 text-ink/90 [&_h2]:mb-3 [&_h2]:text-lg [&_h2]:font-bold [&_h2]:text-ink [&_li]:mt-1.5 [&_ol]:list-decimal [&_ol]:pl-5 [&_p+p]:mt-2 [&_p+ul]:mt-2 [&_strong]:text-ink [&_ul]:list-disc [&_ul]:pl-5">
           <section>
-            <h2>距離と燃費ごとのガソリン代の目安</h2>
+            <h2>距離別のガソリン代の目安</h2>
             <p>
-              単価 <span className="num">{EXAMPLE_PRICE}</span> 円/L で計算した例です。実際の単価で計算するときは上のツールを使ってください。
+              「300 キロ走るといくら？」のように、距離ごとのガソリン代を燃費別にまとめました。距離をタップすると、その距離を入れた状態で上のツールが開きます。
             </p>
             <div className="mt-3 overflow-x-auto rounded-2xl border border-line bg-surface">
               <table className="w-full border-collapse text-right text-sm">
-                <caption className="sr-only">距離と燃費ごとのガソリン代（円）。単価 {EXAMPLE_PRICE} 円/L の例</caption>
+                <caption className="sr-only">距離別・燃費別のガソリン代（円）。単価 {EXAMPLE_PRICE} 円/L の例</caption>
                 <thead>
                   <tr className="border-b border-line text-sub">
                     <th scope="col" className="px-2.5 py-2.5 text-left font-medium">距離＼燃費</th>
-                    {QUICK_TABLE_EFFICIENCIES.map((eff) => (
+                    {DISTANCE_TABLE_EFFICIENCIES.map((eff) => (
                       <th key={eff} scope="col" className="whitespace-nowrap px-2.5 py-2.5 font-medium">
                         <span className="num">{eff}</span> km/L
                       </th>
@@ -75,13 +78,19 @@ export default function GasCostPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {quickTable.map(({ distance, costs }) => (
+                  {distanceTable.map(({ distance, costs }) => (
                     <tr key={distance} className="border-b border-line last:border-b-0">
                       <th scope="row" className="whitespace-nowrap px-2.5 py-2.5 text-left font-medium text-ink">
-                        <span className="num">{distance.toLocaleString("ja-JP")}</span> km
+                        {/* 同じページへの遷移で計算機を作り直して距離を反映させるため、next/link ではなく素の <a> を使う */}
+                        <a
+                          href={distanceLink(distance)}
+                          className="inline-flex min-h-8 items-center text-accent underline underline-offset-2 hover:no-underline"
+                        >
+                          <span className="num">{distance.toLocaleString("ja-JP")}</span>&nbsp;km
+                        </a>
                       </th>
                       {costs.map((cost, i) => (
-                        <td key={QUICK_TABLE_EFFICIENCIES[i]} className="whitespace-nowrap px-2.5 py-2.5">
+                        <td key={DISTANCE_TABLE_EFFICIENCIES[i]} className="whitespace-nowrap px-2.5 py-2.5">
                           <span className="num">{cost}</span> 円
                         </td>
                       ))}
@@ -90,7 +99,10 @@ export default function GasCostPage() {
                 </tbody>
               </table>
             </div>
-            <p className="mt-2 text-xs text-sub">1 円未満は四捨五入。往復の場合は、距離を 2 倍にした行を見てください。</p>
+            <p className="mt-2 text-xs text-sub">
+              単価 <span className="num">{EXAMPLE_PRICE}</span> 円/L の場合の金額です（1 円未満は四捨五入）。単価が違うときは上の計算機で計算してください。
+              往復の場合は、距離を 2 倍にした行を見てください。
+            </p>
           </section>
 
           <section>
