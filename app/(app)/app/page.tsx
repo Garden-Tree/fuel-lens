@@ -49,6 +49,8 @@ import TrialLoginPrompt from "./_components/TrialLoginPrompt";
 import TwoPhotoScanSheet from "./_components/TwoPhotoScanSheet";
 import BatchScanCard from "./_components/BatchScanCard";
 import TwoImageChoiceDialog from "./_components/TwoImageChoiceDialog";
+import AddToHomeScreenCard from "./_components/AddToHomeScreenCard";
+import { useAddToHomeScreen } from "@/lib/useAddToHomeScreen";
 
 const subscribeNothing = () => () => {};
 
@@ -65,6 +67,7 @@ const subscribeNothing = () => () => {};
  *   ちょうど 2 枚のときは TwoImageChoiceDialog で「レシートとメーターの組」か「2 件の一括読み取り」かを選ぶ
  * - useRecordEditing: 手動入力・最新記録の編集（重複確認付きの保存）
  * - RegisterScanActions: スキャンメニュー（AppShell）に撮影・アルバム・2 枚で撮る・手動入力の処理を登録する（メニューがタップの中で直接呼ぶ）
+ * - useAddToHomeScreen: 記録があるスマホのブラウザに一度だけ出す「ホーム画面に追加」の案内（AddToHomeScreenCard）
  * - ShortcutActionHandler（Suspense の内側）: `?action=` の PWA ショートカット・他の画面のスキャンメニュー・共有。
  *   撮影・アルバムで来たときは「撮影の準備ができました」の案内（ScanReadyPrompt）も出す（遷移後はファイル選択が開かないことがあるため）
  *
@@ -290,6 +293,9 @@ export default function Home() {
   const showScanPrompt = scanPrompt && availability.canScan && !access.locked;
   // お試しを使い切ったらログインを案内する（確認シートを開いている間は出さない）
   const showTrialPrompt = access.exhausted && !trialPromptDismissed && scan.scanResult === null;
+  // 「ホーム画面に追加」の案内（読み込み後・記録あり・スマホのブラウザ・未表示のときだけ）。編集・手動入力の間は出さない
+  const a2hs = useAddToHomeScreen(!isLoading && hasRecords);
+  const showA2hs = a2hs.visible && !editing.isEditing;
 
   const entrySection = (
     <Section title="記録する">
@@ -442,6 +448,9 @@ export default function Home() {
                   />
                 ) : (
                   <WelcomeCard distanceMode={distanceMode} />
+                )}
+                {showA2hs && a2hs.guide && (
+                  <AddToHomeScreenCard guide={a2hs.guide} onInstall={() => void a2hs.install()} onDismiss={a2hs.dismiss} />
                 )}
                 {hasRecords ? (
                   <MonthSummarySection records={records} vehicleName={selectedVehicle?.name} shareDisabled={previewing} />
