@@ -79,6 +79,8 @@ export function mergedRunNote(count: number): string {
 export const MISSED_PREVIOUS_DISTANCE_NOTE = "記録漏れのため区間距離は計算しません";
 /** オドメーターモードで、直前の記録漏れのために基準（前回のオドメーター）が無いとき */
 export const AFTER_MISSED_DISTANCE_NOTE = "記録漏れの直後のため区間は計算できません";
+/** オドメーターモードで、前回のオドメーターが無いとき（最初の 1 件など）。保存はでき、次の給油から区間と燃費が出る */
+export const FIRST_ODOMETER_DISTANCE_NOTE = "前回のオドメーターが無いため、区間距離と燃費は次回の給油から計算します";
 
 function numberToDraft(value: number | null | undefined): string {
   return value == null || !Number.isFinite(value) ? "" : String(value);

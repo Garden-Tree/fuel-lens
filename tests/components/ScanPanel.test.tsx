@@ -60,11 +60,15 @@ describe("ScanPanel", () => {
     expect(props.onSelectFile).toHaveBeenCalledWith(file);
   });
 
-  it("プレビュー中は「次を撮る」と閉じるボタンを出し、閉じると onClearPreview を呼ぶ", async () => {
+  it("プレビュー中は「次を撮る」「手動で入力」と閉じるボタンを出し、閉じると onClearPreview を呼ぶ", async () => {
     const { user, props } = setup({ preview: PREVIEW });
     expect(screen.getByRole("img", { name: "読み取る画像のプレビュー" })).toHaveAttribute("src", PREVIEW);
     expect(screen.getByRole("button", { name: /次を撮る/ })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /読み取る/ })).not.toBeInTheDocument();
+
+    // 読み取りに失敗したあと（プレビューは残る）も手入力に切り替えられる
+    await user.click(screen.getByRole("button", { name: /手動で入力/ }));
+    expect(props.onManualEntry).toHaveBeenCalledTimes(1);
 
     const click = vi.spyOn(screen.getByLabelText("カメラで撮影"), "click");
     await user.click(screen.getByRole("button", { name: /次を撮る/ }));

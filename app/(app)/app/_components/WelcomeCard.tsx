@@ -13,6 +13,10 @@ export default function WelcomeCard({ distanceMode }: { distanceMode: DistanceMo
         レシートと{distanceMode === "odometer" ? "オドメーター" : "トリップメーター"}
         を1枚に収めて撮影すると、AIが読み取って燃費を計算します。過去の記録は手動でも入力できます。
       </p>
+      {/* オドメーター方式は前回との差で区間を出すので、1 件目は燃費が出ない（保存はできる） */}
+      {distanceMode === "odometer" && (
+        <p className="max-w-[320px] text-xs text-sub">燃費は2回目の給油から表示されます。</p>
+      )}
     </section>
   );
 }
