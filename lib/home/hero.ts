@@ -61,6 +61,24 @@ export function heroDisplayOf(
   return fallback ? { display: fallback, skipped: record } : unchanged;
 }
 
+/** オドメーターモードの最初の記録（前回が無いので区間と燃費が出ない）の注記 */
+export const FIRST_RECORD_REASON = "初回の記録（次の給油から計算）";
+
+/**
+ * 燃費が null の理由。オドメーターを入れた最も古い満タン給油で区間が出ていなければ、前回が無いためなので
+ * 「区間不明」ではなく初回の記録と示す（それ以外は efficiencyNullReason）
+ */
+function nullReasonOf(record: FuelRecord, hasOlder: boolean): string | null {
+  const firstOdometerRecord =
+    !hasOlder &&
+    record.is_full !== false &&
+    record.missed_previous !== true &&
+    record.total_distance == null &&
+    typeof record.odometer === "number" &&
+    positive(record.fuel_amount);
+  return firstOdometerRecord ? FIRST_RECORD_REASON : efficiencyNullReason(record);
+}
+
 /**
  * ヒーローカードのモデル。
  * @param records 選択中の車両の記録（連鎖計算済み・日付の降順。useVehicleScope の records）
@@ -79,7 +97,7 @@ export function heroModelOf(records: ReadonlyArray<FuelRecord>, record: FuelReco
 
   return {
     efficiency,
-    nullReason: efficiency === null ? efficiencyNullReason(record) : null,
+    nullReason: efficiency === null ? nullReasonOf(record, index >= 0 && older.length > 0) : null,
     delta,
     average,
     scale,

@@ -127,7 +127,10 @@ describe("未ログインのお試し読み取り（ホーム）", () => {
     expect(within(prompt).getByRole("button", { name: /ログインして続ける/ })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /撮影する/ })).toBeDisabled();
     expect(screen.getByRole("button", { name: /アルバムから選ぶ/ })).toBeDisabled();
-    expect(screen.getByRole("button", { name: /手動で入力/ })).toBeEnabled();
+    // 手動入力は記録の入口と、失敗した写真のプレビューの両方から押せる（お試しの残りに関係なく使える）
+    const manualButtons = screen.getAllByRole("button", { name: /手動で入力/ });
+    expect(manualButtons).toHaveLength(2);
+    for (const b of manualButtons) expect(b).toBeEnabled();
 
     await user.click(within(prompt).getByRole("button", { name: "閉じる" }));
     expect(screen.queryByRole("region", { name: "お試しの読み取り（3回）を使い切りました" })).not.toBeInTheDocument();

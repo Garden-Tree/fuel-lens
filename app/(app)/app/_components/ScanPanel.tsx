@@ -68,7 +68,7 @@ function StatusCard({ children, live = false }: { children: ReactNode; live?: bo
 /**
  * ホームのスキャンの状態カードと、非表示のファイル入力（カメラ / アルバム）。
  * - 解析中: 段階（圧縮中 / 解析中）とキャンセル
- * - プレビュー中: 「次を撮る」・閉じる。共有で受け取った画像なら「読み取る」「手動で入力」
+ * - プレビュー中: 「手動で入力」「次を撮る」・閉じる。共有で受け取った画像なら「読み取る」も（読み取りに失敗したあとの逃げ道を兼ねる）
  * - どちらでもなければ何も描画しない（入力だけ）。撮影・アルバムは ref の openCamera / openAlbum で開く
  */
 export default function ScanPanel({
@@ -166,16 +166,17 @@ export default function ScanPanel({
                 >
                   <ScanLine className="h-4 w-4" aria-hidden="true" /> 読み取る
                 </button>
-                <button
-                  type="button"
-                  onClick={onManualEntry}
-                  disabled={readOnly}
-                  className={`${SMALL_BUTTON} border border-border bg-surface text-ink hover:bg-surface-2`}
-                >
-                  <Edit2 className="h-4 w-4" aria-hidden="true" /> 手動で入力
-                </button>
               </>
             )}
+            {/* 読み取りに失敗した・確認シートを破棄したあとも、写真を見ながら手入力に切り替えられるようにする */}
+            <button
+              type="button"
+              onClick={onManualEntry}
+              disabled={readOnly}
+              className={`${SMALL_BUTTON} border border-border bg-surface text-ink hover:bg-surface-2`}
+            >
+              <Edit2 className="h-4 w-4" aria-hidden="true" /> 手動で入力
+            </button>
             <button
               type="button"
               onClick={() => cameraInputRef.current?.click()}

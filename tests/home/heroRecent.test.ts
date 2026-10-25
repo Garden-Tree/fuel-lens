@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { efficiencyDeltaOf, heroDisplayOf, heroModelOf } from "@/lib/home/hero";
+import { FIRST_RECORD_REASON, efficiencyDeltaOf, heroDisplayOf, heroModelOf } from "@/lib/home/hero";
 import { formatMonthDay, formatShortDate, formatYen, recentRowOf, stationLabel } from "@/lib/home/recent";
 import type { FuelRecord } from "@/lib/types";
 
@@ -71,6 +71,18 @@ describe("heroModelOf", () => {
     const m = heroModelOf([only], only);
     expect(m.average).toBeNull();
     expect(m.scale).toEqual({ min: 0, max: 20 });
+  });
+
+  it("オドメーターを入れた最初の記録は「区間不明」ではなく初回の記録と示す", () => {
+    const first = rec("o1", "2026-10-23", { odometer: 12345, fuel_amount: 40, total_cost: 6400 });
+    expect(heroModelOf([first], first).nullReason).toBe(FIRST_RECORD_REASON);
+    // 前の記録がある・部分給油・オドメーター未入力なら従来の理由
+    const second = rec("o2", "2026-10-30", { odometer: 12800, fuel_amount: 30 });
+    expect(heroModelOf([second, first], second).nullReason).toBe("区間不明");
+    const partial = rec("p1", "2026-10-23", { odometer: 12345, fuel_amount: 20, is_full: false });
+    expect(heroModelOf([partial], partial).nullReason).toBe("部分給油（次の満タンで計算）");
+    const noOdo = rec("t1", "2026-10-23", { fuel_amount: 40 });
+    expect(heroModelOf([noOdo], noOdo).nullReason).toBe("区間不明");
   });
 });
 
