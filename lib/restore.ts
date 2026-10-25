@@ -60,6 +60,8 @@ export type RestoreResult = {
   skipped: number;
   /** 書き込み（addVehicles / addRecords）を 1 回でも行った */
   changed: boolean;
+  /** 実行前にあった記録の件数（全車両。計測の is_first 用。実行時に取り直した一覧の件数） */
+  existingRecords: number;
 };
 
 /**
@@ -147,6 +149,7 @@ export async function executeRestore(
       recordsAdded,
       skipped: plan.counts.recordsSkipped,
       changed,
+      existingRecords: existing.length,
     };
   } catch (e) {
     throw new RestoreError(e, changed);

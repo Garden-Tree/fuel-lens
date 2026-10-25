@@ -4,6 +4,7 @@ import { useId } from "react";
 import { SignInButton } from "@clerk/nextjs";
 import { LogIn } from "lucide-react";
 import { TRIAL_MAX_SCANS } from "@/lib/trial";
+import { trackEvent } from "@/lib/analytics/events";
 
 export type TrialLoginPromptProps = {
   onDismiss: () => void;
@@ -33,7 +34,12 @@ export default function TrialLoginPrompt({ onDismiss }: TrialLoginPromptProps) {
       </div>
       <div className="flex flex-wrap gap-2">
         <SignInButton mode="modal" forceRedirectUrl="/app">
-          <button type="button" className={`${BUTTON} bg-scan-gradient text-white`}>
+          {/* SignInButton は子の onClick も呼んでからモーダルを開く。計測（GA4）だけを送る */}
+          <button
+            type="button"
+            onClick={() => trackEvent("sign_up_prompt_click", { prompt: "trial_exhausted" })}
+            className={`${BUTTON} bg-scan-gradient text-white`}
+          >
             <LogIn className="h-4 w-4" aria-hidden="true" />
             ログインして続ける
           </button>

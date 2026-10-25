@@ -3,6 +3,7 @@
 import { useState } from "react";
 
 import type { FuelLensBackup } from "@/lib/backup";
+import { trackEvent } from "@/lib/analytics/events";
 import {
   executeRestore,
   RestoreError,
@@ -71,6 +72,14 @@ export function useRestoreRunner({
       changed = result.changed;
       onSettled?.();
       toast(restoreSuccessText(kind, result), { type: "success" });
+      // 計測（GA4）: 記録を 1 件以上追加できたときだけ。複数車両にまたがるので distance_mode は mixed
+      if (result.recordsAdded > 0) {
+        trackEvent("record_saved", {
+          source: kind === "import" ? "import" : "restore",
+          is_first: result.existingRecords === 0,
+          distance_mode: "mixed",
+        });
+      }
       return result;
     } catch (e) {
       console.error(e);

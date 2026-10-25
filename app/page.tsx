@@ -122,6 +122,7 @@ export default function LandingPage() {
               <div className="pt-4 flex flex-col sm:flex-row items-center justify-center lg:justify-start gap-4">
                 <Link
                   href="/app"
+                  data-ga-cta="hero"
                   className="w-full sm:w-auto text-center bg-scan-gradient text-white font-bold px-8 py-4 rounded-2xl transition active:scale-95 hover:brightness-110 text-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-ground"
                 >
                   無料で使ってみる
@@ -360,6 +361,7 @@ export default function LandingPage() {
           <div>
             <Link
               href="/app"
+              data-ga-cta="bottom"
               className="inline-flex items-center gap-2 bg-scan-gradient text-white font-bold text-lg px-10 py-5 rounded-2xl transition active:scale-95 hover:brightness-110 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-ground"
             >
               <span>今すぐ無料で使ってみる</span>

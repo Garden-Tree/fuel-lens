@@ -10,6 +10,7 @@ import {
   type A2hsGuide,
   type A2hsPlatform,
 } from "@/lib/addToHomeScreen";
+import { trackEvent } from "@/lib/analytics/events";
 
 /** Chrome 系の beforeinstallprompt（標準の型定義に無い） */
 interface BeforeInstallPromptEvent extends Event {
@@ -91,6 +92,7 @@ if (typeof window !== "undefined") {
     update({ deferred: event as BeforeInstallPromptEvent });
   });
   window.addEventListener("appinstalled", () => {
+    trackEvent("a2hs_prompt", { action: "installed" });
     writeDismissed();
     update({ dismissed: true, deferred: null });
   });
@@ -122,9 +124,15 @@ export function useAddToHomeScreen(hasRecords: boolean): AddToHomeScreenState {
     });
   const guide = state ? a2hsGuideOf(state.platform, state.deferred !== null) : null;
 
-  const dismiss = () => {
+  /** 以後この端末では出さない */
+  const close = () => {
     writeDismissed();
     update({ dismissed: true });
+  };
+
+  const dismiss = () => {
+    trackEvent("a2hs_prompt", { action: "dismissed" });
+    close();
   };
 
   const install = async () => {
@@ -132,10 +140,12 @@ export function useAddToHomeScreen(hasRecords: boolean): AddToHomeScreenState {
     if (!deferred) return;
     // prompt() は 1 回しか使えない。断られたら手順の文に切り替える（カードは残す）
     update({ deferred: null });
+    trackEvent("a2hs_prompt", { action: "install_click" });
     try {
       await deferred.prompt();
       const choice = await deferred.userChoice;
-      if (choice.outcome === "accepted") dismiss();
+      // インストールの完了は appinstalled で installed を送る（ここでは dismissed を送らない）
+      if (choice.outcome === "accepted") close();
     } catch (err) {
       console.error("ホーム画面に追加の画面を開けませんでした", err);
     }

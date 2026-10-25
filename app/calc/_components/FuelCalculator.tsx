@@ -83,6 +83,7 @@ export default function FuelCalculator() {
           {/* 入力のたびに URL が変わるので先読みしない（/app はログイン状態を読む動的な画面） */}
           <Link
             href={recordHref}
+            data-ga-cta="calc_result"
             prefetch={false}
             className="inline-flex h-11 shrink-0 items-center justify-center gap-1.5 rounded-xl border border-accent/50 bg-surface-2 px-4 text-sm font-bold text-accent transition-colors hover:bg-line focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
           >
