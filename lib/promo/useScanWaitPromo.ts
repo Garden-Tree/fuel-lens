@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import type { ScanLoadingStep } from "@/lib/scan/useScanPipeline";
 import type { VehicleType } from "@/lib/types";
+import { trackEvent } from "@/lib/analytics/events";
 import {
   SCAN_WAIT_PROMO_DELAY_MS,
   decideScanWaitPromo,
@@ -16,6 +17,7 @@ import {
  * 解析待ちの提携先の紹介を出すか。エラー・キャンセルで解析が終わると自動で閉じる。
  * 結果が出たときは閉じず（done=true）、ユーザーが閉じるまで出し続ける（結果の確認シートはその後に出す）。
  * 出した時刻を端末に記録し、7 日間は再び出さない。
+ * 表示とリンクのクリックを GA4 に送る（promo_impression / promo_click。lib/analytics/events.ts）。
  */
 export function useScanWaitPromo({
   loadingStep,
@@ -44,9 +46,10 @@ export function useScanWaitPromo({
         lastShownAt: readPromoShownAt(),
         now,
       });
-      if (!promo) return;
+      if (!promo || !vehicleType) return;
       writePromoShownAt(now);
       setShown({ promo, dismissed: false });
+      trackEvent("promo_impression", { promo_id: promo.id, vehicle_type: vehicleType });
     }, SCAN_WAIT_PROMO_DELAY_MS);
     return () => window.clearTimeout(timer);
   }, [eligible, vehicleType, batchActive]);
@@ -61,6 +64,9 @@ export function useScanWaitPromo({
     done,
     dismiss: () => setShown((s) => (s ? { ...s, dismissed: true } : s)),
     /** リンクを押したときも時刻を記録する（解析は止めない） */
-    markClicked: () => writePromoShownAt(Date.now()),
+    markClicked: () => {
+      writePromoShownAt(Date.now());
+      if (shown && vehicleType) trackEvent("promo_click", { promo_id: shown.promo.id, vehicle_type: vehicleType });
+    },
   };
 }

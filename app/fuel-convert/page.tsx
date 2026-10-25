@@ -158,6 +158,7 @@ export default function FuelConvertPage() {
             <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-4">
               <Link
                 href="/app"
+                data-ga-cta="cta_box"
                 className="inline-flex h-11 items-center justify-center gap-1 rounded-xl bg-accent px-5 text-sm font-bold text-ground transition-colors hover:bg-accent/90 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
               >
                 アプリを使う（無料）

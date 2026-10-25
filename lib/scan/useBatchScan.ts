@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ANALYZE_TIMEOUT_MS, compressToDataUrl, requestAnalyze } from "./analyzeClient";
 import { batchSummaryMessage } from "./batch";
+import { trackEvent } from "@/lib/analytics/events";
 import {
   createBatchController,
   type BatchController,
@@ -116,6 +117,7 @@ export function useBatchScan({ isSignedIn, toast, confirm, onTrialRemaining, dep
       setRunId((n) => n + 1);
       setState(controller.getState());
       controller.start();
+      trackEvent("scan_start", { mode: "batch", logged_in: signedIn === true, trial: signedIn !== true });
     },
     [handleEnd]
   );

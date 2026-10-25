@@ -148,7 +148,7 @@ curl -i -X POST "https://<project-ref>.supabase.co/rest/v1/rpc/keepalive_ping" \
 
 ## 4-2. Web Analytics（ページビュー計測）
 
-`@vercel/analytics` の `<Analytics />`（`components/WebAnalytics.tsx` で包み、`app/layout.tsx` に 1 つ置いています）。Cookie は使わず、ページビューだけを Vercel に送ります（カスタムイベントは使いません）。
+`@vercel/analytics` の `<Analytics />`（`components/WebAnalytics.tsx` で包み、`app/layout.tsx` に 1 つ置いています）。Cookie は使わず、ページビューだけを Vercel に送ります（カスタムイベントは使いません。行動の計測は [4-6 の GA4](#4-6-google-analytics-4行動イベント)）。
 
 - **有効化**: Vercel ダッシュボードの **Project → Analytics → Enable** を押す必要があります（押すまでデータは溜まりません）。有効化後、次のデプロイから `/_vercel/insights/*` が配信されます。
 - **送信されるのは本番のみ**: パッケージは `NODE_ENV` で本番かどうかを判定し、開発・テストではコンソールに出すだけで送信しません。
@@ -221,6 +221,40 @@ PWA を Trusted Web Activity として Google Play に出すための準備と�
 運用で触るのは Vercel の環境変数 `ANDROID_ASSETLINKS_SHA256`（署名鍵の SHA-256。カンマ区切りで複数可）だけで、`/.well-known/assetlinks.json`（`app/.well-known/assetlinks.json/route.ts`）がそれを返します。
 未設定のあいだは 404 です。値を変えたら再デプロイし、`curl -i https://fuel-lens.gadelog.com/.well-known/assetlinks.json` で 200 と JSON を確認します。
 Play App Signing を使うので、アップロード鍵と Play のアプリ署名鍵の**両方**を入れます。`proxy.ts` の matcher は `/.well-known` を Clerk から除外しています（リダイレクトさせないため）。
+
+## 4-6. Google Analytics 4（行動イベント）
+
+Vercel Web Analytics（Hobby）はページビューしか取れないため、収益化の判断に使う「行動」を GA4 のイベントで計測します。
+`components/GoogleAnalytics.tsx`（`app/layout.tsx` に 1 つ）が gtag.js を `next/script` の `afterInteractive` で読み込みます。
+
+- **有効化は `NEXT_PUBLIC_GA_MEASUREMENT_ID`（`G-XXXX`）だけ**。未設定・形式違いのビルドでは gtag.js を一切読み込まず、イベントも何もしません（Sentry の DSN と同じ考え方）。ローカル・CI・Preview は入れなければ従来どおりです。値を変えたら再デプロイが必要です。
+- **ページビュー**: 自動のページビューは切り（`send_page_view: false`）、App Router のパスが変わるたびに自前で `page_view` を送ります（`lib/analytics/ga.ts`）。`page_location` / `page_referrer` は Vercel Analytics と同じ `lib/analytics/scrubUrl.ts` でハッシュと `utm_*` 以外のクエリを落とします（`?action=shared&t=…`、`#record-<id>` は送らない）。
+- **プライバシー**: `allow_google_signals: false`、`allow_ad_personalization_signals: false`。ユーザー ID・メール・記録の中身・金額・車名は送りません。イベントのパラメータは型（`lib/analytics/events.ts`）で列挙値・真偽値・数値に限り、送る直前にも英小文字の短い識別子以外の文字列を落とします（テストは `tests/analyticsEvents.test.ts`）。外部送信の公表はプライバシーポリシーの 4-2 章です。
+- CSP ヘッダーは設定していないため、`www.googletagmanager.com` / `*.google-analytics.com` の許可は不要です。
+
+| イベント | パラメータ | 送る場所 |
+|---|---|---|
+| `cta_click` | `page`（公開ページのパス）、`position`（`hero` / `bottom` / `header` / `cta_box` / `calc_result`） | 公開ページの `/app` へのリンクに付けた `data-ga-cta` 属性を、`GoogleAnalytics.tsx` の 1 か所の click listener が拾う（公開ページは Server Component のまま） |
+| `promo_impression` / `promo_click` | `promo_id`、`vehicle_type` | 解析待ちの PR を出したとき・リンクを押したとき（`lib/promo/useScanWaitPromo.ts`） |
+| `scan_start` | `mode`（`single` / `pair` / `batch`）、`logged_in`、`trial` | 解析のリクエストを始めるとき（`lib/scan/useScanPipeline.ts` の `analyzeImage`、`lib/scan/useBatchScan.ts` の `start`） |
+| `record_saved` | `source`（`scan` / `pair` / `batch` / `manual` / `calc` / `import` / `restore`）、`is_first`、`distance_mode`（`trip` / `odometer`。取り込み・復元は `mixed`） | 保存に成功したあとだけ（`lib/useRecordEditing.ts` の `addWithDuplicateCheck`、`lib/useRestoreRunner.ts`）。`is_first` は保存前の記録が 0 件か（前者は選択中の車両の一覧、後者は実行時に取り直した全記録） |
+| `sign_up_prompt_click` | `prompt`（`trial_exhausted`） | お試しを使い切ったときの「ログインして続ける」（`TrialLoginPrompt`） |
+| `a2hs_prompt` | `action`（`shown` / `install_click` / `dismissed` / `installed`） | ホーム画面に追加のカード（`AddToHomeScreenCard`、`lib/useAddToHomeScreen.ts`。`installed` は `appinstalled`） |
+| `share_card` | `method`（`native` / `x` / `download`） | シェアカードの共有の成功・X の投稿画面を開いた・画像の保存（`components/share/ShareCardModal.tsx`） |
+
+### 4-6-1. GA4 側の設定
+
+1. https://analytics.google.com で **管理 → 作成 → プロパティ**（タイムゾーン日本・通貨円）→ **データストリーム → ウェブ** に `https://fuel-lens.gadelog.com` を追加し、**測定 ID**（`G-` で始まる）を控える。拡張計測機能のうち「ページビュー」の「ブラウザの履歴イベントに基づくページの変更」は**オフ**にする（自前で送るため。二重計上を防ぐ）。
+2. **管理 → データの収集と修正 → データ保持** で「イベントデータの保持」を **14 か月** にして保存する（既定は 2 か月）。
+3. **管理 → データの収集と修正 → データ収集** で **Google シグナルのデータ収集を無効**のままにする（コード側でも `allow_google_signals: false`）。
+4. 必要ならパラメータ（`source`・`position` など）を **管理 → カスタム定義** でイベント範囲のカスタムディメンションに登録する（登録しないとレポートの軸に出ない）。
+5. Vercel の **Settings → Environment Variables** の Production に `NEXT_PUBLIC_GA_MEASUREMENT_ID` を入れて再デプロイする（Preview には入れない）。
+
+### 4-6-2. 動作確認
+
+- ブラウザの開発者ツールで `window.dataLayer` を見ると、`config`・`page_view`・各イベントが積まれている。Network に `www.googletagmanager.com/gtag/js` と `…google-analytics.com/g/collect` が出る。測定 ID が無いビルドではどちらも出ない。
+- GA4 の **レポート → リアルタイム** で自分のアクセスとイベントを確認する。細かく見るときは [Google Analytics Debugger](https://chromewebstore.google.com/detail/google-analytics-debugger/jnkmfdileelhofjcijamephohjechhna) を有効にして **管理 → DebugView** を見る。`page_location` にクエリ（`utm_*` 以外）とハッシュが付いていないことも確認する。
+- 広告ブロッカーは gtag.js を止めることがある（そのブラウザの計測が欠けるだけで、アプリの動作には影響しない）。
 
 ## 5. トラブルシューティング
 

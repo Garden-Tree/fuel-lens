@@ -4,6 +4,8 @@ import { useCallback, useState } from "react";
 import type { FuelRecord, RecordInput, RecordSource } from "./types";
 import { todayLocalISO } from "./dates";
 import { findDuplicateRecord } from "./recordDraft";
+import { distanceModeOf } from "./fillChain";
+import { trackEvent } from "./analytics/events";
 import type { UseRecordFormReturn } from "./useRecordForm";
 import type { VehicleScope } from "./useVehicleScope";
 
@@ -99,9 +101,16 @@ export function useRecordEditing({
         const ok = await confirm(DUPLICATE_CONFIRM_MESSAGE, { danger: true, confirmLabel: "保存する" });
         if (!ok) return null;
       }
-      return await addRecord(record);
+      const added = await addRecord(record);
+      // 計測（GA4）: 保存に成功したときだけ。is_first は保存前の一覧（選択中の車両）が 0 件だったか
+      trackEvent("record_saved", {
+        source: record.source ?? "manual",
+        is_first: records.length === 0,
+        distance_mode: distanceModeOf(selectedVehicle),
+      });
+      return added;
     },
-    [records, confirm, addRecord]
+    [records, confirm, addRecord, selectedVehicle]
   );
 
   const startEditing = (record: FuelRecord) => {

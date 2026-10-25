@@ -6,6 +6,7 @@ import Modal from "@/components/Modal";
 import { useToast } from "@/components/Toast";
 import { SHARE_URL, shareTextOf, xIntentUrlOf, type ShareCardModel } from "@/lib/share/card";
 import { renderShareCardBlob } from "@/lib/share/drawCard";
+import { trackEvent } from "@/lib/analytics/events";
 
 type CardImage = { blob: Blob; url: string };
 
@@ -94,6 +95,7 @@ export default function ShareCardModal({ model, onClose }: ShareCardModalProps) 
     setSharing(true);
     try {
       await navigator.share({ files: [file], text, url: SHARE_URL });
+      trackEvent("share_card", { method: "native" });
       toast("共有しました", { type: "success" });
     } catch (error) {
       if (isAbortError(error)) return;
@@ -116,6 +118,7 @@ export default function ShareCardModal({ model, onClose }: ShareCardModalProps) 
       document.body.removeChild(link);
       // クリック直後に revoke すると一部ブラウザでダウンロードが始まらないため、少し遅らせる
       setTimeout(() => URL.revokeObjectURL(url), 1000);
+      trackEvent("share_card", { method: "download" });
       toast("画像を保存しました", { type: "success" });
     } catch (error) {
       console.error("画像の保存に失敗しました:", error);
@@ -161,6 +164,7 @@ export default function ShareCardModal({ model, onClose }: ShareCardModalProps) 
             href={xIntentUrlOf(text)}
             target="_blank"
             rel="noopener noreferrer"
+            onClick={() => trackEvent("share_card", { method: "x" })}
             className={SECONDARY}
           >
             <XLogo />

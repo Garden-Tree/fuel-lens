@@ -4,6 +4,7 @@ import "./globals.css";
 import { getSiteUrl } from "@/lib/siteUrl";
 import ServiceWorkerRegister from "@/components/ServiceWorkerRegister";
 import WebAnalytics from "@/components/WebAnalytics";
+import GoogleAnalytics from "@/components/GoogleAnalytics";
 import IosViewportGuard from "@/components/IosViewportGuard";
 
 // 本文は端末の日本語フォント（app/globals.css の --font-sans）、数字（`num` ユーティリティ）は JetBrains Mono（docs/design-system.md）。
@@ -85,6 +86,7 @@ export default function RootLayout({
         <IosViewportGuard />
         {children}
         <WebAnalytics />
+        <GoogleAnalytics />
       </body>
     </html>
   );

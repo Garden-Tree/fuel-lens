@@ -38,6 +38,7 @@ export default function ClerkHeaderAuth() {
         </SignInButton>
         <Link
           href="/app"
+          data-ga-cta="header"
           className="inline-flex min-h-10 items-center rounded-full bg-accent px-4 py-2 text-xs font-bold text-ground transition hover:bg-[#5BB2FF] active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-ground sm:text-sm"
         >
           今すぐ始める

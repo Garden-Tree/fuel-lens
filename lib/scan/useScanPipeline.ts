@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { analyzeErrorMessage, type AnalyzeSuccessResponse } from "@/lib/analyze";
 import { takeSharedImage } from "@/lib/shareInbox";
+import { trackEvent } from "@/lib/analytics/events";
 import {
   ANALYZE_TIMEOUT_MS,
   PAIR_IMAGE_COMPRESSION_OPTIONS,
@@ -130,6 +131,9 @@ export function useScanPipeline({ isSignedIn, toast, confirm, onTrialRemaining }
   // AI解析。成功したら保存せず、確認シートを開く。呼び出し前に scanInFlight を立てておくこと
   const analyzeImage = async (input: AnalyzeInput) => {
     setLoadingStep("analyze");
+    // 計測（GA4）: 未ログインの読み取りはすべてお試し（lib/trial.ts）
+    const loggedIn = isSignedIn === true;
+    trackEvent("scan_start", { mode: typeof input === "string" ? "single" : "pair", logged_in: loggedIn, trial: !loggedIn });
     const controller = new AbortController();
     controllerRef.current = controller;
     try {

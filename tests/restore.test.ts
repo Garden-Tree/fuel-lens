@@ -104,7 +104,7 @@ describe("executeRestore", () => {
     expect(items).toHaveLength(2);
     expect(items.every(r => r.vehicle_id === UUID_NEW)).toBe(true);
     expect(items.every(r => !("backupVehicleId" in r) && !("id" in r))).toBe(true);
-    expect(result).toEqual({ vehiclesAdded: 1, recordsAdded: 2, skipped: 0, changed: true });
+    expect(result).toEqual({ vehiclesAdded: 1, recordsAdded: 2, skipped: 0, changed: true, existingRecords: 0 });
   });
 
   it("maps each backup vehicle to the id addVehicles returned, in order", async () => {
@@ -162,7 +162,7 @@ describe("executeRestore", () => {
     expect(addVehicles).not.toHaveBeenCalled();
     expect(addRecords).not.toHaveBeenCalled();
     expect(progress).toEqual([{ phase: "prepare" }]);
-    expect(result).toEqual({ vehiclesAdded: 0, recordsAdded: 0, skipped: 1, changed: false });
+    expect(result).toEqual({ vehiclesAdded: 0, recordsAdded: 0, skipped: 1, changed: false, existingRecords: 1 });
   });
 
   it("reports progress in order: prepare → vehicles → records (from 0, then addRecords' chunks)", async () => {
@@ -241,10 +241,10 @@ describe("executeRestore", () => {
 
 describe("restore texts", () => {
   it("builds the success toast for restore and import", () => {
-    expect(restoreSuccessText("restore", { vehiclesAdded: 1, recordsAdded: 5, skipped: 0, changed: true })).toBe(
+    expect(restoreSuccessText("restore", { vehiclesAdded: 1, recordsAdded: 5, skipped: 0, changed: true, existingRecords: 0 })).toBe(
       "復元しました: 車両 1 台・記録 5 件を追加"
     );
-    expect(restoreSuccessText("import", { vehiclesAdded: 0, recordsAdded: 3, skipped: 2, changed: true })).toBe(
+    expect(restoreSuccessText("import", { vehiclesAdded: 0, recordsAdded: 3, skipped: 2, changed: true, existingRecords: 2 })).toBe(
       "取り込みました: 車両 0 台・記録 3 件を追加（重複 2 件はスキップ）"
     );
   });
