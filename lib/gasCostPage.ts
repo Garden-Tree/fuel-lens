@@ -183,13 +183,17 @@ export function distanceLink(distanceKm: number): string {
   return `${GAS_COST_PATH}?km=${distanceKm}#${GAS_COST_CALCULATOR_ID}`;
 }
 
+/** `?km=` で受け取る距離の上限（km） */
+export const PREFILL_MAX_KM = 2000;
+
 /**
- * 計算機の距離の初期値。`?km=` が目安表の距離のどれかと一致するときだけ受け取る（任意の文字列は入れない）。
- * 該当しなければ空文字。
+ * 計算機の距離の初期値。`?km=` が 1〜2000 の整数（半角数字だけ・先頭 0 なし）のときだけ受け取る（任意の文字列は入れない）。
+ * 距離別の目安表の行と、/route-gas-cost の区間の行から来る。該当しなければ空文字。
  */
 export function parseDistancePrefill(search: string): string {
   const km = new URLSearchParams(search).get("km");
-  return km !== null && (DISTANCE_TABLE_DISTANCES as readonly number[]).some((d) => String(d) === km) ? km : "";
+  if (km === null || !/^[1-9]\d{0,3}$/.test(km)) return "";
+  return Number(km) <= PREFILL_MAX_KM ? km : "";
 }
 
 /** 通勤の月額の例: 片道 15 km・燃費 15 km/L・月 20 日出勤 */

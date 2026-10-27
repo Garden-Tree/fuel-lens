@@ -41,6 +41,13 @@ describe("WarikanCalculator", () => {
     expect(screen.queryByText("送られてきた計算結果")).not.toBeInTheDocument();
   });
 
+  it("区間表からの ?km= だけなら入力欄に入れるだけで、結果を先には出さない", () => {
+    window.history.replaceState(null, "", "/warikan?km=470&trip=round");
+    render(<WarikanCalculator />);
+    expect(screen.getByLabelText("走行距離")).toHaveValue("470");
+    expect(screen.queryByText("送られてきた計算結果")).not.toBeInTheDocument();
+  });
+
   it("不正なクエリは無視する", () => {
     window.history.replaceState(null, "", "/warikan?km=abc&people=1");
     render(<WarikanCalculator />);

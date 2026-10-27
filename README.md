@@ -6,7 +6,7 @@
 AI（Google Gemini）が給油量・金額・走行距離を読み取り、満タン法で燃費を計算して記録します。
 
 - **アプリ**: https://fuel-lens.gadelog.com （無料。手入力ならログインなしで使えます。AI の読み取りはログイン後）
-- **ログイン不要の計算ツール**: [満タン法 燃費計算](https://fuel-lens.gadelog.com/calc)・[ガソリン代計算](https://fuel-lens.gadelog.com/gas-cost)・[ガソリン代の割り勘](https://fuel-lens.gadelog.com/warikan)・[年間ガソリン代](https://fuel-lens.gadelog.com/annual-gas-cost)・[燃費の単位換算](https://fuel-lens.gadelog.com/fuel-convert)
+- **ログイン不要の計算ツール**: [満タン法 燃費計算](https://fuel-lens.gadelog.com/calc)・[ガソリン代計算](https://fuel-lens.gadelog.com/gas-cost)・[ガソリン代の割り勘](https://fuel-lens.gadelog.com/warikan)・[主要区間のガソリン代](https://fuel-lens.gadelog.com/route-gas-cost)・[年間ガソリン代](https://fuel-lens.gadelog.com/annual-gas-cost)・[燃費の単位換算](https://fuel-lens.gadelog.com/fuel-convert)
 
 <table>
   <tr>

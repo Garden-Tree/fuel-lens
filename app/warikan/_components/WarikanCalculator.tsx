@@ -70,7 +70,8 @@ export default function WarikanCalculator() {
     /* eslint-disable react-hooks/set-state-in-effect -- URL と端末の機能はサーバーで読めないため、マウント後に一度だけ反映する */
     if (shared) {
       setInput(shared);
-      setFromShare(true);
+      // 結果まで出る共有リンクのときだけ結果を先に見せる（区間表からの ?km= だけなら入力欄に入れるだけ）
+      if (computeWarikan(shared).perPerson != null) setFromShare(true);
     }
     setOrigin(window.location.origin);
     setCanNativeShare(typeof navigator.share === "function");

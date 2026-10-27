@@ -173,7 +173,7 @@ describe("距離別の目安表", () => {
     }
   });
 
-  it("行のリンクは計算機への ?km= で、受け取れるのは表の距離だけ", () => {
+  it("行のリンクは計算機への ?km= で、受け取れるのは 1〜2000 の整数だけ", () => {
     expect(distanceLink(300)).toBe("/gas-cost?km=300#gas-cost-calculator");
     for (const d of DISTANCE_TABLE_DISTANCES) {
       expect(parseDistancePrefill(`?km=${d}`)).toBe(String(d));
@@ -181,7 +181,13 @@ describe("距離別の目安表", () => {
     expect(parseDistancePrefill("")).toBe("");
     expect(parseDistancePrefill("?km=")).toBe("");
     expect(parseDistancePrefill("?km=abc")).toBe("");
-    expect(parseDistancePrefill("?km=301")).toBe("");
+    // 主要区間（/route-gas-cost）の距離も受け取る。範囲外・先頭 0 は受け取らない
+    expect(parseDistancePrefill("?km=470")).toBe("470");
+    expect(parseDistancePrefill("?km=2000")).toBe("2000");
+    expect(parseDistancePrefill("?km=2001")).toBe("");
+    expect(parseDistancePrefill("?km=0")).toBe("");
+    expect(parseDistancePrefill("?km=0300")).toBe("");
+    expect(parseDistancePrefill("?km=３００")).toBe("");
     expect(parseDistancePrefill("?km=-300")).toBe("");
     expect(parseDistancePrefill("?km=300.0")).toBe("");
     expect(parseDistancePrefill("?km=<script>")).toBe("");

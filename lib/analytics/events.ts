@@ -9,7 +9,7 @@ import type { DistanceMode, RecordSource, VehicleType } from "@/lib/types";
  */
 
 /** /app への CTA を置いている公開ページ */
-export const CTA_PAGES = ["/", "/calc", "/gas-cost", "/annual-gas-cost", "/fuel-convert", "/expense", "/fuelio", "/warikan"] as const;
+export const CTA_PAGES = ["/", "/calc", "/gas-cost", "/annual-gas-cost", "/fuel-convert", "/expense", "/fuelio", "/warikan", "/route-gas-cost"] as const;
 export type CtaPage = (typeof CTA_PAGES)[number];
 
 /**

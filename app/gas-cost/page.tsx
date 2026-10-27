@@ -62,13 +62,13 @@ export default function GasCostPage() {
           <section>
             <h2>距離別のガソリン代の目安</h2>
             <p>
-              「300 キロ走るといくら？」に車種ごとの燃費の目安で答える表です。ハイオクにも切り替えられます。距離をタップすると、その距離を入れた状態で上のツールが開きます。
+              「300 キロ走るといくら？」を車種別にまとめました。距離をタップすると、その距離を入れた状態で上のツールが開きます。
             </p>
             <DistanceCostTable />
             <p className="mt-2 text-xs text-sub">
               {CAR_TYPE_EFFICIENCY_NOTE}単価はレギュラー <span className="num">{EXAMPLE_PRICE}</span> 円/L、ハイオク{" "}
               <span className="num">{EXAMPLE_HIGH_OCTANE_PRICE}</span> 円/L（レギュラー＋<span className="num">{HIGH_OCTANE_PREMIUM}</span>{" "}
-              円）の例で、実際の価格は地域・時期で変わります（1 円未満は四捨五入）。自分の車の燃費や単価で出すなら上のツールへ。
+              円）の例で、実際の価格は地域・時期で変わります（1 円未満は四捨五入）。
             </p>
           </section>
 
@@ -91,9 +91,15 @@ export default function GasCostPage() {
           <section>
             <h2>距離からガソリン代を出す手順</h2>
             <ol>
-              <li>地図アプリで目的地までの走行距離（km）を調べます。</li>
               <li>
-                自分の車の燃費（km/L）を確かめます。カタログ燃費より実燃費のほうが実際の金額に近くなります。実燃費は
+                地図アプリで目的地までの走行距離（km）を調べます（主要区間は
+                <Link href="/route-gas-cost" className="text-accent underline underline-offset-2 hover:no-underline">
+                  区間別のガソリン代
+                </Link>
+                に）。
+              </li>
+              <li>
+                自分の車の燃費（km/L）を確かめます。実燃費は
                 <Link href="/calc" className="text-accent underline underline-offset-2 hover:no-underline">
                   満タン法 燃費計算ツール
                 </Link>

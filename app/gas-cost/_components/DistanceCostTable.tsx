@@ -35,14 +35,15 @@ export default function DistanceCostTable() {
             </caption>
             <thead>
               <tr className="border-b border-line text-sub">
-                <th scope="col" className="px-2 py-2.5 text-left align-bottom font-medium">
+                <th scope="col" className="px-1.5 py-2.5 text-left align-bottom font-medium">
                   距離
+                  <span className="mt-0.5 block text-[11px]">金額は円</span>
                 </th>
                 {CAR_TYPE_EFFICIENCIES.map(({ id: carId, label: carLabel, efficiency }) => (
-                  <th key={carId} scope="col" className="px-2 py-2.5 align-bottom text-xs font-medium leading-tight">
+                  <th key={carId} scope="col" className="px-1.5 py-2.5 align-bottom text-xs font-medium leading-tight">
                     {carLabel}
-                    <span className="mt-0.5 block whitespace-nowrap">
-                      （約<span className="num">{efficiency}</span>km/L）
+                    <span className="mt-0.5 block whitespace-nowrap text-[11px]">
+                      約<span className="num">{efficiency}</span>km/L
                     </span>
                   </th>
                 ))}
@@ -51,7 +52,7 @@ export default function DistanceCostTable() {
             <tbody>
               {distanceCostTable(price).map(({ distance, costs }) => (
                 <tr key={distance} className="border-b border-line last:border-b-0">
-                  <th scope="row" className="whitespace-nowrap px-2 py-2.5 text-left font-medium text-ink">
+                  <th scope="row" className="whitespace-nowrap px-1.5 py-2.5 text-left font-medium text-ink">
                     {/* 同じページへの遷移で計算機を作り直して距離を反映させるため、next/link ではなく素の <a> を使う */}
                     <a
                       href={distanceLink(distance)}
@@ -61,9 +62,8 @@ export default function DistanceCostTable() {
                     </a>
                   </th>
                   {costs.map((cost, i) => (
-                    <td key={CAR_TYPE_EFFICIENCIES[i].id} className="whitespace-nowrap px-2 py-2.5">
+                    <td key={CAR_TYPE_EFFICIENCIES[i].id} className="whitespace-nowrap px-1.5 py-2.5">
                       <span className="num">{cost}</span>
-                      <span className="text-xs text-sub">円</span>
                     </td>
                   ))}
                 </tr>

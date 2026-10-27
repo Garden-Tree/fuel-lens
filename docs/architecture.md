@@ -133,7 +133,7 @@ FuelLens の構成、データの流れ、主要なモジュールの役割を�
     こちらは `previewing` ではなく通常の表示で、書き込みもできます（ストアは準備済み。書き込み中に一覧の読み込みが実行中なら読み直す従来の仕組みがそのまま効く）。
     使うのはそのフックのインスタンスがまだクラウドから一覧を読めていない間だけで、キャッシュが無ければ従来どおりスケルトンです。失敗時の扱い（障害・日本語エラー・キャッシュの閲覧専用表示）は変わりません。
   - `syncCacheOwner` は従来どおり Clerk の確定値（`authLoaded`）を待って呼びます。移行（`migrateLocalData`）は従来どおりクラウドの初期化からだけ走ります。
-  - `auth()` を読むため `/app`・`/history`・`/stats`・`/settings` はリクエストごとの描画（ビルド出力の `ƒ`）です。公開ページ（`/`・`/calc`・`/gas-cost`・`/warikan`・`/annual-gas-cost`・`/fuel-convert`・`/expense`・`/privacy`・`/terms`）は静的のままです。
+  - `auth()` を読むため `/app`・`/history`・`/stats`・`/settings` はリクエストごとの描画（ビルド出力の `ƒ`）です。公開ページ（`/`・`/calc`・`/gas-cost`・`/warikan`・`/route-gas-cost`・`/annual-gas-cost`・`/fuel-convert`・`/expense`・`/privacy`・`/terms`）は静的のままです。
 - 選択中の車両 ID は localStorage に保存します。未ログイン時は `fuel_lens_selected_vehicle_id`、ログイン時はユーザーごとの `fuel_lens_selected_vehicle_id_<userId>` を使い、保存値が現在の車両一覧に無い場合は既定車両へフォールバックして保存値を書き換えます。
 
 ### データアダプタ層（`lib/data/`）
@@ -473,7 +473,7 @@ FAQ（`CALC_FAQS`）はページと構造化データで共有し、`buildCalcJs
 `app/gas-cost/page.tsx` は `/calc` と同じ作りの公開ページ（「ガソリン代 計算」「ガソリン代 割り勘」などの検索からの入口）です。
 計算機 `app/gas-cost/_components/GasCostCalculator.tsx`（クライアント）は走行距離・燃費・ガソリン単価・片道 / 往復・任意の人数から、必要なガソリン量（距離 ÷ 燃費）・ガソリン代（ガソリン量 × 単価、1 円未満を四捨五入）・1km あたりのガソリン代（単価 ÷ 燃費）・割り勘の 1 人あたり（2 人以上のとき。ガソリン代 ÷ 人数を切り上げ）を出し、入力は保存しません。
 検証と計算は `lib/gasCostPage.ts` の `computeGasCost`（数値の読み取りは `parseDraftNumber`、丸めは表示のときだけ）。単価が 50〜400 円/L の範囲外、燃費が 100 km/L 超のときは注意を出します（50cc スクーターがあるので `/calc` の 60 km/L は使わない）。計算機の燃費の欄からは `/calc` へ案内します。
-「〇〇キロ走るといくら？」の検索に答えるため、距離別の目安表（`app/gas-cost/_components/DistanceCostTable.tsx`。行は 10〜1000 km、列は車種の実燃費の目安 `CAR_TYPE_EFFICIENCIES`（軽自動車 20 / 普通車 13 / ハイブリッド車 25 / ミニバン・ワンボックス 10 km/L。`/route-gas-cost` と共有）、単価はレギュラー `EXAMPLE_PRICE` = 170 円/L とハイオク `EXAMPLE_HIGH_OCTANE_PRICE`（+`HIGH_OCTANE_PREMIUM` = 11 円）を切り替え。両方の表を静的に描画し、選んでいないほうを `hidden` にする。値は `distanceCostTable(price)`）を計算機の直後に置き、各行は `?km=` つきの `<a>`（`distanceLink`）で計算機へ飛びます。計算機はマウント後に `window.location.search` を `parseDistancePrefill`（表の距離だけを受け付ける）で読んで距離を入れるので、ページは静的のままです。タイトル・説明文は `GAS_COST_PAGE_TITLE` / `GAS_COST_DESCRIPTION`。
+「〇〇キロ走るといくら？」の検索に答えるため、距離別の目安表（`app/gas-cost/_components/DistanceCostTable.tsx`。行は 10〜1000 km、列は車種の実燃費の目安 `CAR_TYPE_EFFICIENCIES`（軽自動車 20 / 普通車 13 / ハイブリッド車 25 / ミニバン・ワンボックス 10 km/L。`/route-gas-cost` と共有）、単価はレギュラー `EXAMPLE_PRICE` = 170 円/L とハイオク `EXAMPLE_HIGH_OCTANE_PRICE`（+`HIGH_OCTANE_PREMIUM` = 11 円）を切り替え。両方の表を静的に描画し、選んでいないほうを `hidden` にする。値は `distanceCostTable(price)`）を計算機の直後に置き、各行は `?km=` つきの `<a>`（`distanceLink`）で計算機へ飛びます。計算機はマウント後に `window.location.search` を `parseDistancePrefill`（1〜2000 の整数だけを受け付ける。`/route-gas-cost` の区間の行からも来る）で読んで距離を入れるので、ページは静的のままです。タイトル・説明文は `GAS_COST_PAGE_TITLE` / `GAS_COST_DESCRIPTION`。
 FAQ（`GAS_COST_FAQS`）と構造化データ（`buildGasCostJsonLd`）は `/calc` と同じ形です。`/calc` の計算式の節・関連ページ、ランディングのフッターからリンクしています。テストは `tests/gasCostPage.test.ts` と `tests/components/GasCostCalculator.test.tsx`。
 
 ### ガソリン代の割り勘ページ（`/warikan`）
@@ -483,6 +483,13 @@ FAQ（`GAS_COST_FAQS`）と構造化データ（`buildGasCostJsonLd`）は `/cal
 計算と検証は `lib/warikanPage.ts` の `computeWarikan`。結果は同乗者に送る前提で、入力をすべて URL のクエリ（`km` / `trip` / `eff` / `price` / `toll` / `people` / `driver` / `round`）に載せます。入力を変えるたびに `history.replaceState` で URL を置き換え（履歴は増やさない。マウント時は触らないので `utm_*` は残る）、開いたときはマウント後に `parseWarikanQuery`（キーのホワイトリスト、半角数字だけ、範囲チェック。不正な値は無視）で読みます。クエリ付きで開かれたときは結果を入力欄より上に出し、「自分で計算し直す」で入力欄へ移ります。
 共有は「共有する」（Web Share API。使えない環境では出さない）・「LINE で送る」（`lineShareUrl`）・「リンクをコピー」（`navigator.clipboard`。結果はボタン横に表示）で、文面は `buildWarikanShareText`。各操作で GA4 の `warikan_share` を送ります。URL のクエリは `scrubAnalyticsUrl` で GA・Vercel Analytics には送られません（ページビューもパスが変わったときだけ）。
 OG / Twitter 画像は静的な 1 枚（`WARIKAN_OG`。クエリごとの画像は作らない）。FAQ は `WARIKAN_FAQS`、構造化データは `buildWarikanJsonLd`。`/gas-cost` の「割り勘」の説明はこのページへのリンクにしています。テストは `tests/warikanPage.test.ts` と `tests/components/WarikanCalculator.test.tsx`。
+
+### 主要区間のガソリン代ページ（`/route-gas-cost`）
+
+`app/route-gas-cost/page.tsx` は「東京 大阪 ガソリン代」などの検索からの入口となる静的ページで、計算機はありません。
+主要 12 区間（`lib/routeGasCostPage.ts` の `ROUTES`）を高速道路で走ったときの片道・往復のガソリン代を、`/gas-cost` と共有する車種の燃費の目安（`CAR_TYPE_EFFICIENCIES`）とレギュラーの例の単価（`EXAMPLE_PRICE`）で出します（`routeCostTable`。値は `computeGasCost`）。
+距離は NEXCO西日本「高速料金・ルート検索」で IC 間を検索した値（`sourceKm`、取得日は `ROUTE_DISTANCE_SOURCE`）をそのまま持ち、表には 5 km 単位に丸めた値（`displayKm`）を出します。確認できない区間は載せません。区間を足すときはルート検索で確かめ、出典の値と IC・経路を書きます。
+各行は `/gas-cost?km=`（`parseDistancePrefill` は 1〜2000 の整数を受け付ける）と `/warikan?km=&trip=round` へリンクします。高速代は扱いません。FAQ は `ROUTE_GAS_COST_FAQS`、構造化データ（`WebPage` + `FAQPage`）は `buildRouteGasCostJsonLd`、OG 画像は `routeGasCostOg`。テストは `tests/routeGasCostPage.test.ts`。
 
 ### 年間ガソリン代ページ（`/annual-gas-cost`）
 
@@ -502,7 +509,7 @@ OG / Twitter 画像は静的な 1 枚（`WARIKAN_OG`。クエリごとの画像�
 
 ### 公開ページの関連ナビ
 
-公開ページ（`/calc`・`/gas-cost`・`/warikan`・`/annual-gas-cost`・`/fuel-convert`・`/expense`）の「関連ページ」ナビとランディングのフッターは、`lib/publicNav.ts` の `PUBLIC_TOOL_LINKS` を共有します（各ページは `otherToolLinks(現在のパス)` で自分自身を除外）。ツールを増やすときはここと `app/sitemap.ts` に足します。JSON-LD は `</script>` で閉じられないよう、各ビルダーが `<` を `<` に置換します。
+公開ページ（`/calc`・`/gas-cost`・`/warikan`・`/route-gas-cost`・`/annual-gas-cost`・`/fuel-convert`・`/expense`）の「関連ページ」ナビとランディングのフッターは、`lib/publicNav.ts` の `PUBLIC_TOOL_LINKS` を共有します（各ページは `otherToolLinks(現在のパス)` で自分自身を除外）。ツールを増やすときはここと `app/sitemap.ts` に足します。JSON-LD は `</script>` で閉じられないよう、各ビルダーが `<` を `<` に置換します。
 
 ## 5. ローカル → クラウド移行
 

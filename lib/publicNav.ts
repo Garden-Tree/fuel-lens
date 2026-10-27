@@ -3,6 +3,7 @@ export const PUBLIC_TOOL_LINKS = [
   { href: "/calc", label: "燃費計算" },
   { href: "/gas-cost", label: "ガソリン代計算" },
   { href: "/warikan", label: "ガソリン代の割り勘" },
+  { href: "/route-gas-cost", label: "区間別のガソリン代" },
   { href: "/annual-gas-cost", label: "年間ガソリン代" },
   { href: "/fuel-convert", label: "燃費の単位換算" },
   { href: "/expense", label: "経費のガソリン代記録" },
