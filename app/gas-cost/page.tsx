@@ -4,8 +4,9 @@ import { otherToolLinks } from "@/lib/publicNav";
 import { Camera, ChevronRight } from "lucide-react";
 import { PublicPageHeader } from "@/components/LegalPage";
 import {
+  CAR_TYPE_EFFICIENCY_NOTE,
   COMMUTE_EXAMPLE,
-  DISTANCE_TABLE_EFFICIENCIES,
+  EXAMPLE_HIGH_OCTANE_PRICE,
   EXAMPLE_PRICE,
   GAS_COST_CALCULATOR_ID,
   GAS_COST_DESCRIPTION,
@@ -13,11 +14,11 @@ import {
   GAS_COST_PAGE_TITLE,
   GAS_COST_PATH,
   buildGasCostJsonLd,
+  HIGH_OCTANE_PREMIUM,
   commuteExample,
-  distanceCostTable,
-  distanceLink,
 } from "@/lib/gasCostPage";
 import GasCostCalculator from "./_components/GasCostCalculator";
+import DistanceCostTable from "./_components/DistanceCostTable";
 import { aiAvailabilityCopy } from "@/lib/landingPage";
 import { isTrialEnabled } from "@/lib/server/analyze/trialCookie";
 
@@ -41,7 +42,6 @@ export const metadata: Metadata = {
 };
 
 export default function GasCostPage() {
-  const distanceTable = distanceCostTable();
   const commute = commuteExample();
   return (
     <div className="min-h-screen bg-ground font-sans text-ink">
@@ -62,46 +62,13 @@ export default function GasCostPage() {
           <section>
             <h2>距離別のガソリン代の目安</h2>
             <p>
-              「300 キロ走るといくら？」のように、距離ごとのガソリン代を燃費別にまとめました。距離をタップすると、その距離を入れた状態で上のツールが開きます。
+              「300 キロ走るといくら？」に車種ごとの燃費の目安で答える表です。ハイオクにも切り替えられます。距離をタップすると、その距離を入れた状態で上のツールが開きます。
             </p>
-            <div className="mt-3 overflow-x-auto rounded-2xl border border-line bg-surface">
-              <table className="w-full border-collapse text-right text-sm">
-                <caption className="sr-only">距離別・燃費別のガソリン代（円）。単価 {EXAMPLE_PRICE} 円/L の例</caption>
-                <thead>
-                  <tr className="border-b border-line text-sub">
-                    <th scope="col" className="px-2.5 py-2.5 text-left font-medium">距離＼燃費</th>
-                    {DISTANCE_TABLE_EFFICIENCIES.map((eff) => (
-                      <th key={eff} scope="col" className="whitespace-nowrap px-2.5 py-2.5 font-medium">
-                        <span className="num">{eff}</span> km/L
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {distanceTable.map(({ distance, costs }) => (
-                    <tr key={distance} className="border-b border-line last:border-b-0">
-                      <th scope="row" className="whitespace-nowrap px-2.5 py-2.5 text-left font-medium text-ink">
-                        {/* 同じページへの遷移で計算機を作り直して距離を反映させるため、next/link ではなく素の <a> を使う */}
-                        <a
-                          href={distanceLink(distance)}
-                          className="inline-flex min-h-8 items-center text-accent underline underline-offset-2 hover:no-underline"
-                        >
-                          <span className="num">{distance.toLocaleString("ja-JP")}</span>&nbsp;km
-                        </a>
-                      </th>
-                      {costs.map((cost, i) => (
-                        <td key={DISTANCE_TABLE_EFFICIENCIES[i]} className="whitespace-nowrap px-2.5 py-2.5">
-                          <span className="num">{cost}</span> 円
-                        </td>
-                      ))}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <DistanceCostTable />
             <p className="mt-2 text-xs text-sub">
-              単価 <span className="num">{EXAMPLE_PRICE}</span> 円/L の場合の金額です（1 円未満は四捨五入）。この単価は計算の説明のための値で、実際の単価は時期や地域、スタンドによって変わります。
-              単価が違うときは上のツールで計算してください。
+              {CAR_TYPE_EFFICIENCY_NOTE}単価はレギュラー <span className="num">{EXAMPLE_PRICE}</span> 円/L、ハイオク{" "}
+              <span className="num">{EXAMPLE_HIGH_OCTANE_PRICE}</span> 円/L（レギュラー＋<span className="num">{HIGH_OCTANE_PREMIUM}</span>{" "}
+              円）の例で、実際の価格は地域・時期で変わります（1 円未満は四捨五入）。自分の車の燃費や単価で出すなら上のツールへ。
             </p>
           </section>
 
