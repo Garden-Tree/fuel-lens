@@ -212,7 +212,7 @@ curl -i -X POST "https://<project-ref>.supabase.co/rest/v1/rpc/keepalive_ping" \
 ## 4-4. OG 画像
 
 - `app/opengraph-image.tsx` / `app/twitter-image.tsx`（`lib/og/renderOgImage.tsx`）は `dynamic = "force-dynamic"` で、**リクエスト時**に Google Fonts の CSS API から使う文字だけの Noto Sans JP / JetBrains Mono（700、ttf）を取得して描画します（ビルドは Google Fonts に依存しないので、取得失敗でビルドが壊れたり、フォント無しの画像が焼き込まれたりしません）。
-- 公開ツールページにも専用の画像があります: `app/calc/` と `app/gas-cost/` の `opengraph-image.tsx` / `twitter-image.tsx`（`lib/og/renderToolOgImage.tsx`）。ツール名・サブタイトル・計算式の例・「登録不要・無料」・ドメインを載せ、デザイントークンとフォント取得（`lib/og/shared.tsx`）はルートの画像と共通です。ページの `metadata.openGraph` に `images` を書かない限り、Next.js がこのファイルを `og:image` / `twitter:image` に自動で入れます（ルートの画像より優先）。画像のルートだけが動的で、`/calc` と `/gas-cost` のページ自体は静的なままです。新しい公開ページに専用画像を足すときは、同じ形で `renderToolOgImage` を呼ぶファイルを置きます。
+- 公開ツールページにも専用の画像があります: `app/calc/`・`app/gas-cost/`・`app/warikan/`・`app/route-gas-cost/` などの `opengraph-image.tsx` / `twitter-image.tsx`（`lib/og/renderToolOgImage.tsx`）。ツール名・サブタイトル・計算式の例・「登録不要・無料」・ドメインを載せ、デザイントークンとフォント取得（`lib/og/shared.tsx`）はルートの画像と共通です。ページの `metadata.openGraph` に `images` を書かない限り、Next.js がこのファイルを `og:image` / `twitter:image` に自動で入れます（ルートの画像より優先）。画像のルートだけが動的で、`/calc` と `/gas-cost` のページ自体は静的なままです。新しい公開ページに専用画像を足すときは、同じ形で `renderToolOgImage` を呼ぶファイルを置きます。
 - フォントの取得に失敗（5 秒でタイムアウト）した場合は console にエラーを出し、デフォルトフォントで描画します（日本語は表示されない）。クローラーのキャッシュに残らないよう、共有が崩れていたら Vercel のログで `OG 画像のフォント取得に失敗しました` を確認してください。
 
 ## 4-5. Google Play 版（TWA）
@@ -241,6 +241,7 @@ Vercel Web Analytics（Hobby）はページビューしか取れないため、�
 | `sign_up_prompt_click` | `prompt`（`trial_exhausted`） | お試しを使い切ったときの「ログインして続ける」（`TrialLoginPrompt`） |
 | `a2hs_prompt` | `action`（`shown` / `install_click` / `dismissed` / `installed`） | ホーム画面に追加のカード（`AddToHomeScreenCard`、`lib/useAddToHomeScreen.ts`。`installed` は `appinstalled`） |
 | `share_card` | `method`（`native` / `x` / `download`） | シェアカードの共有の成功・X の投稿画面を開いた・画像の保存（`components/share/ShareCardModal.tsx`） |
+| `warikan_share` | `method`（`native` / `line` / `copy`） | `/warikan` の結果の「共有する」（Web Share API）・「LINE で送る」・「リンクをコピー」を押した（`app/warikan/_components/WarikanCalculator.tsx`）。入力は URL のクエリに載るが、`page_location` からは scrubUrl で落ちる |
 
 ### 4-6-1. GA4 側の設定
 

@@ -1,8 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
+  CAR_TYPE_EFFICIENCIES,
   DISTANCE_TABLE_DISTANCES,
-  DISTANCE_TABLE_EFFICIENCIES,
+  EXAMPLE_HIGH_OCTANE_PRICE,
   EXAMPLE_PRICE,
+  FUEL_GRADES,
+  HIGH_OCTANE_PREMIUM,
   GAS_COST_DESCRIPTION,
   GAS_COST_FAQS,
   GAS_COST_PAGE_TITLE,
@@ -127,38 +130,50 @@ describe("buildGasCostJsonLd", () => {
 });
 
 describe("距離別の目安表", () => {
+  it("列は車種の燃費の目安で、レギュラーとハイオクの例の単価を持つ", () => {
+    expect(CAR_TYPE_EFFICIENCIES.map((c) => [c.label, c.efficiency])).toEqual([
+      ["軽自動車", 20],
+      ["普通車", 13],
+      ["ハイブリッド車", 25],
+      ["ミニバン・ワンボックス", 10],
+    ]);
+    expect(EXAMPLE_PRICE).toBe(170);
+    expect(EXAMPLE_HIGH_OCTANE_PRICE).toBe(EXAMPLE_PRICE + HIGH_OCTANE_PREMIUM);
+    expect(FUEL_GRADES.map((g) => g.price)).toEqual([EXAMPLE_PRICE, EXAMPLE_HIGH_OCTANE_PRICE]);
+  });
+
   it("セルの値は computeGasCost と一致する", () => {
     const table = distanceCostTable();
     expect(table.map((r) => r.distance)).toEqual([10, 14, 20, 30, 50, 100, 150, 180, 200, 300, 500, 1000]);
-    expect(EXAMPLE_PRICE).toBe(170);
-    // 燃費 10 / 15 / 20 / 25 km/L の順
-    const cell = (d: number, i: number) => table.find((r) => r.distance === d)!.costs[i];
-    expect(cell(300, 1)).toBe("3,400");
-    expect(cell(1000, 0)).toBe("17,000");
-    expect(cell(100, 1)).toBe(computeGasCost({ ...base, distance: "100" }).cost);
-    expect(cell(50, 3)).toBe(computeGasCost({ ...base, distance: "50", efficiency: "25" }).cost);
-    expect(cell(500, 2)).toBe(computeGasCost({ ...base, distance: "500", efficiency: "20" }).cost);
-    expect(cell(180, 1)).toBe("2,040");
-    expect(cell(14, 0)).toBe("238");
+    // 軽 20 / 普通車 13 / ハイブリッド 25 / ミニバン 10 km/L の順
+    const cell = (d: number, i: number, t = table) => t.find((r) => r.distance === d)!.costs[i];
+    expect(cell(300, 0)).toBe("2,550");
+    expect(cell(300, 1)).toBe("3,923");
+    expect(cell(300, 2)).toBe("2,040");
+    expect(cell(1000, 3)).toBe("17,000");
+    // ハイオク 181 円/L
+    expect(cell(300, 0, distanceCostTable(EXAMPLE_HIGH_OCTANE_PRICE))).toBe("2,715");
   });
 
-  it("全セルが computeGasCost と一致する", () => {
-    for (const { distance, costs } of distanceCostTable()) {
-      expect(costs).toHaveLength(DISTANCE_TABLE_EFFICIENCIES.length);
-      costs.forEach((cost, i) => {
-        const expected = computeGasCost({
-          distance: String(distance),
-          efficiency: String(DISTANCE_TABLE_EFFICIENCIES[i]),
-          price: String(EXAMPLE_PRICE),
-          people: "",
-          roundTrip: false,
-        }).cost;
-        expect(cost).toBe(expected);
-      });
+  it("全セルが computeGasCost と一致する（レギュラー・ハイオクとも）", () => {
+    for (const { price } of FUEL_GRADES) {
+      for (const { distance, costs } of distanceCostTable(price)) {
+        expect(costs).toHaveLength(CAR_TYPE_EFFICIENCIES.length);
+        costs.forEach((cost, i) => {
+          const expected = computeGasCost({
+            distance: String(distance),
+            efficiency: String(CAR_TYPE_EFFICIENCIES[i].efficiency),
+            price: String(price),
+            people: "",
+            roundTrip: false,
+          }).cost;
+          expect(cost).toBe(expected);
+        });
+      }
     }
   });
 
-  it("行のリンクは計算機への ?km= で、受け取れるのは表の距離だけ", () => {
+  it("行のリンクは計算機への ?km= で、受け取れるのは 1〜2000 の整数だけ", () => {
     expect(distanceLink(300)).toBe("/gas-cost?km=300#gas-cost-calculator");
     for (const d of DISTANCE_TABLE_DISTANCES) {
       expect(parseDistancePrefill(`?km=${d}`)).toBe(String(d));
@@ -166,7 +181,13 @@ describe("距離別の目安表", () => {
     expect(parseDistancePrefill("")).toBe("");
     expect(parseDistancePrefill("?km=")).toBe("");
     expect(parseDistancePrefill("?km=abc")).toBe("");
-    expect(parseDistancePrefill("?km=301")).toBe("");
+    // 主要区間（/route-gas-cost）の距離も受け取る。範囲外・先頭 0 は受け取らない
+    expect(parseDistancePrefill("?km=470")).toBe("470");
+    expect(parseDistancePrefill("?km=2000")).toBe("2000");
+    expect(parseDistancePrefill("?km=2001")).toBe("");
+    expect(parseDistancePrefill("?km=0")).toBe("");
+    expect(parseDistancePrefill("?km=0300")).toBe("");
+    expect(parseDistancePrefill("?km=３００")).toBe("");
     expect(parseDistancePrefill("?km=-300")).toBe("");
     expect(parseDistancePrefill("?km=300.0")).toBe("");
     expect(parseDistancePrefill("?km=<script>")).toBe("");

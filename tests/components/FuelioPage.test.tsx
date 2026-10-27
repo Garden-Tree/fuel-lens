@@ -25,7 +25,7 @@ describe("/fuelio", () => {
     expect(help.className).toContain("underline");
     const nav = screen.getByRole("navigation", { name: "関連ページ" });
     const hrefs = within(nav).getAllByRole("link").map((a) => a.getAttribute("href"));
-    expect(hrefs).toEqual(["/", "/calc", "/gas-cost", "/annual-gas-cost", "/fuel-convert", "/expense", "/privacy", "/terms"]);
+    expect(hrefs).toEqual(["/", "/calc", "/gas-cost", "/warikan", "/route-gas-cost", "/annual-gas-cost", "/fuel-convert", "/expense", "/privacy", "/terms"]);
   });
 
   it("アプリと設定への導線、無関係である旨の注記を出す", () => {

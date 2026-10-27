@@ -9,7 +9,7 @@ import type { DistanceMode, RecordSource, VehicleType } from "@/lib/types";
  */
 
 /** /app への CTA を置いている公開ページ */
-export const CTA_PAGES = ["/", "/calc", "/gas-cost", "/annual-gas-cost", "/fuel-convert", "/expense", "/fuelio"] as const;
+export const CTA_PAGES = ["/", "/calc", "/gas-cost", "/annual-gas-cost", "/fuel-convert", "/expense", "/fuelio", "/warikan", "/route-gas-cost"] as const;
 export type CtaPage = (typeof CTA_PAGES)[number];
 
 /**
@@ -26,6 +26,7 @@ export const CTA_ATTRIBUTE = "data-ga-cta";
 export type ScanMode = "single" | "pair" | "batch";
 export type A2hsAction = "shown" | "install_click" | "dismissed" | "installed";
 export type ShareMethod = "native" | "x" | "download";
+export type WarikanShareMethod = "native" | "line" | "copy";
 
 /** イベント名とパラメータ。値は列挙値・真偽値・数値だけにする（自由入力の文字列を入れない） */
 export type AnalyticsEvents = {
@@ -40,6 +41,8 @@ export type AnalyticsEvents = {
   sign_up_prompt_click: { prompt: "trial_exhausted" };
   a2hs_prompt: { action: A2hsAction };
   share_card: { method: ShareMethod };
+  /** /warikan の結果の共有（native = Web Share API、line = LINE で送る、copy = リンクをコピー）。金額や URL は送らない */
+  warikan_share: { method: WarikanShareMethod };
 };
 
 export type AnalyticsEventName = keyof AnalyticsEvents;

@@ -11,7 +11,7 @@ export const GAS_COST_PATH = "/gas-cost";
 export const GAS_COST_CALCULATOR_ID = "gas-cost-calculator";
 export const GAS_COST_PAGE_TITLE = "ガソリン代計算ツール｜300km走るといくら？距離・燃費・単価から計算 | FuelLens";
 export const GAS_COST_DESCRIPTION =
-  "距離・燃費・ガソリン単価を入れるだけでガソリン代を計算。300キロ・180キロなど距離別の目安表つきで「〇〇キロ走るといくら？」がすぐわかります。往復・割り勘・1kmあたりの金額にも対応。登録不要・無料。";
+  "距離・燃費・ガソリン単価を入れるだけでガソリン代を計算。300キロ・500キロなど距離別の目安表（軽自動車・普通車・ハイブリッド、ハイオクも）で「〇〇キロ走るといくら？」がすぐわかります。往復・割り勘にも対応。登録不要・無料。";
 /** 構造化データの url に使う本番の絶対 URL（canonical は metadataBase からの相対 `/gas-cost`） */
 export const GAS_COST_CANONICAL_URL = "https://fuel-lens.gadelog.com/gas-cost";
 
@@ -128,29 +128,53 @@ export function computeGasCost(input: GasCostInput): GasCostResult {
 
 /** 距離別の目安表・FAQ の例に使う単価（円/L）。実際の単価ではなく計算の説明用 */
 export const EXAMPLE_PRICE = 170;
+/** ハイオクの例の単価がレギュラーより高い分（円/L）。価格は地域・時期で変わるので目安 */
+export const HIGH_OCTANE_PREMIUM = 11;
+/** ハイオクの例の単価（円/L） */
+export const EXAMPLE_HIGH_OCTANE_PRICE = EXAMPLE_PRICE + HIGH_OCTANE_PREMIUM;
+
+/** 目安表の燃料の種類（切り替えの選択肢） */
+export const FUEL_GRADES = [
+  { id: "regular", label: "レギュラー", price: EXAMPLE_PRICE },
+  { id: "high-octane", label: "ハイオク", price: EXAMPLE_HIGH_OCTANE_PRICE },
+] as const;
+export type FuelGradeId = (typeof FUEL_GRADES)[number]["id"];
+
+/**
+ * 車種ごとの実燃費の目安（km/L）。カタログの WLTC モード燃費より実際に走ったときの燃費は低めになるので、それを見込んだ一般的な値。
+ * /gas-cost の距離別の目安表と /route-gas-cost の区間別の表で共有する（ここ以外で定義しない）
+ */
+export const CAR_TYPE_EFFICIENCIES = [
+  { id: "kei", label: "軽自動車", efficiency: 20 },
+  { id: "standard", label: "普通車", efficiency: 13 },
+  { id: "hybrid", label: "ハイブリッド車", efficiency: 25 },
+  { id: "minivan", label: "ミニバン・ワンボックス", efficiency: 10 },
+] as const;
+/** 表の注記（燃費の目安の根拠）。/gas-cost と /route-gas-cost で同じ文を使う */
+export const CAR_TYPE_EFFICIENCY_NOTE =
+  "燃費は車種ごとの実燃費の一般的な目安で、カタログの WLTC モード燃費より低めにしています。";
+
 /** 距離別の目安表の行（距離 km）。検索されやすい距離を並べる */
 export const DISTANCE_TABLE_DISTANCES = [10, 14, 20, 30, 50, 100, 150, 180, 200, 300, 500, 1000] as const;
-/** 距離別の目安表の列（燃費 km/L） */
-export const DISTANCE_TABLE_EFFICIENCIES = [10, 15, 20, 25] as const;
 
 /** 例の単価でのガソリン代（表示用の文字列）。電卓と同じ computeGasCost で求めるので丸めも一致する */
-export function exampleCost(distanceKm: number, efficiencyKmPerL: number, roundTrip = false): string {
+export function exampleCost(distanceKm: number, efficiencyKmPerL: number, roundTrip = false, price: number = EXAMPLE_PRICE): string {
   return (
     computeGasCost({
       distance: String(distanceKm),
       efficiency: String(efficiencyKmPerL),
-      price: String(EXAMPLE_PRICE),
+      price: String(price),
       people: "",
       roundTrip,
     }).cost ?? ""
   );
 }
 
-/** 距離別の目安表: 行ごとに距離と、燃費ごとのガソリン代（円）の表示文字列 */
-export function distanceCostTable(): { distance: number; costs: string[] }[] {
+/** 距離別の目安表: 行ごとに距離と、車種ごと（CAR_TYPE_EFFICIENCIES の順）のガソリン代（円）の表示文字列 */
+export function distanceCostTable(price: number = EXAMPLE_PRICE): { distance: number; costs: string[] }[] {
   return DISTANCE_TABLE_DISTANCES.map((distance) => ({
     distance,
-    costs: DISTANCE_TABLE_EFFICIENCIES.map((eff) => exampleCost(distance, eff)),
+    costs: CAR_TYPE_EFFICIENCIES.map(({ efficiency }) => exampleCost(distance, efficiency, false, price)),
   }));
 }
 
@@ -159,13 +183,17 @@ export function distanceLink(distanceKm: number): string {
   return `${GAS_COST_PATH}?km=${distanceKm}#${GAS_COST_CALCULATOR_ID}`;
 }
 
+/** `?km=` で受け取る距離の上限（km） */
+export const PREFILL_MAX_KM = 2000;
+
 /**
- * 計算機の距離の初期値。`?km=` が目安表の距離のどれかと一致するときだけ受け取る（任意の文字列は入れない）。
- * 該当しなければ空文字。
+ * 計算機の距離の初期値。`?km=` が 1〜2000 の整数（半角数字だけ・先頭 0 なし）のときだけ受け取る（任意の文字列は入れない）。
+ * 距離別の目安表の行と、/route-gas-cost の区間の行から来る。該当しなければ空文字。
  */
 export function parseDistancePrefill(search: string): string {
   const km = new URLSearchParams(search).get("km");
-  return km !== null && (DISTANCE_TABLE_DISTANCES as readonly number[]).some((d) => String(d) === km) ? km : "";
+  if (km === null || !/^[1-9]\d{0,3}$/.test(km)) return "";
+  return Number(km) <= PREFILL_MAX_KM ? km : "";
 }
 
 /** 通勤の月額の例: 片道 15 km・燃費 15 km/L・月 20 日出勤 */
@@ -181,6 +209,7 @@ export function commuteExample(): { perDay: string; perMonth: string } {
 /**
  * ページの FAQ と JSON-LD の FAQPage で共有する。本文（計算式・手順・使い方・距離別の目安表）で答えていることは載せない。
  * 計算の対象は computeGasCost の範囲（ガソリン代だけ。高速料金・駐車場代は含まない。燃料の種類は問わず、燃費と単価を入れるだけ）。
+ * ハイオクは目安表の切り替えで答えているので FAQ には載せない。
  */
 export const GAS_COST_FAQS: FaqEntry[] = [
   {
@@ -188,8 +217,8 @@ export const GAS_COST_FAQS: FaqEntry[] = [
     a: "いいえ、このツールで計算するのはガソリン代だけです。高速料金や駐車場代は含まれないので、必要なら別に足してください。",
   },
   {
-    q: "ハイオクや軽油の車でも計算できますか？",
-    a: "はい。燃料の種類は問いません。燃費（km/L）と、その燃料の 1L あたりの単価（円/L）を入れれば計算できます。",
+    q: "軽油（ディーゼル車）でも計算できますか？",
+    a: "はい。計算機は燃料の種類を問いません。燃費（km/L）と軽油の 1L あたりの単価（円/L）を入れれば計算できます。",
   },
 ];
 

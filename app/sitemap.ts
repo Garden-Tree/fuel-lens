@@ -7,6 +7,8 @@ export default function sitemap(): MetadataRoute.Sitemap {
     { url: `${base}/`, changeFrequency: "monthly", priority: 1 },
     { url: `${base}/calc`, changeFrequency: "monthly", priority: 0.9 },
     { url: `${base}/gas-cost`, changeFrequency: "monthly", priority: 0.8 },
+    { url: `${base}/warikan`, changeFrequency: "monthly", priority: 0.8 },
+    { url: `${base}/route-gas-cost`, changeFrequency: "monthly", priority: 0.8 },
     { url: `${base}/annual-gas-cost`, changeFrequency: "monthly", priority: 0.8 },
     { url: `${base}/fuel-convert`, changeFrequency: "monthly", priority: 0.8 },
     { url: `${base}/expense`, changeFrequency: "monthly", priority: 0.7 },
