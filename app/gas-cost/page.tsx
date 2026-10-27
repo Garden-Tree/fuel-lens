@@ -111,7 +111,11 @@ export default function GasCostPage() {
                 <strong>往復。</strong>片道の距離を入れて「往復」を選ぶと、2 倍にして計算します。
               </li>
               <li>
-                <strong>割り勘。</strong>人数を 2 人以上にすると、ガソリン代を人数で割った 1 人あたりの金額が出ます（1 円未満は切り上げ）。
+                <strong>割り勘。</strong>高速代も含めた 1 人あたりや、運転手は払わない割り方は{" "}
+                <Link href="/warikan" className="text-accent underline underline-offset-2 hover:no-underline">
+                  ガソリン代の割り勘計算
+                </Link>
+                で出せます。
               </li>
               <li>
                 <strong>通勤の月額。</strong>片道の距離 × 2 × 出勤日数で月の走行距離を出して計算します。たとえば片道{" "}

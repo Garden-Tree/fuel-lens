@@ -241,6 +241,7 @@ Vercel Web Analytics（Hobby）はページビューしか取れないため、�
 | `sign_up_prompt_click` | `prompt`（`trial_exhausted`） | お試しを使い切ったときの「ログインして続ける」（`TrialLoginPrompt`） |
 | `a2hs_prompt` | `action`（`shown` / `install_click` / `dismissed` / `installed`） | ホーム画面に追加のカード（`AddToHomeScreenCard`、`lib/useAddToHomeScreen.ts`。`installed` は `appinstalled`） |
 | `share_card` | `method`（`native` / `x` / `download`） | シェアカードの共有の成功・X の投稿画面を開いた・画像の保存（`components/share/ShareCardModal.tsx`） |
+| `warikan_share` | `method`（`native` / `line` / `copy`） | `/warikan` の結果の「共有する」（Web Share API）・「LINE で送る」・「リンクをコピー」を押した（`app/warikan/_components/WarikanCalculator.tsx`）。入力は URL のクエリに載るが、`page_location` からは scrubUrl で落ちる |
 
 ### 4-6-1. GA4 側の設定
 
