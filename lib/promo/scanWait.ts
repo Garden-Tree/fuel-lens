@@ -23,7 +23,7 @@ export const SCAN_WAIT_PROMOS: readonly ScanWaitPromo[] = [
   {
     id: "insweb-bike",
     vehicleTypes: ["bike"],
-    // A8 の副サイト「FuelLens（燃費記録アプリ）」（サイト ID 003）で作ったリンク。ガデログ用のリンクは使わない
+    // A8 の副サイト「FuelLens（燃費記録アプリ）」（サイト ID 003）で作ったリンク。ガデログ（001）用のリンクは使わない
     // （広告主の条件で、掲載したサイトの URL を A8 の「広告掲載URL管理」から提出する）
     href: "https://px.a8.net/svt/ejp?a8mat=3NPG18+31JTMQ+2PS+1HM30Y",
     title: "解析が終わるまで少々お待ちください",
@@ -32,10 +32,11 @@ export const SCAN_WAIT_PROMOS: readonly ScanWaitPromo[] = [
     disclosure: "FuelLens は紹介した保険会社の見積りから報酬を受け取ることがあります。",
   },
   {
-    id: "insurance-car",
+    id: "insweb-car",
     vehicleTypes: ["car"],
-    // TODO: 車用のアフィリエイトリンクが決まったらここに URL を入れる（null の間は車では何も出ない）
-    href: null,
+    // インズウェブ自動車保険（A8 プログラム s00000000352007、2026-10-28 提携）を FuelLens（サイト ID 003）で作ったリンク。
+    // a8mat の前半はサイトと提携ごとに変わる（バイク保険の 31JTMQ とは別）ので、リンクは必ず A8 の広告リンク作成で 003 を選んで作る
+    href: "https://px.a8.net/svt/ejp?a8mat=4BEL1G+2ZRITE+2PS+15OZHU",
     title: "解析が終わるまで少々お待ちください",
     body: "自動車保険、更新の前に見直していますか？ 一括見積りで複数社の保険料を比べられます（無料）。",
     cta: "無料で見積もる",

@@ -20,11 +20,11 @@ describe("decideScanWaitPromo", () => {
   it("バイクで解析中、待ち時間を過ぎていれば出す", () => {
     expect(decideScanWaitPromo(base)?.id).toBe("insweb-bike");
   });
-  it("車はリンク未設定の間は出さない。車両なしも出さない", () => {
-    expect(decideScanWaitPromo({ ...base, vehicleType: "car" })).toBeNull();
+  it("車では自動車保険を出す。車両なしは出さない", () => {
+    expect(decideScanWaitPromo({ ...base, vehicleType: "car" })?.id).toBe("insweb-car");
     expect(decideScanWaitPromo({ ...base, vehicleType: null })).toBeNull();
   });
-  it("車用のリンクが入っていれば車で出し、同じ種類は最初の有効な 1 件を選ぶ", () => {
+  it("リンクが null の提携先は飛ばし、同じ種類は最初の有効な 1 件を選ぶ", () => {
     const mk = (id: string, href: string | null) => ({ ...SCAN_WAIT_PROMOS[1], id, href });
     const promos = [mk("a", null), mk("b", "https://example.com/b"), mk("c", "https://example.com/c")];
     expect(decideScanWaitPromo({ ...base, vehicleType: "car", promos })?.id).toBe("b");

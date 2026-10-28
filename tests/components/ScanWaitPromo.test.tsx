@@ -45,7 +45,7 @@ describe("ScanWaitPromoModal", () => {
     expect(link.getAttribute("href")).toBe(SCAN_WAIT_PROMOS[0].href);
   });
   it("リンクのない提携先は出さない", () => {
-    render(<ScanWaitPromoModal promo={SCAN_WAIT_PROMOS[1]} onClose={() => {}} />);
+    render(<ScanWaitPromoModal promo={{ ...SCAN_WAIT_PROMOS[1], href: null }} onClose={() => {}} />);
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
   it("車用にリンクが入っていれば出す", () => {
@@ -105,10 +105,12 @@ describe("useScanWaitPromo", () => {
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     expect(window.localStorage.getItem(SCAN_WAIT_PROMO_STORAGE_KEY)).toBeNull();
   });
-  it("車はリンク未設定の間は出さない", () => {
+  it("車では自動車保険のリンクを出す", () => {
     render(<Harness step="analyze" type="car" />);
     advance(SCAN_WAIT_PROMO_DELAY_MS + 100);
-    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    expect(screen.getByText(/自動車保険/)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "無料で見積もる" })).toHaveAttribute("href", SCAN_WAIT_PROMOS[1].href);
   });
   it("7 日以内に出していたら出さない", () => {
     window.localStorage.setItem(SCAN_WAIT_PROMO_STORAGE_KEY, String(Date.now()));
