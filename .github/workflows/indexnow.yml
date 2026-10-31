@@ -1,0 +1,34 @@
+# Vercel の本番デプロイが成功したら、サイトマップの URL を IndexNow（Bing・Yahoo! JAPAN など）に知らせる。
+# deployment_status は Vercel の GitHub 連携（vercel[bot]）が作るデプロイで届く。Secrets は不要（キーは公開値）。
+# 手動で送るときは Actions タブから workflow_dispatch で実行する。
+name: IndexNow
+
+on:
+  deployment_status:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: indexnow
+  cancel-in-progress: true
+
+jobs:
+  submit:
+    name: Submit sitemap URLs
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.deployment_status.state == 'success' &&
+       github.event.deployment.environment == 'Production')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.deployment.sha || github.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Submit to IndexNow
+        run: node scripts/indexnow.mjs

@@ -257,6 +257,14 @@ Vercel Web Analytics（Hobby）はページビューしか取れないため、�
 - GA4 の **レポート → リアルタイム** で自分のアクセスとイベントを確認する。細かく見るときは [Google Analytics Debugger](https://chromewebstore.google.com/detail/google-analytics-debugger/jnkmfdileelhofjcijamephohjechhna) を有効にして **管理 → DebugView** を見る。`page_location` にクエリ（`utm_*` 以外）とハッシュが付いていないことも確認する。
 - 広告ブロッカーは gtag.js を止めることがある（そのブラウザの計測が欠けるだけで、アプリの動作には影響しない）。
 
+## 4-7. IndexNow（Bing・Yahoo! JAPAN への更新通知）
+
+- 本番デプロイが成功すると、`.github/workflows/indexnow.yml` がサイトマップの全 URL を IndexNow に送る。Bing・Yahoo! JAPAN・Yandex などが受け取る。Google は IndexNow を使わない（Search Console で依頼する）。
+- 合図は Vercel の GitHub 連携が作るデプロイの `deployment_status`（環境 `Production`・状態 `success`）。Preview では送らない。Secrets は不要。
+- キーは `scripts/indexnow.mjs` の `INDEXNOW_KEY` と、同じ名前で置いた `public/<キー>.txt`。公開してよい値で、検索エンジンがサイトの所有確認に使う。変えるときは両方を同時に変える（テストが一致を確かめる）。
+- 手動で送るときは Actions タブの IndexNow を workflow_dispatch で実行する。送る内容だけ見るなら `node scripts/indexnow.mjs --dry-run`。
+- 成功は HTTP 200 か 202。403 はキーのファイルが読めない、422 は URL がキーのホストと合わないことを示す。
+
 ## 5. トラブルシューティング
 
 | 症状 | 原因と対処 |
