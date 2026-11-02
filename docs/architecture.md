@@ -68,7 +68,7 @@ FuelLens の構成、データの流れ、主要なモジュールの役割を�
 | `lib/importers/csvParse.ts` | CSV 取り込みの共有プリミティブ（`parseCsvRows` / `parseCsvNumber` / `parseFlexibleDate` / `hashString` / `isBlankRow`）。`fuelio.ts` は互換のため再エクスポート |
 | `lib/scan/` | メイン画面のスキャン。`analyzeClient.ts`（`compressToDataUrl` / `requestAnalyze` / `buildAnalyzeRequestBody`。1 枚と 2 枚の本文を組み立てる。React に依存しない I/O）、`shortcuts.ts`（`?action=` の判定 `resolveShortcutAction` / `shortcutReadinessOf`、スキャンメニューの可否 `scanMenuAvailabilityOf`。純粋関数）、写真の一括読み取りの `batch.ts`（上限・ペース配分・Retry-After・重複の可能性・文言。純粋関数）と `batchController.ts`（キュー。React に依存しない）、フック `useScanPipeline` / `useBatchScan` / `useImageDropPaste` / `useShortcutActions`（[メイン画面の構成](#メイン画面の構成app)、[写真の一括読み取り](#写真の一括読み取り旧レシート)） |
 | `lib/promo/` | 解析待ちの提携先の紹介（PR）。`scanWait.ts`（設定 `SCAN_WAIT_PROMOS` と表示判定 `decideScanWaitPromo`。バイクはバイク保険・車は自動車保険・端末ごとに 7 日に 1 回・一括読み取り中は出さない・解析開始から 1.5 秒後。純粋関数）、`useScanWaitPromo`（解析が終わると自動で閉じる）。表示は `components/ScanWaitPromoModal.tsx`（「PR」表示・`rel="sponsored"`）。`toolPage.ts` は公開ツールページの計算結果の下に出す PR（設定 `TOOL_PAGE_PROMOS`、出光でんきの値引き額 `fuelDiscountSavings` = min(給油量, 100 L) × 2 円。純粋関数）で、表示は `components/ToolPagePromoCard.tsx`（`href` が null の間は何も出さない。「PR」と開示文・`rel="sponsored noopener"`・`promo_impression` / `promo_click` に `page` を付ける） |
-| `lib/nationalGasPrice.ts` | 全国平均のガソリン価格 `NATIONAL_GAS_PRICE`（資源エネルギー庁の週次調査。レギュラー・ハイオク・軽油・調査日・出典）。`/gas-cost` の例の単価 `EXAMPLE_PRICE` / `EXAMPLE_HIGH_OCTANE_PRICE` の元で、`/warikan`・`/annual-gas-cost`・`/route-gas-cost` の例もこれに従う。更新手順は [operations.md 4-8](./operations.md#4-8-全国平均のガソリン価格の更新) |
+| `lib/nationalGasPrice.ts` | 全国平均のガソリン価格 `NATIONAL_GAS_PRICE`（資源エネルギー庁の週次調査。レギュラー・ハイオク・軽油・調査日・出典）。`/gas-cost` の例の単価 `EXAMPLE_PRICE` / `EXAMPLE_HIGH_OCTANE_PRICE` の元で、`/warikan`・`/annual-gas-cost`・`/route-gas-cost` の例もこれに従う。`.github/workflows/update-gas-price.yml` が毎週 `scripts/update-gas-price.mjs` で更新し PR を作る（[operations.md 4-8](./operations.md#4-8-全国平均のガソリン価格の更新)） |
 | `lib/appQr.ts` / `components/AppQrHandoff.tsx` | 公開ツールページの「アプリを使う」の枠に添える `/app` の QR コード。`qrcode-generator` でサーバー描画の SVG にし、`@media (hover: hover) and (pointer: fine)` の端末（パソコン）でだけ見せる |
 | `lib/useRecordEditing.ts` | 記録の編集・手動入力のフォームの開閉と保存（重複確認・toast・車両切り替えで閉じる）。/app と /history で共用 |
 | `lib/manualPrefill.ts` | 手動入力の事前入力 `/app?action=manual&distance=…&amount=…&cost=…` の組み立て（`buildManualPrefillHref`。`/calc` から）・解析（`parseManualPrefill`。信頼できない入力として検証）・車両の入力方式への当てはめ（`prefillToRecord`）。純粋関数（[燃費計算ページ](#燃費計算ページcalc)） |
@@ -77,11 +77,13 @@ FuelLens の構成、データの流れ、主要なモジュールの役割を�
 | `components/ServiceWorkerRegister.tsx` | `public/sw.js` を登録する（本番ビルドのみ。開発中は `NEXT_PUBLIC_ENABLE_SW=1` で有効化）。`app/layout.tsx` にマウント |
 | `public/icons/` / `public/apple-touch-icon.png` | PWA アイコン（`icon-192.png` / `icon-512.png` / `icon-maskable-512.png` と 180x180 の apple-touch-icon）。`scripts/generate-icons.mjs` が生成 |
 | `scripts/generate-icons.mjs` | `app/icon.svg` から PWA アイコンを生成するスクリプト（`node scripts/generate-icons.mjs`） |
+| `scripts/indexnow.mjs` | 本番のサイトマップの URL を IndexNow に送る（[operations.md 4-7](./operations.md#4-7-indexnowbingyahoo-japan-への更新通知)） |
+| `scripts/update-gas-price.mjs` | 資源エネルギー庁の結果詳細版（xlsx）から全国平均のレギュラー・ハイオク・軽油を読み、新しい調査日なら `lib/nationalGasPrice.ts` を書き換える（`--dry-run` あり）。xlsx は Node 標準の zlib で展開する（追加の依存なし）。解析は純粋関数で `tests/updateGasPrice.test.ts` がテストする |
 | `tests/*.test.ts`、`tests/data/*.test.ts` | Vitest の単体テスト（`node` プロジェクト、`environment: "node"`。対象は `lib/` の関数。`tests/data/` はデータアダプタ層で、偽の Supabase クライアントと Map の Storage は `tests/data/fakeSupabase.ts`） |
 | `tests/components/*.test.tsx`、`tests/setup/` | Vitest のコンポーネントテスト（`dom` プロジェクト、jsdom + Testing Library。セットアップは `tests/setup/dom.ts`） |
 | `supabase/migrations/*.sql` | スキーマ・RLS・keepalive・給油の連鎖計算用の列（`0004_fill_chain.sql`）・記録の入口（`0005_record_source.sql`）（冪等）。手順は [supabase/README.md](../supabase/README.md) |
 | `docs/` | このドキュメント群。連鎖計算の仕様は [design-fill-chain.md](./design-fill-chain.md) |
-| `.github/workflows/` | `ci.yml`（CI）と `supabase-keepalive.yml`（keepalive の予備経路） |
+| `.github/workflows/` | `ci.yml`（CI）、`supabase-keepalive.yml`（keepalive の予備経路）、`indexnow.yml`（本番デプロイ後の IndexNow 通知）、`update-gas-price.yml`（全国平均のガソリン価格の週次更新 PR） |
 | `proxy.ts` | Clerk ミドルウェア。Next.js 16 ではファイル名が `proxy.ts`。全ルートを公開のままにしている |
 | `vercel.json` | Vercel Cron の定義 |
 | `next.config.ts` | `agentRules: false`（`next dev` による CLAUDE.md の自動生成を無効化） |
@@ -490,7 +492,7 @@ OG / Twitter 画像は静的な 1 枚（`WARIKAN_OG`。クエリごとの画像�
 ### 主要区間のガソリン代ページ（`/route-gas-cost`・`/route-gas-cost/[slug]`）
 
 `app/route-gas-cost/page.tsx` は「東京 大阪 ガソリン代」「大阪から東京 車 ガソリン代」などの検索からの入口となる静的ページで、計算機はありません。
-主要 12 区間（`lib/routeGasCostPage.ts` の `ROUTES`）について、普通車のガソリン代 + 高速代（ETC）の合計（`standardTotal`。往復は高速代 × 2）と、車種別の片道・往復のガソリン代（`routeCostTable`）を出します。燃費の目安は `/gas-cost` と共有する `CAR_TYPE_EFFICIENCIES`、単価は全国平均のレギュラー（`lib/nationalGasPrice.ts` の `NATIONAL_GAS_PRICE`。資源エネルギー庁の週次調査。更新は値と調査日をまとめて書き換える）で、金額は `computeGasCost` と同じ丸めです。逆方向も同じ金額であることを本文・見出しで示します。
+主要 12 区間（`lib/routeGasCostPage.ts` の `ROUTES`）について、普通車のガソリン代 + 高速代（ETC）の合計（`standardTotal`。往復は高速代 × 2）と、車種別の片道・往復のガソリン代（`routeCostTable`）を出します。燃費の目安は `/gas-cost` と共有する `CAR_TYPE_EFFICIENCIES`、単価は全国平均のレギュラー（`lib/nationalGasPrice.ts` の `NATIONAL_GAS_PRICE`。資源エネルギー庁の週次調査。毎週ワークフローが自動 PR で値と調査日をまとめて更新する）で、金額は `computeGasCost` と同じ丸めです。逆方向も同じ金額であることを本文・見出しで示します。
 距離は NEXCO西日本「高速料金・ルート検索」で IC 間を検索した値（`sourceKm`）、高速代は同じ IC・同じ経路（距離が一致するもの）の平日昼間の ETC 料金（`toll.standard` / `toll.kei`。確認できなければ `null` にして合計を出さない）で、取得日は `ROUTE_DISTANCE_SOURCE`、検索した IC コードは `ROUTES` のコメントにあります。表には 5 km 単位に丸めた距離（`displayKm`）を出します。区間を足すときはルート検索で確かめ、出典の値と IC・経路・料金を書きます。
 区間ごとのページ `app/route-gas-cost/[slug]/page.tsx`（slug は `ROUTES` の `id`。`generateStaticParams` + `dynamicParams = false` で全区間を SSG）は `lib/routeDetailPage.ts` で、車種別の合計（軽自動車は軽自動車等の料金）、2〜4 人で割った 1 人あたり（`computeWarikan`、100 円単位で切り上げ）、`/warikan` への値入りリンク（`buildWarikanQuery`）と `/gas-cost?km=`、近くの区間（`neighborRoutes`）を出します。構造化データは `WebPage` + `BreadcrumbList`（`buildRouteDetailJsonLd`）、OG 画像は `routeDetailOg`。全区間を `app/sitemap.ts` に載せます。
 一覧の FAQ は `ROUTE_GAS_COST_FAQS`、構造化データ（`WebPage` + `FAQPage`）は `buildRouteGasCostJsonLd`、OG 画像は `routeGasCostOg`。アプリへの誘導枠は `app/route-gas-cost/_components/RouteCta.tsx` で共有します。テストは `tests/routeGasCostPage.test.ts` と `tests/routeDetailPage.test.ts`。

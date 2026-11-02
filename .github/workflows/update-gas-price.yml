@@ -1,0 +1,138 @@
+# 全国平均のガソリン価格（資源エネルギー庁「石油製品価格調査」）を取得し、新しい調査日の値があれば lib/nationalGasPrice.ts を更新する PR を作る。
+# 公表は毎週水曜 14:00（祝日などで木曜にずれる週がある）なので、水曜と木曜の 18:00 JST に実行する。手動なら Actions タブから workflow_dispatch。
+# GITHUB_TOKEN で作った PR では CI（ci.yml）が走らないため、ここで lint / typecheck / test を実行し、結果を PR 本文に書く。
+# 同じ調査日の PR（開いている・閉じたものとも）があれば作らない。手順と失敗時の対処は docs/operations.md の 4-8。
+name: Update gas price
+
+on:
+  schedule:
+    - cron: "0 9 * * 3" # 水曜 18:00 JST
+    - cron: "0 9 * * 4" # 木曜 18:00 JST
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: update-gas-price
+  cancel-in-progress: false
+
+jobs:
+  update:
+    name: Fetch and open PR
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      # 取得・解析・妥当性チェックに失敗したら非 0 で終了する（ファイルは触らない）
+      - name: Fetch latest national price
+        id: fetch
+        run: node scripts/update-gas-price.mjs
+
+      - name: Check for an existing PR
+        id: existing
+        if: steps.fetch.outputs.updated == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SURVEY_DATE: ${{ steps.fetch.outputs.survey_date }}
+        run: |
+          branch="chore/gas-price-${SURVEY_DATE}"
+          echo "branch=${branch}" >> "$GITHUB_OUTPUT"
+          count=$(gh pr list --repo "$GITHUB_REPOSITORY" --head "$branch" --state all --json number --jq 'length')
+          if [ "$count" -gt 0 ]; then
+            echo "調査日 ${SURVEY_DATE} の PR は既にあります。作りません。"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install dependencies
+        if: steps.existing.outputs.skip == 'false'
+        run: npm ci
+
+      - name: Lint
+        id: lint
+        if: steps.existing.outputs.skip == 'false'
+        continue-on-error: true
+        run: npm run lint
+
+      - name: Typecheck
+        id: typecheck
+        if: steps.existing.outputs.skip == 'false'
+        continue-on-error: true
+        run: npm run typecheck
+
+      - name: Test
+        id: test
+        if: steps.existing.outputs.skip == 'false'
+        continue-on-error: true
+        run: npm test
+
+      # チェックが落ちても PR は作る（下書きにして本文に結果を書く）。ジョブは最後に失敗させる
+      - name: Open PR
+        if: steps.existing.outputs.skip == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BRANCH: ${{ steps.existing.outputs.branch }}
+          SURVEY_DATE: ${{ steps.fetch.outputs.survey_date }}
+          PUBLISHED_DATE: ${{ steps.fetch.outputs.published_date }}
+          XLSX_URL: ${{ steps.fetch.outputs.xlsx_url }}
+          SUMMARY: ${{ steps.fetch.outputs.summary }}
+          LINT: ${{ steps.lint.outcome }}
+          TYPECHECK: ${{ steps.typecheck.outcome }}
+          TEST: ${{ steps.test.outcome }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          mark() { if [ "$1" = "success" ]; then echo "✅ 成功"; else echo "❌ $1"; fi; }
+          draft=""
+          if [ "$LINT" != "success" ] || [ "$TYPECHECK" != "success" ] || [ "$TEST" != "success" ]; then draft="--draft"; fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898283+github-actions[bot]@users.noreply.github.com"
+          git switch -c "$BRANCH"
+          git add lib/nationalGasPrice.ts
+          git commit -m "chore: 全国平均のガソリン価格を ${SURVEY_DATE} 調査の値に更新する"
+          git push --force origin "$BRANCH"
+          {
+            echo "資源エネルギー庁「石油製品価格調査」の ${SURVEY_DATE} 調査（${PUBLISHED_DATE} 公表）の全国平均で \`lib/nationalGasPrice.ts\` を更新します（\`.github/workflows/update-gas-price.yml\` による自動 PR）。"
+            echo
+            echo "$SUMMARY"
+            echo
+            echo "取得元: ${XLSX_URL}"
+            echo
+            echo "## ワークフロー内のチェック"
+            echo
+            echo "GITHUB_TOKEN で作った PR では CI が走らないため、PR を作る前にこのワークフローで実行した結果です（[実行ログ](${RUN_URL})）。"
+            echo
+            echo "| チェック | 結果 |"
+            echo "|---|---|"
+            echo "| \`npm run lint\` | $(mark "$LINT") |"
+            echo "| \`npm run typecheck\` | $(mark "$TYPECHECK") |"
+            echo "| \`npm test\` | $(mark "$TEST") |"
+            echo
+            if [ -n "$draft" ]; then
+              echo "チェックが失敗したため下書きにしています。実行ログを確認し、docs/operations.md の 4-8 の手順で直してください。"
+            else
+              echo "問題がなければマージしてください（本番デプロイで /gas-cost・/warikan・/annual-gas-cost・/route-gas-cost の例の単価が変わり、IndexNow にも通知されます）。"
+            fi
+          } > "$RUNNER_TEMP/pr-body.md"
+          gh pr create --repo "$GITHUB_REPOSITORY" --base main --head "$BRANCH" $draft \
+            --title "chore: 全国平均のガソリン価格を ${SURVEY_DATE} 調査の値に更新" \
+            --body-file "$RUNNER_TEMP/pr-body.md" || {
+            # リポジトリの設定で「Allow GitHub Actions to create and approve pull requests」が無効だと作れない（ブランチは push 済み）
+            echo "::error::PR を作れませんでした。Settings → Actions → General の「Allow GitHub Actions to create and approve pull requests」を有効にするか、${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/compare/main...${BRANCH} から手で PR を作ってください。"
+            exit 1
+          }
+
+      - name: Fail if checks failed
+        if: steps.existing.outputs.skip == 'false' && (steps.lint.outcome != 'success' || steps.typecheck.outcome != 'success' || steps.test.outcome != 'success')
+        run: |
+          echo "lint: ${{ steps.lint.outcome }} / typecheck: ${{ steps.typecheck.outcome }} / test: ${{ steps.test.outcome }}"
+          exit 1

@@ -2,6 +2,8 @@ import { afterEach, describe, expect, it } from "vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import GasCostCalculator from "@/app/gas-cost/_components/GasCostCalculator";
+import { formatJaDate } from "@/lib/gasCostPage";
+import { NATIONAL_GAS_PRICE } from "@/lib/nationalGasPrice";
 
 function setup() {
   const user = userEvent.setup();
@@ -94,19 +96,22 @@ describe("GasCostCalculator", () => {
   it("全国平均の単価と出典を出し、ボタンで単価の欄に入れる", async () => {
     const { user, distance, efficiency, price } = setup();
     expect(price.value).toBe("");
-    expect(screen.getByText(/2026年10月26日調査/)).toBeInTheDocument();
+    // 単価と調査日は全国平均（週次で自動更新される）。金額の期待値も単価から計算する
+    const { regular, highOctane, surveyDate } = NATIONAL_GAS_PRICE;
+    const yen = (price: number) => Math.round((300 / 13) * price).toLocaleString("ja-JP");
+    expect(screen.getByText(new RegExp(`${formatJaDate(surveyDate)}調査`))).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "資源エネルギー庁" })).toHaveAttribute(
       "href",
       "https://www.enecho.meti.go.jp/statistics/petroleum_and_lpgas/pl007/results.html"
     );
     await user.click(screen.getByRole("button", { name: "レギュラーを入れる" }));
-    expect(price.value).toBe("170.1");
+    expect(price.value).toBe(regular.toFixed(1));
     await user.type(distance, "300");
     await user.type(efficiency, "13");
-    expect(resultValue("ガソリン代")).toBe("3,925");
+    expect(resultValue("ガソリン代")).toBe(yen(regular));
     await user.click(screen.getByRole("button", { name: "ハイオクを入れる" }));
-    expect(price.value).toBe("181.0");
-    expect(resultValue("ガソリン代")).toBe("4,177");
+    expect(price.value).toBe(highOctane.toFixed(1));
+    expect(resultValue("ガソリン代")).toBe(yen(highOctane));
   });
 
   it("出光でんきの PR はリンクが入るまで出さない", () => {

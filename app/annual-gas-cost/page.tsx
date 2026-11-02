@@ -13,6 +13,7 @@ import {
   buildMonthlyTable,
   commuteExample,
 } from "@/lib/annualGasCostPage";
+import { formatPrice } from "@/lib/gasCostPage";
 import AnnualGasCostCalculator from "./_components/AnnualGasCostCalculator";
 import { aiAvailabilityCopy } from "@/lib/landingPage";
 import { isTrialEnabled } from "@/lib/server/analyze/trialCookie";
@@ -74,12 +75,12 @@ export default function AnnualGasCostPage() {
           <section>
             <h2>早見表: 月間走行距離とガソリン代</h2>
             <p>
-              単価 <span className="num">{EXAMPLE_PRICE}</span> 円/L で計算した例です。実際の単価で計算するときは上のツールを使ってください。
+              単価 <span className="num">{formatPrice(EXAMPLE_PRICE)}</span> 円/L で計算した例です。実際の単価で計算するときは上のツールを使ってください。
               各マスの上が月額、下が年額（月額 × 12）です。
             </p>
             <div className="mt-3 overflow-x-auto rounded-2xl border border-line bg-surface">
               <table className="w-full border-collapse text-right text-sm">
-                <caption className="sr-only">月間走行距離と燃費ごとのガソリン代（円）。単価 {EXAMPLE_PRICE} 円/L の例。上が月額、下が年額</caption>
+                <caption className="sr-only">月間走行距離と燃費ごとのガソリン代（円）。単価 {formatPrice(EXAMPLE_PRICE)} 円/L の例。上が月額、下が年額</caption>
                 <thead>
                   <tr className="border-b border-line text-sub">
                     <th scope="col" className="px-2.5 py-2.5 text-left font-medium">月間距離＼燃費</th>
@@ -114,7 +115,7 @@ export default function AnnualGasCostPage() {
             <h2>通勤の例</h2>
             <p>
               片道 <span className="num">{COMMUTE_EXAMPLE.oneWayKm}</span> km、月 <span className="num">{COMMUTE_EXAMPLE.days}</span> 日出勤、
-              燃費 <span className="num">{COMMUTE_EXAMPLE.efficiency}</span> km/L、単価 <span className="num">{EXAMPLE_PRICE}</span> 円/L（例）の場合です。
+              燃費 <span className="num">{COMMUTE_EXAMPLE.efficiency}</span> km/L、単価 <span className="num">{formatPrice(EXAMPLE_PRICE)}</span> 円/L（例）の場合です。
             </p>
             <ul>
               <li>
