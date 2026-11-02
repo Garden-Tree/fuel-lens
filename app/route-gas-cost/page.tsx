@@ -1,24 +1,31 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { Camera, ChevronRight } from "lucide-react";
 import { otherToolLinks } from "@/lib/publicNav";
 import { PublicPageHeader } from "@/components/LegalPage";
-import { CAR_TYPE_EFFICIENCIES, CAR_TYPE_EFFICIENCY_NOTE, EXAMPLE_PRICE } from "@/lib/gasCostPage";
+import { CAR_TYPE_EFFICIENCIES, CAR_TYPE_EFFICIENCY_NOTE } from "@/lib/gasCostPage";
+import { NATIONAL_GAS_PRICE } from "@/lib/nationalGasPrice";
 import {
+  ROUTES,
   ROUTE_DISTANCE_SOURCE,
   ROUTE_GAS_COST_DESCRIPTION,
   ROUTE_GAS_COST_FAQS,
   ROUTE_GAS_COST_PAGE_TITLE,
   ROUTE_GAS_COST_PATH,
+  ROUTE_TOLL_NOTE,
+  STANDARD_EFFICIENCY,
   buildRouteGasCostJsonLd,
+  displayKm,
   routeCostTable,
-  routeGasCostLink,
-  routeWarikanLink,
+  routePath,
+  routePriceLabel,
+  standardTotal,
+  yen,
 } from "@/lib/routeGasCostPage";
-import { aiAvailabilityCopy } from "@/lib/landingPage";
-import { isTrialEnabled } from "@/lib/server/analyze/trialCookie";
+import RouteCta from "./_components/RouteCta";
+import CostPair from "./_components/CostPair";
 
-// ログイン不要の主要区間のガソリン代ページ（「東京 大阪 ガソリン代」などの検索からの入口）。計算機は持たず、全体が静的。
+// ログイン不要の主要区間のガソリン代・高速代ページ（「東京 大阪 ガソリン代」「大阪から東京 車 ガソリン代」などの検索からの入口）。
+// 計算機は持たず、全体が静的。区間ごとの詳細は ./[slug]/page.tsx。
 
 const TITLE = ROUTE_GAS_COST_PAGE_TITLE;
 const DESCRIPTION = ROUTE_GAS_COST_DESCRIPTION;
@@ -46,24 +53,81 @@ export default function RouteGasCostPage() {
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: buildRouteGasCostJsonLd() }} />
       <PublicPageHeader />
       <main className="mx-auto max-w-[720px] px-4 pb-16 pt-8">
-        <h1 className="text-2xl font-bold">主要区間のガソリン代の目安</h1>
+        <h1 className="text-2xl font-bold">主要区間の車のガソリン代と高速代の目安</h1>
         <p className="mt-2 text-[15px] leading-7 text-sub">
-          東京〜大阪や東京〜名古屋など主要な区間を高速道路で走ったときのガソリン代を、車種ごとの燃費の目安で片道・往復にまとめました。
-          高速代は含みません（高速代は NEXCO の
-          <a href="https://www.driveplaza.com/" target="_blank" rel="noopener noreferrer" className={LINK}>
-            ドラぷら
-          </a>
-          などで調べられます）。
+          東京〜大阪や名古屋〜大阪など主要な区間を車で走ったときのガソリン代と高速代（ETC）を、片道・往復でまとめました。
+          距離も料金もどちら向きで走っても同じなので、大阪→東京なら「東京〜大阪」の行を見てください。
+          区間名を押すと、車種別の合計や人数で割った金額が出ます。
         </p>
 
         <div className="mt-8 space-y-10 text-[15px] leading-7 text-ink/90 [&_h2]:mb-3 [&_h2]:text-lg [&_h2]:font-bold [&_h2]:text-ink">
           <section>
-            <h2>区間別のガソリン代（片道・往復）</h2>
+            <h2>ガソリン代＋高速代の合計（普通車）</h2>
             <p className="text-sm text-sub">各セルの上が片道、下が往復の金額（円）です。</p>
             <div className="mt-3 overflow-x-auto rounded-2xl border border-line bg-surface">
               <table className="w-full border-collapse text-right text-sm">
                 <caption className="sr-only">
-                  主要区間・車種別のガソリン代（円）。上段が片道、下段が往復。レギュラー {EXAMPLE_PRICE} 円/L の例
+                  主要区間の普通車のガソリン代・高速代（ETC）・合計（円）。上段が片道、下段が往復。逆方向も同じ金額
+                </caption>
+                <thead>
+                  <tr className="border-b border-line text-xs text-sub">
+                    <th scope="col" className="px-2 py-2.5 text-left font-medium">区間</th>
+                    <th scope="col" className="px-2 py-2.5 font-medium">高速代</th>
+                    <th scope="col" className="px-2 py-2.5 font-medium">ガソリン代</th>
+                    <th scope="col" className="px-2 py-2.5 font-medium">合計</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {ROUTES.map((route) => {
+                    const t = standardTotal(route);
+                    return (
+                      <tr key={route.id} className="border-b border-line align-top last:border-b-0">
+                        <th scope="row" className="px-2 py-2.5 text-left font-medium text-ink">
+                          <Link href={routePath(route)} className={`inline-flex min-h-8 items-center whitespace-nowrap text-[13px] ${LINK}`}>
+                            {route.name}
+                          </Link>
+                          <span className="block whitespace-nowrap text-xs font-normal text-sub">
+                            約<span className="num">{displayKm(route.sourceKm)}</span>km
+                          </span>
+                        </th>
+                        <td className="whitespace-nowrap px-2 py-2.5">
+                          {t.toll == null ? (
+                            <span className="text-xs text-sub">未確認</span>
+                          ) : (
+                            <CostPair oneWay={yen(t.toll)} roundTrip={yen(t.toll * 2)} />
+                          )}
+                        </td>
+                        <td className="whitespace-nowrap px-2 py-2.5">
+                          <CostPair oneWay={yen(t.gasOneWay)} roundTrip={yen(t.gasRoundTrip)} />
+                        </td>
+                        <td className="whitespace-nowrap px-2 py-2.5 font-bold">
+                          {t.totalOneWay == null || t.totalRoundTrip == null ? (
+                            <span className="text-xs font-normal text-sub">—</span>
+                          ) : (
+                            <CostPair oneWay={yen(t.totalOneWay)} roundTrip={yen(t.totalRoundTrip)} />
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+            <p className="mt-2 text-xs leading-relaxed text-sub">
+              ガソリン代は普通車の燃費 約<span className="num">{STANDARD_EFFICIENCY}</span>km/L・レギュラーの
+              <a href={NATIONAL_GAS_PRICE.sourceUrl} target="_blank" rel="noopener noreferrer" className={LINK}>
+                {routePriceLabel()}
+              </a>
+              で計算しています。{ROUTE_TOLL_NOTE}
+            </p>
+          </section>
+
+          <section>
+            <h2>車種別のガソリン代（片道・往復）</h2>
+            <div className="overflow-x-auto rounded-2xl border border-line bg-surface">
+              <table className="w-full border-collapse text-right text-sm">
+                <caption className="sr-only">
+                  主要区間・車種別のガソリン代（円）。上段が片道、下段が往復。レギュラー {NATIONAL_GAS_PRICE.regular} 円/L
                 </caption>
                 <thead>
                   <tr className="border-b border-line text-sub">
@@ -81,26 +145,14 @@ export default function RouteGasCostPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {rows.map(({ route, km, costs }) => (
+                  {rows.map(({ route, costs }) => (
                     <tr key={route.id} className="border-b border-line align-top last:border-b-0">
-                      <th scope="row" className="px-1 py-2.5 text-left font-medium text-ink">
-                        <span className="block whitespace-nowrap text-[13px]">{route.name}</span>
-                        <span className="block whitespace-nowrap text-xs font-normal text-sub">
-                          約<span className="num">{km}</span>km
-                        </span>
-                        <span className="mt-1 flex flex-wrap gap-x-2 text-xs font-normal">
-                          <a href={routeGasCostLink(km)} className={`inline-flex min-h-8 items-center ${LINK}`}>
-                            計算
-                          </a>
-                          <a href={routeWarikanLink(km)} className={`inline-flex min-h-8 items-center ${LINK}`}>
-                            割り勘
-                          </a>
-                        </span>
+                      <th scope="row" className="whitespace-nowrap px-1 py-2.5 text-left text-[13px] font-medium text-ink">
+                        {route.name}
                       </th>
                       {costs.map(({ oneWay, roundTrip }, i) => (
                         <td key={CAR_TYPE_EFFICIENCIES[i].id} className="whitespace-nowrap px-1 py-2.5">
-                          <span className="num block text-ink">{oneWay}</span>
-                          <span className="num block text-xs text-sub">{roundTrip}</span>
+                          <CostPair oneWay={oneWay} roundTrip={roundTrip} />
                         </td>
                       ))}
                     </tr>
@@ -109,39 +161,11 @@ export default function RouteGasCostPage() {
               </table>
             </div>
             <p className="mt-2 text-xs leading-relaxed text-sub">
-              {CAR_TYPE_EFFICIENCY_NOTE}単価はレギュラー <span className="num">{EXAMPLE_PRICE}</span> 円/L の例で、実際の価格は地域・時期で変わります。
-              距離は IC 間の高速道路の距離を 5 km 単位に丸めた値で、IC までの一般道や都市高速の距離は含みません。
-              「計算」で自分の燃費・単価のガソリン代を、「割り勘」で高速代を足した 1 人あたりを出せます。
+              {CAR_TYPE_EFFICIENCY_NOTE}距離は IC 間の高速道路の距離を 5 km 単位に丸めた値で、IC までの一般道の距離は含みません。
             </p>
           </section>
 
-          <section aria-labelledby="route-cta" className="rounded-hero border border-accent/40 bg-surface p-5 sm:p-6">
-            <div className="flex items-start gap-3">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-surface-2 text-accent">
-                <Camera className="h-5 w-5" aria-hidden="true" />
-              </div>
-              <div className="min-w-0">
-                <h2 id="route-cta" className="mb-1! text-base! leading-6">
-                  自分の車の実燃費で見積もるなら FuelLens
-                </h2>
-                <p className="text-sm leading-6 text-sub">
-                  表の燃費は一般的な目安です。FuelLens はレシートとトリップメーターが写った写真を撮るだけで、AI が給油量・金額・区間距離を読み取り、
-                  満タン法で実燃費を記録します。
-                </p>
-              </div>
-            </div>
-            <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-4">
-              <Link
-                href="/app"
-                data-ga-cta="cta_box"
-                className="inline-flex h-11 items-center justify-center gap-1 rounded-xl bg-accent px-5 text-sm font-bold text-ground transition-colors hover:bg-accent/90 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
-              >
-                アプリを使う（無料）
-                <ChevronRight className="h-4 w-4" aria-hidden="true" />
-              </Link>
-              <p className="text-xs text-sub">{aiAvailabilityCopy(isTrialEnabled()).calcNote}</p>
-            </div>
-          </section>
+          <RouteCta />
 
           <section>
             <h2>よくある質問</h2>
@@ -156,16 +180,16 @@ export default function RouteGasCostPage() {
           </section>
 
           <section>
-            <h2>距離の出典</h2>
+            <h2>距離と高速代の出典</h2>
             <p className="text-sm text-sub">
               <a href={ROUTE_DISTANCE_SOURCE.url} target="_blank" rel="noopener noreferrer" className={LINK}>
                 {ROUTE_DISTANCE_SOURCE.name}
               </a>
-              で各区間の IC 間を検索し、高速道路だけを通る経路のうち最短の距離を使いました（{ROUTE_DISTANCE_SOURCE.retrieved}取得）。
-              新しい道路の開通などで変わることがあります。
+              で各区間の IC 間を検索し、高速道路だけを通る経路のうち最短の距離（{ROUTE_DISTANCE_SOURCE.retrieved}取得）と、
+              同じ経路の ETC 料金（{ROUTE_DISTANCE_SOURCE.tollRetrieved}取得）を使いました。料金改定や新しい道路の開通で変わることがあります。
             </p>
             <ul className="mt-2 space-y-1 text-xs leading-relaxed text-sub">
-              {rows.map(({ route }) => (
+              {ROUTES.map((route) => (
                 <li key={route.id}>
                   {route.name}: {route.from}〜{route.to}（{route.via}）<span className="num">{route.sourceKm}</span> km
                 </li>

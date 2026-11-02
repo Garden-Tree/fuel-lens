@@ -1,5 +1,6 @@
 import type { MetadataRoute } from "next";
 import { getSiteUrl } from "@/lib/siteUrl";
+import { ROUTES, routePath } from "@/lib/routeGasCostPage";
 
 export default function sitemap(): MetadataRoute.Sitemap {
   const base = getSiteUrl();
@@ -9,6 +10,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
     { url: `${base}/gas-cost`, changeFrequency: "monthly", priority: 0.8 },
     { url: `${base}/warikan`, changeFrequency: "monthly", priority: 0.8 },
     { url: `${base}/route-gas-cost`, changeFrequency: "monthly", priority: 0.8 },
+    ...ROUTES.map((r) => ({ url: `${base}${routePath(r)}`, changeFrequency: "monthly" as const, priority: 0.7 })),
     { url: `${base}/annual-gas-cost`, changeFrequency: "monthly", priority: 0.8 },
     { url: `${base}/fuel-convert`, changeFrequency: "monthly", priority: 0.8 },
     { url: `${base}/expense`, changeFrequency: "monthly", priority: 0.7 },

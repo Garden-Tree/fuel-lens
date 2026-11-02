@@ -14,7 +14,7 @@ FuelLens の構成、データの流れ、主要なモジュールの役割を�
 | `app/(app)/settings/page.tsx` | 設定画面（`/settings`）。見出し付きのグループリストで、データ概要・バックアップ・復元・インポート（[8 章](#8-バックアップと復元)）・アカウント（[アカウント削除](#アカウント削除)） |
 | `app/privacy/page.tsx`、`app/terms/page.tsx`、`components/LegalPage.tsx` | プライバシーポリシー（`/privacy`）と利用規約（`/terms`）。ログイン不要の静的ページ（Google OAuth 同意画面用）で、共通レイアウトは `LegalPage`（タブバーなし）。ランディングのフッターと設定画面の「このアプリについて」からリンク |
 | `app/manifest.ts` | PWA の Web App Manifest（`/manifest.webmanifest`。[9 章](#9-pwa)） |
-| `app/robots.ts`、`app/sitemap.ts`、`lib/siteUrl.ts` | `/robots.txt`（`/api/`・`/settings`・`/history`・`/stats` を除外）と `/sitemap.xml`（`/`・`/calc`・`/gas-cost`・`/annual-gas-cost`・`/fuel-convert`・`/expense`・`/app`・`/privacy`・`/terms`）。サイト URL は `getSiteUrl()`（`NEXT_PUBLIC_APP_URL`、無効・未設定なら `https://fuel-lens.gadelog.com`） |
+| `app/robots.ts`、`app/sitemap.ts`、`lib/siteUrl.ts` | `/robots.txt`（`/api/`・`/settings`・`/history`・`/stats` を除外）と `/sitemap.xml`（`/`・`/calc`・`/gas-cost`・`/warikan`・`/route-gas-cost` と区間ごとのページ・`/annual-gas-cost`・`/fuel-convert`・`/expense`・`/app`・`/privacy`・`/terms`）。サイト URL は `getSiteUrl()`（`NEXT_PUBLIC_APP_URL`、無効・未設定なら `https://fuel-lens.gadelog.com`） |
 | `app/opengraph-image.tsx`、`app/twitter-image.tsx`、`lib/og/renderOgImage.tsx` | SNS 共有用の 1200×630 画像（`next/og` の `ImageResponse`）。2 つの route は同じ `renderOgImage()` を呼ぶだけ。Noto Sans JP / JetBrains Mono をリクエスト時に Google Fonts から取得（[operations.md](./operations.md#4-4-og-画像)）。`app/layout.tsx` の `twitter.card` は `summary_large_image` |
 | `app/api/analyze/route.ts` | Gemini で画像（1 枚、またはレシートとメーターの 2 枚）を解析する API（[api-analyze.md](./api-analyze.md)。本体は `lib/server/analyze/`、プロンプトは `prompt.ts`） |
 | `app/api/account/route.ts`、`lib/server/account/handler.ts` | アカウント削除の API（`DELETE /api/account`。Clerk のユーザーを削除する。[api-account.md](./api-account.md)） |
@@ -135,7 +135,7 @@ FuelLens の構成、データの流れ、主要なモジュールの役割を�
     こちらは `previewing` ではなく通常の表示で、書き込みもできます（ストアは準備済み。書き込み中に一覧の読み込みが実行中なら読み直す従来の仕組みがそのまま効く）。
     使うのはそのフックのインスタンスがまだクラウドから一覧を読めていない間だけで、キャッシュが無ければ従来どおりスケルトンです。失敗時の扱い（障害・日本語エラー・キャッシュの閲覧専用表示）は変わりません。
   - `syncCacheOwner` は従来どおり Clerk の確定値（`authLoaded`）を待って呼びます。移行（`migrateLocalData`）は従来どおりクラウドの初期化からだけ走ります。
-  - `auth()` を読むため `/app`・`/history`・`/stats`・`/settings` はリクエストごとの描画（ビルド出力の `ƒ`）です。公開ページ（`/`・`/calc`・`/gas-cost`・`/warikan`・`/route-gas-cost`・`/annual-gas-cost`・`/fuel-convert`・`/expense`・`/privacy`・`/terms`）は静的のままです。
+  - `auth()` を読むため `/app`・`/history`・`/stats`・`/settings` はリクエストごとの描画（ビルド出力の `ƒ`）です。公開ページ（`/`・`/calc`・`/gas-cost`・`/warikan`・`/route-gas-cost`（区間ごとのページは SSG）・`/annual-gas-cost`・`/fuel-convert`・`/expense`・`/privacy`・`/terms`）は静的のままです。
 - 選択中の車両 ID は localStorage に保存します。未ログイン時は `fuel_lens_selected_vehicle_id`、ログイン時はユーザーごとの `fuel_lens_selected_vehicle_id_<userId>` を使い、保存値が現在の車両一覧に無い場合は既定車両へフォールバックして保存値を書き換えます。
 
 ### データアダプタ層（`lib/data/`）
@@ -487,12 +487,13 @@ FAQ（`GAS_COST_FAQS`）と構造化データ（`buildGasCostJsonLd`）は `/cal
 共有は「共有する」（Web Share API。使えない環境では出さない）・「LINE で送る」（`lineShareUrl`）・「リンクをコピー」（`navigator.clipboard`。結果はボタン横に表示）で、文面は `buildWarikanShareText`。各操作で GA4 の `warikan_share` を送ります。URL のクエリは `scrubAnalyticsUrl` で GA・Vercel Analytics には送られません（ページビューもパスが変わったときだけ）。
 OG / Twitter 画像は静的な 1 枚（`WARIKAN_OG`。クエリごとの画像は作らない）。FAQ は `WARIKAN_FAQS`、構造化データは `buildWarikanJsonLd`。`/gas-cost` の「割り勘」の説明はこのページへのリンクにしています。テストは `tests/warikanPage.test.ts` と `tests/components/WarikanCalculator.test.tsx`。
 
-### 主要区間のガソリン代ページ（`/route-gas-cost`）
+### 主要区間のガソリン代ページ（`/route-gas-cost`・`/route-gas-cost/[slug]`）
 
-`app/route-gas-cost/page.tsx` は「東京 大阪 ガソリン代」などの検索からの入口となる静的ページで、計算機はありません。
-主要 12 区間（`lib/routeGasCostPage.ts` の `ROUTES`）を高速道路で走ったときの片道・往復のガソリン代を、`/gas-cost` と共有する車種の燃費の目安（`CAR_TYPE_EFFICIENCIES`）とレギュラーの例の単価（`EXAMPLE_PRICE`）で出します（`routeCostTable`。値は `computeGasCost`）。
-距離は NEXCO西日本「高速料金・ルート検索」で IC 間を検索した値（`sourceKm`、取得日は `ROUTE_DISTANCE_SOURCE`）をそのまま持ち、表には 5 km 単位に丸めた値（`displayKm`）を出します。確認できない区間は載せません。区間を足すときはルート検索で確かめ、出典の値と IC・経路を書きます。
-各行は `/gas-cost?km=`（`parseDistancePrefill` は 1〜2000 の整数を受け付ける）と `/warikan?km=&trip=round` へリンクします。高速代は扱いません。FAQ は `ROUTE_GAS_COST_FAQS`、構造化データ（`WebPage` + `FAQPage`）は `buildRouteGasCostJsonLd`、OG 画像は `routeGasCostOg`。テストは `tests/routeGasCostPage.test.ts`。
+`app/route-gas-cost/page.tsx` は「東京 大阪 ガソリン代」「大阪から東京 車 ガソリン代」などの検索からの入口となる静的ページで、計算機はありません。
+主要 12 区間（`lib/routeGasCostPage.ts` の `ROUTES`）について、普通車のガソリン代 + 高速代（ETC）の合計（`standardTotal`。往復は高速代 × 2）と、車種別の片道・往復のガソリン代（`routeCostTable`）を出します。燃費の目安は `/gas-cost` と共有する `CAR_TYPE_EFFICIENCIES`、単価は全国平均のレギュラー（`lib/nationalGasPrice.ts` の `NATIONAL_GAS_PRICE`。資源エネルギー庁の週次調査。更新は値と調査日をまとめて書き換える）で、金額は `computeGasCost` と同じ丸めです。逆方向も同じ金額であることを本文・見出しで示します。
+距離は NEXCO西日本「高速料金・ルート検索」で IC 間を検索した値（`sourceKm`）、高速代は同じ IC・同じ経路（距離が一致するもの）の平日昼間の ETC 料金（`toll.standard` / `toll.kei`。確認できなければ `null` にして合計を出さない）で、取得日は `ROUTE_DISTANCE_SOURCE`、検索した IC コードは `ROUTES` のコメントにあります。表には 5 km 単位に丸めた距離（`displayKm`）を出します。区間を足すときはルート検索で確かめ、出典の値と IC・経路・料金を書きます。
+区間ごとのページ `app/route-gas-cost/[slug]/page.tsx`（slug は `ROUTES` の `id`。`generateStaticParams` + `dynamicParams = false` で全区間を SSG）は `lib/routeDetailPage.ts` で、車種別の合計（軽自動車は軽自動車等の料金）、2〜4 人で割った 1 人あたり（`computeWarikan`、100 円単位で切り上げ）、`/warikan` への値入りリンク（`buildWarikanQuery`）と `/gas-cost?km=`、近くの区間（`neighborRoutes`）を出します。構造化データは `WebPage` + `BreadcrumbList`（`buildRouteDetailJsonLd`）、OG 画像は `routeDetailOg`。全区間を `app/sitemap.ts` に載せます。
+一覧の FAQ は `ROUTE_GAS_COST_FAQS`、構造化データ（`WebPage` + `FAQPage`）は `buildRouteGasCostJsonLd`、OG 画像は `routeGasCostOg`。アプリへの誘導枠は `app/route-gas-cost/_components/RouteCta.tsx` で共有します。テストは `tests/routeGasCostPage.test.ts` と `tests/routeDetailPage.test.ts`。
 
 ### 年間ガソリン代ページ（`/annual-gas-cost`）
 
