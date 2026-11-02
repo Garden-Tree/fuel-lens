@@ -38,7 +38,7 @@ CI は Node 22 で lint → typecheck → test → build を実行する（[docs
 | `tests/` | Vitest の単体テスト（`lib/` が対象） |
 | `supabase/` | マイグレーション SQL（冪等）と DB runbook |
 | `docs/` | 設計・API・運用・ロードマップ（索引は [docs/README.md](./docs/README.md)） |
-| `.github/workflows/` | CI と Supabase keepalive |
+| `.github/workflows/` | CI、Supabase keepalive、IndexNow、全国平均のガソリン価格の週次更新（`scripts/update-gas-price.mjs` → 自動 PR） |
 | `proxy.ts` | Clerk ミドルウェア（Next 16 では `middleware.ts` ではなく `proxy.ts`） |
 | `csv/` | 個人データ置き場。コミット禁止 |
 

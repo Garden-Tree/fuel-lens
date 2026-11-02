@@ -12,6 +12,7 @@ import {
   type AnnualGasCostInput,
 } from "@/lib/annualGasCostPage";
 import { EXAMPLE_PRICE } from "@/lib/gasCostPage";
+import { NATIONAL_GAS_PRICE } from "@/lib/nationalGasPrice";
 
 const base: AnnualGasCostInput = {
   mode: "distance",
@@ -125,7 +126,18 @@ describe("検証と注意", () => {
   });
 });
 
+/** 全国平均の単価（EXAMPLE_PRICE）での月額・年額の期待値。年額は月額の 12 倍を丸める */
+function expectedAtExamplePrice(monthlyKm: number, efficiency: number) {
+  const monthlyYen = (monthlyKm / efficiency) * NATIONAL_GAS_PRICE.regular;
+  const yen = (v: number) => Math.round(v).toLocaleString("ja-JP");
+  return { monthly: yen(monthlyYen), yearly: yen(monthlyYen * 12) };
+}
+
 describe("早見表と通勤の例", () => {
+  it("例の単価は全国平均のレギュラー", () => {
+    expect(EXAMPLE_PRICE).toBe(NATIONAL_GAS_PRICE.regular);
+  });
+
   it("セルの値は computeAnnualGasCost と一致する", () => {
     const table = buildMonthlyTable();
     expect(table.map((r) => r.distance)).toEqual([...MONTHLY_TABLE_DISTANCES]);
@@ -141,13 +153,14 @@ describe("早見表と通勤の例", () => {
         expect(cell).toEqual({ monthly: r.monthlyCost, yearly: r.yearlyCost });
       });
     }
-    // 1,000 km/月・15 km/L・170.1 円/L（全国平均）: 66.67 L × 170.1 = 11,340 円
-    expect(table.find((r) => r.distance === 1000)!.cells[1]).toEqual({ monthly: "11,340", yearly: "136,080" });
-    expect(table.find((r) => r.distance === 300)!.cells[0]).toEqual({ monthly: "5,103", yearly: "61,236" });
+    // 単価は全国平均のレギュラー（週次で自動更新されるので、期待値も単価から計算する）
+    // 例: 1,000 km/月・15 km/L なら 66.67 L × 単価
+    expect(table.find((r) => r.distance === 1000)!.cells[1]).toEqual(expectedAtExamplePrice(1000, 15));
+    expect(table.find((r) => r.distance === 300)!.cells[0]).toEqual(expectedAtExamplePrice(300, 10));
   });
 
-  it("通勤の例は 月 6,804 円・年 81,648 円", () => {
-    expect(commuteExample()).toEqual({ monthlyKm: "600", monthly: "6,804", yearly: "81,648" });
+  it("通勤の例は 片道 15 km × 往復 × 20 日 = 月 600 km を全国平均の単価で計算する", () => {
+    expect(commuteExample()).toEqual({ monthlyKm: "600", ...expectedAtExamplePrice(600, 15) });
   });
 });
 

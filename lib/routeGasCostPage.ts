@@ -7,7 +7,7 @@
 
 import type { FaqEntry } from "./calcPage";
 import type { ToolOgImageContent } from "./og/renderToolOgImage";
-import { CAR_TYPE_EFFICIENCIES, GAS_COST_CALCULATOR_ID, GAS_COST_PATH, exampleCost } from "./gasCostPage";
+import { CAR_TYPE_EFFICIENCIES, GAS_COST_CALCULATOR_ID, GAS_COST_PATH, exampleCost, formatPrice } from "./gasCostPage";
 import { NATIONAL_GAS_PRICE } from "./nationalGasPrice";
 
 export const ROUTE_GAS_COST_PATH = "/route-gas-cost";
@@ -22,7 +22,7 @@ export const ROUTE_PRICE: number = NATIONAL_GAS_PRICE.regular;
 
 /** 単価の表示（例: 全国平均 170.1円/L（2026年10月26日調査）） */
 export function routePriceLabel(): string {
-  return `全国平均 ${ROUTE_PRICE}円/L（${formatJaDate(NATIONAL_GAS_PRICE.surveyDate)}調査）`;
+  return `全国平均 ${formatPrice(ROUTE_PRICE)}円/L（${formatJaDate(NATIONAL_GAS_PRICE.surveyDate)}調査）`;
 }
 
 /** YYYY-MM-DD を「2026年10月26日」にする */
@@ -190,7 +190,7 @@ export const ROUTE_GAS_COST_FAQS: FaqEntry[] = [
   },
   {
     q: "ハイオク車だといくらになりますか？",
-    a: `ガソリン代は全国平均のレギュラー ${NATIONAL_GAS_PRICE.regular} 円/L で計算しています。ハイオクの全国平均 ${NATIONAL_GAS_PRICE.highOctane.toFixed(1)} 円/L で走ると、ガソリン代は約 ${HIGH_OCTANE_RATIO_PERCENT}% 増しが目安です。`,
+    a: `ガソリン代は全国平均のレギュラー ${formatPrice(NATIONAL_GAS_PRICE.regular)} 円/L で計算しています。ハイオクの全国平均 ${formatPrice(NATIONAL_GAS_PRICE.highOctane)} 円/L で走ると、ガソリン代は約 ${HIGH_OCTANE_RATIO_PERCENT}% 増しが目安です。`,
   },
   {
     q: "土日や深夜に走ると高速代は安くなりますか？",

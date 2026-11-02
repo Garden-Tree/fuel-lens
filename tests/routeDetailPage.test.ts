@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import sitemap from "@/app/sitemap";
 import { CAR_TYPE_EFFICIENCIES } from "@/lib/gasCostPage";
+import { NATIONAL_GAS_PRICE } from "@/lib/nationalGasPrice";
 import { WARIKAN_QUERY_KEYS, computeWarikan, parseWarikanQuery } from "@/lib/warikanPage";
 import { ROUTES, routePath, standardTotal, type RouteEntry } from "@/lib/routeGasCostPage";
 import {
@@ -18,6 +19,9 @@ import {
 } from "@/lib/routeDetailPage";
 
 const tokyoOsaka = findRoute("tokyo-osaka")!;
+// 単価（全国平均）は週次で自動更新されるので、金額の期待値は standardTotal から作る
+const yen = (v: number) => v.toLocaleString("ja-JP");
+const yenRough = (v: number) => yen(Math.round(v / 100) * 100);
 
 describe("区間ページの一覧", () => {
   it("slug は一意で URL に使える形。全区間が静的パラメータとサイトマップに載る", () => {
@@ -38,7 +42,8 @@ describe("区間ページの一覧", () => {
       expect(d.length).toBeLessThanOrEqual(130);
       expect(d).toContain(r.name);
     }
-    expect(routePageDescription(tokyoOsaka)).toContain("片道約17,000円・往復約34,000円");
+    const t = standardTotal(tokyoOsaka);
+    expect(routePageDescription(tokyoOsaka)).toContain(`片道約${yenRough(t.totalOneWay!)}円・往復約${yenRough(t.totalRoundTrip!)}円`);
     expect(routePageDescription(tokyoOsaka)).toContain("大阪→東京も同じ");
   });
 });
@@ -68,7 +73,7 @@ describe("車種別の合計と割り勘", () => {
       const search = link.slice(link.indexOf("?"), link.indexOf("#"));
       for (const key of new URLSearchParams(search).keys()) expect(WARIKAN_QUERY_KEYS).toContain(key as never);
       const input = parseWarikanQuery(search)!;
-      expect(input).toMatchObject({ trip: "round", efficiency: "13", price: "170.1", toll: String(route.toll!.standard * 2), people: "4" });
+      expect(input).toMatchObject({ trip: "round", efficiency: "13", price: String(NATIONAL_GAS_PRICE.regular), toll: String(route.toll!.standard * 2), people: "4" });
       const result = computeWarikan(input);
       expect(result.total).toBe(standardTotal(route).totalRoundTrip);
       expect(result.perPerson).toBe(routeSplits(route).find((s) => s.people === 4)!.perPerson);
@@ -112,6 +117,8 @@ describe("近くの区間・構造化データ", () => {
 
   it("OG 画像の式はガソリン代 + 高速代 = 合計", () => {
     const f = routeDetailOg(tokyoOsaka).content.formula;
-    expect(f.map((p) => p.text).join("")).toBe("6,150円+10,840円=16,990円");
+    const t = standardTotal(tokyoOsaka);
+    expect(t.toll).toBe(10840);
+    expect(f.map((p) => p.text).join("")).toBe(`${yen(t.gasOneWay)}円+10,840円=${yen(t.totalOneWay!)}円`);
   });
 });

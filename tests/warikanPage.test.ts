@@ -15,9 +15,12 @@ import {
   warikanExample,
   type WarikanInput,
 } from "@/lib/warikanPage";
-import { computeGasCost } from "@/lib/gasCostPage";
+import { computeGasCost, formatPrice } from "@/lib/gasCostPage";
+import { NATIONAL_GAS_PRICE } from "@/lib/nationalGasPrice";
 
-const base: WarikanInput = { ...WARIKAN_EXAMPLE }; // 往復 150 km × 2・15 km/L・170.1 円/L（全国平均）・高速代 4,000 円・4 人・全員・100 円単位
+// 計算のテストは単価を 170.1 円/L に固定する（全国平均は週次で自動更新されるため、例の単価には依存させない）
+// 往復 150 km × 2・15 km/L・170.1 円/L・高速代 4,000 円・4 人・全員・100 円単位
+const base: WarikanInput = { ...WARIKAN_EXAMPLE, price: "170.1" };
 
 describe("computeWarikan", () => {
   it("ガソリン代・合計・1 人あたりを出す（往復）", () => {
@@ -130,9 +133,14 @@ describe("共有する文面", () => {
 
 describe("ページの文言と構造化データ", () => {
   it("本文の例は computeWarikan と一致する", () => {
+    // 例の単価は全国平均のレギュラー。期待値もそこから計算する（往復 300 km・15 km/L・高速代 4,000 円・100 円単位で切り上げ）
+    expect(WARIKAN_EXAMPLE.price).toBe(formatPrice(NATIONAL_GAS_PRICE.regular));
+    const fuelCost = Math.round((300 / 15) * NATIONAL_GAS_PRICE.regular);
+    const total = fuelCost + 4000;
+    const perPerson = Math.ceil(total / 4 / 100) * 100;
     const { all, exclude } = warikanExample();
-    expect(all).toMatchObject({ fuelCost: 3402, total: 7402, perPerson: 1900, collected: 7600 });
-    expect(exclude).toMatchObject({ payers: 3, perPerson: 2500 });
+    expect(all).toMatchObject({ fuelCost, total, perPerson, collected: perPerson * 4 });
+    expect(exclude).toMatchObject({ payers: 3, perPerson: Math.ceil(total / 3 / 100) * 100 });
   });
 
   it("タイトル・説明文", () => {

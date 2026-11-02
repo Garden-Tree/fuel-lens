@@ -34,7 +34,9 @@ describe("区間別の表", () => {
   it("単価は全国平均のレギュラー", () => {
     expect(ROUTE_PRICE).toBe(NATIONAL_GAS_PRICE.regular);
     expect(formatJaDate("2026-10-26")).toBe("2026年10月26日");
-    expect(routePriceLabel()).toBe("全国平均 170.1円/L（2026年10月26日調査）");
+    expect(routePriceLabel()).toBe(
+      `全国平均 ${NATIONAL_GAS_PRICE.regular.toFixed(1)}円/L（${formatJaDate(NATIONAL_GAS_PRICE.surveyDate)}調査）`
+    );
   });
 
   it("区間は重複せず、全セルが computeGasCost（片道・往復）と一致する", () => {
@@ -50,10 +52,16 @@ describe("区間別の表", () => {
     }
   });
 
-  it("東京〜大阪（約 470 km）・普通車 13 km/L は片道 6,150 円、高速代 10,840 円で合計 16,990 円", () => {
-    const t = standardTotal(ROUTES[0]);
+  it("東京〜大阪（約 470 km）・普通車 13 km/L・170.1 円/L は片道 6,150 円、高速代 10,840 円で合計 16,990 円", () => {
+    // 計算のテストは単価を固定する（全国平均は週次で自動更新される）
+    const t = standardTotal(ROUTES[0], 170.1);
     expect(t).toEqual({ gasOneWay: 6150, gasRoundTrip: 12300, toll: 10840, totalOneWay: 16990, totalRoundTrip: 33980 });
-    expect(routeGasCostOg().content.formula.at(-2)).toEqual({ text: "16,990", kind: "result" });
+  });
+
+  it("OG 画像は東京〜大阪の全国平均の単価での片道の合計", () => {
+    const t = standardTotal(ROUTES[0]);
+    expect(t.gasOneWay).toBe(Math.round((470 / 13) * NATIONAL_GAS_PRICE.regular));
+    expect(routeGasCostOg().content.formula.at(-2)).toEqual({ text: t.totalOneWay!.toLocaleString("ja-JP"), kind: "result" });
   });
 
   it("合計 = ガソリン代 + 高速代（往復は高速代 × 2）。全区間に普通車・軽の料金がある", () => {
@@ -70,7 +78,7 @@ describe("区間別の表", () => {
 
   it("高速代が null の区間はガソリン代だけで、合計は null", () => {
     const route: RouteEntry = { ...ROUTES[0], toll: null };
-    const t = routeTotal(route, 13, null);
+    const t = routeTotal(route, 13, null, 170.1);
     expect(t.toll).toBeNull();
     expect(t.totalOneWay).toBeNull();
     expect(t.totalRoundTrip).toBeNull();
@@ -100,8 +108,12 @@ describe("ページの文言と構造化データ", () => {
   });
 
   it("ハイオクの FAQ の割合は全国平均の単価から計算する", () => {
-    expect(HIGH_OCTANE_RATIO_PERCENT).toBe(6);
-    expect(ROUTE_GAS_COST_FAQS.some((f) => f.a.includes(`約 ${HIGH_OCTANE_RATIO_PERCENT}%`) && f.a.includes("181.0"))).toBe(true);
+    const { regular, highOctane } = NATIONAL_GAS_PRICE;
+    expect(HIGH_OCTANE_RATIO_PERCENT).toBe(Math.round((highOctane / regular - 1) * 100));
+    expect(HIGH_OCTANE_RATIO_PERCENT).toBeGreaterThan(0);
+    const faq = ROUTE_GAS_COST_FAQS.find((f) => f.a.includes(`約 ${HIGH_OCTANE_RATIO_PERCENT}%`))!;
+    expect(faq.a).toContain(`レギュラー ${regular.toFixed(1)} 円/L`);
+    expect(faq.a).toContain(`ハイオクの全国平均 ${highOctane.toFixed(1)} 円/L`);
   });
 
   it("FAQ は 2〜4 問で、JSON-LD は < をエスケープする", () => {

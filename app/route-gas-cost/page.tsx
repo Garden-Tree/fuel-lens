@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { otherToolLinks } from "@/lib/publicNav";
 import { PublicPageHeader } from "@/components/LegalPage";
-import { CAR_TYPE_EFFICIENCIES, CAR_TYPE_EFFICIENCY_NOTE } from "@/lib/gasCostPage";
+import { CAR_TYPE_EFFICIENCIES, CAR_TYPE_EFFICIENCY_NOTE, formatPrice } from "@/lib/gasCostPage";
 import { NATIONAL_GAS_PRICE } from "@/lib/nationalGasPrice";
 import {
   ROUTES,
@@ -127,7 +127,7 @@ export default function RouteGasCostPage() {
             <div className="overflow-x-auto rounded-2xl border border-line bg-surface">
               <table className="w-full border-collapse text-right text-sm">
                 <caption className="sr-only">
-                  主要区間・車種別のガソリン代（円）。上段が片道、下段が往復。レギュラー {NATIONAL_GAS_PRICE.regular} 円/L
+                  主要区間・車種別のガソリン代（円）。上段が片道、下段が往復。レギュラー {formatPrice(NATIONAL_GAS_PRICE.regular)} 円/L
                 </caption>
                 <thead>
                   <tr className="border-b border-line text-sub">

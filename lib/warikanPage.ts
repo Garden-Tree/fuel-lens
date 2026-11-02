@@ -6,7 +6,7 @@
 import { parseDraftNumber } from "./recordDraft";
 import type { FaqEntry } from "./calcPage";
 import type { ToolOgImageContent } from "./og/renderToolOgImage";
-import { EXAMPLE_PRICE, MAX_PEOPLE, computeGasCost } from "./gasCostPage";
+import { EXAMPLE_PRICE, MAX_PEOPLE, computeGasCost, formatPrice } from "./gasCostPage";
 
 export const WARIKAN_PATH = "/warikan";
 export const WARIKAN_PAGE_TITLE = "ガソリン代の割り勘計算｜距離・燃費・人数から1人いくらか計算 | FuelLens";
@@ -288,7 +288,7 @@ export const WARIKAN_EXAMPLE: WarikanInput = {
   distance: "150",
   trip: "round",
   efficiency: "15",
-  price: String(EXAMPLE_PRICE),
+  price: formatPrice(EXAMPLE_PRICE),
   toll: "4000",
   people: "4",
   driver: "all",

@@ -141,6 +141,7 @@ curl -i -X POST "https://<project-ref>.supabase.co/rest/v1/rpc/keepalive_ping" \
 - Node 22、`npm ci` → `npm run lint` → `npx tsc --noEmit` → `npm test` → `npm run build`（タイムアウト 15 分）。
   ビルドは 3 回まで再試行する: `next/font/google` がビルド時に Google Fonts を取得するため、Actions のネットワークの一時的な失敗で「Can't resolve '@vercel/turbopack-next/internal/font/google/font'」になることがある（2026-10-14 に発生。同じコミットの再実行で成功）
 - 同じブランチの古い実行は自動でキャンセルされます。権限は `contents: read` のみです。
+- 全国平均のガソリン価格の自動 PR（`update-gas-price.yml`）は GITHUB_TOKEN で作るため、この CI は走りません。代わりにそのワークフロー内で lint / typecheck / test を実行し、結果を PR 本文に書きます（ビルドは実行しない）。ビルドまで確かめたいときは、そのブランチに人が空コミットを push すると CI が走ります（[4-8](#4-8-全国平均のガソリン価格の更新)）。
 - ビルドはプレースホルダの環境変数で行い、Clerk / Supabase / Gemini の実 API には接続しません。
   Clerk の公開キーは形式チェックを通すため `pk_test_` + base64(`clerk.example.com$`) のダミー値を使っています。
   それでもビルドが失敗する場合は、Clerk 開発インスタンスの実キーをリポジトリ Secrets に登録して差し替えます。
@@ -267,13 +268,40 @@ Vercel Web Analytics（Hobby）はページビューしか取れないため、�
 
 ## 4-8. 全国平均のガソリン価格の更新
 
-`/gas-cost` の一行回答・目安表・説明文、`/warikan`・`/annual-gas-cost`・`/route-gas-cost` の例の単価は `lib/nationalGasPrice.ts` の `NATIONAL_GAS_PRICE` から作ります。週 1 回（少なくとも月 1 回）更新します。
+`/gas-cost` の一行回答・目安表・説明文、`/warikan`・`/annual-gas-cost`・`/route-gas-cost` の例の単価は `lib/nationalGasPrice.ts` の `NATIONAL_GAS_PRICE` から作ります。更新は自動化しています。
 
-1. [資源エネルギー庁「石油製品価格調査」の調査結果](https://www.enecho.meti.go.jp/statistics/petroleum_and_lpgas/pl007/results.html)を開く。毎週水曜ごろ（祝日は前後する）に、月曜の調査分が公表される。
-2. 週次の給油所小売価格の Excel（xlsx）を開き、いちばん新しい調査日の行で **全国** の列のレギュラー・ハイオク・軽油（消費税込み、円/L）を読む。
-3. `regular` / `highOctane` / `diesel` と `surveyDate`（調査日）・`publishedDate`（公表日）をまとめて書き換える（小数第 1 位まで。ハイオクが 181 円ちょうどでも `181.0` と書く）。
-4. `npm test` を実行し、金額を固定で書いているテスト（`tests/gasCostPage.test.ts` の一行回答・目安表、`tests/warikanPage.test.ts`、`tests/annualGasCostPage.test.ts`、`tests/routeGasCostPage.test.ts` など）の期待値を新しい値に直す。説明文の長さ（100〜125 字）のテストも確認する。
-5. PR を出してマージする（本番デプロイで IndexNow も通知される）。
+### 4-8-1. 自動更新の流れ（通常はマージするだけ）
+
+1. 資源エネルギー庁が毎週水曜 14:00 ごろ（祝日などで木曜にずれる週がある。予定は[調査結果ページ](https://www.enecho.meti.go.jp/statistics/petroleum_and_lpgas/pl007/results.html)の「公表予定日」）に、その週の月曜の調査分を公表する。
+2. `.github/workflows/update-gas-price.yml` が **水曜・木曜の 18:00 JST**（cron は UTC の `0 9 * * 3` / `0 9 * * 4`）に `node scripts/update-gas-price.mjs` を実行する。
+   - 調査結果ページから「結果詳細版（EXCEL形式）」の xlsx（`xlsx/YYMMDD.xlsx`）を取り、1 枚目のシート（経済産業局別）の **全国（P 列、小数第 1 位）** のレギュラー・ハイオク・軽油を、各油種のブロックの最後の行（最新の調査日）から読む。
+   - 公表日はシートの B2（ファイル名の `YYMMDD` と一致することを確かめる）。
+   - 妥当性チェック: 3 油種がそろう・100〜300 円/L・3 油種の調査日が同じ・O 列（整数）と P 列が 1 円以内・調査日が現在の値より古くない・未来の日付でない。
+   - 調査日が現在の値と同じなら何もしない（木曜の実行は水曜に取れていれば空振りする）。
+3. 新しい調査日なら、ワークフローが `npm run lint` / `npm run typecheck` / `npm test` を実行し、ブランチ `chore/gas-price-<調査日>` で PR を作る。同じ調査日の PR（閉じたものを含む）があれば作らない。
+   - GITHUB_TOKEN で作った PR では CI（`ci.yml`）が走らないので、PR 本文にワークフロー内のチェック結果と値の差分の表を書く。チェックが落ちたときは下書きの PR にしてジョブを失敗させる。
+4. PR 本文の表と取得元を見て、問題がなければ **マージする**（本番デプロイで IndexNow にも通知される）。
+
+テストは例の金額を `NATIONAL_GAS_PRICE` から計算するので、値が変わっても直す必要はありません（計算のロジックのテストは単価を固定しています）。
+
+**前提**: リポジトリの Settings → Actions → General → Workflow permissions の「Allow GitHub Actions to create and approve pull requests」を有効にする。無効だと PR を作る手順で失敗する（ブランチは push 済みなので、ログに出る compare の URL から手で PR を作れる）。
+
+### 4-8-2. 失敗したとき（手動の手順）
+
+ワークフローが失敗すると GitHub から通知が来る。ログの先頭に原因（日本語）が出る。
+
+| 症状 | 対処 |
+|---|---|
+| 「結果詳細版の xlsx へのリンクが見つかりません」「xlsx ではありません」「HTTP 4xx/5xx」 | 調査結果ページの構成変更か一時的な障害。時間をおいて Actions タブから workflow_dispatch で再実行する。続くならページを開いてリンクの形を確かめ、`findDetailXlsx` を直す |
+| 「ブロックが見つかりません」「食い違っています」「数値ではありません」 | xlsx の列・行の配置が変わった。xlsx を開いて全国の列と油種の並びを確かめ、`extractNationalPrices` とテストのフィクスチャを直す |
+| 「範囲外です」「古いです」「未来の日付です」 | 公表値の誤りか読み違い。xlsx を開いて確かめる。正しい値なら手で更新する（下記） |
+| チェック（lint / typecheck / test）が落ちて下書きの PR になった | 実行ログで落ちたテストを確かめ、その PR のブランチで直して下書きを解除する |
+
+手で更新するとき:
+
+1. 手元で `node scripts/update-gas-price.mjs --dry-run` を実行し、取得した値と差分を確かめる（ファイルは書き換えない）。取得できないときは調査結果ページの「結果詳細版（EXCEL形式）」を開き、最新の調査日の行で **全国** の列のレギュラー・ハイオク・軽油（消費税込み、円/L）を読む。
+2. `--dry-run` を外して実行するか、`regular` / `highOctane` / `diesel` と `surveyDate`（調査日）・`publishedDate`（公表日）を手でまとめて書き換える（小数第 1 位まで。ハイオクが 181 円ちょうどでも `181.0` と書く。`キー: 値,` の形を変えない）。
+3. `npm run lint && npm run typecheck && npm test` を通して PR を出し、マージする。
 
 ## 5. トラブルシューティング
 
