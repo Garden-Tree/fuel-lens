@@ -16,6 +16,7 @@ import {
 } from "@/lib/fuelioPage";
 import { aiAvailabilityCopy } from "@/lib/landingPage";
 import { isTrialEnabled } from "@/lib/server/analyze/trialCookie";
+import AppQrHandoff from "@/components/AppQrHandoff";
 
 // Fuelio から乗り換える人向けの入口（ログイン不要・静的）。新しい機能は持たず、設定画面の既存の取り込みを説明する。
 // AI の読み取りの可否はお試し（TRIAL_COOKIE_SECRET）の有無で文言を切り替える（静的描画なのでビルド時の値）。
@@ -197,6 +198,7 @@ export default function FuelioPage() {
               </Link>
             </div>
             <p className="mt-3 text-xs text-sub">{aiCopy.calcNote}</p>
+            <AppQrHandoff />
           </section>
 
           <section>

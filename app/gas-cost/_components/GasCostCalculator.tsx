@@ -4,7 +4,19 @@ import Link from "next/link";
 import { useEffect, useId, useState, type ReactNode } from "react";
 import { RotateCcw } from "lucide-react";
 import { SegmentedControl, type SegmentedOption } from "@/components/ui";
-import { computeGasCost, parseDistancePrefill, type GasCostField, type GasCostInput } from "@/lib/gasCostPage";
+import {
+  EXAMPLE_HIGH_OCTANE_PRICE,
+  EXAMPLE_PRICE,
+  NATIONAL_PRICE_SURVEY_LABEL,
+  computeGasCost,
+  formatPrice,
+  parseDistancePrefill,
+  type GasCostField,
+  type GasCostInput,
+} from "@/lib/gasCostPage";
+import { NATIONAL_GAS_PRICE } from "@/lib/nationalGasPrice";
+import { findToolPagePromo, litersFromDisplay } from "@/lib/promo/toolPage";
+import ToolPagePromoCard from "@/components/ToolPagePromoCard";
 
 const EMPTY: GasCostInput = { distance: "", efficiency: "", price: "", people: "", roundTrip: false };
 
@@ -41,8 +53,16 @@ const MAIN_FIELDS: FieldDef[] = [
     ),
     inputMode: "decimal",
   },
-  { field: "price", label: "ガソリン単価", unit: "円/L", placeholder: "例: 170", hint: "給油するスタンドの 1L あたりの価格", inputMode: "decimal" },
+  { field: "price", label: "ガソリン単価", unit: "円/L", placeholder: `例: ${formatPrice(EXAMPLE_PRICE)}`, hint: "給油するスタンドの 1L あたりの価格", inputMode: "decimal" },
 ];
+
+/** 単価の欄に全国平均を入れるボタン */
+const NATIONAL_PRICE_BUTTONS = [
+  { label: "レギュラーを入れる", price: EXAMPLE_PRICE },
+  { label: "ハイオクを入れる", price: EXAMPLE_HIGH_OCTANE_PRICE },
+] as const;
+
+const PROMO = findToolPagePromo("/gas-cost");
 
 const PEOPLE_FIELD: FieldDef = {
   field: "people",
@@ -108,6 +128,34 @@ export default function GasCostCalculator() {
     <div className="rounded-hero border border-line bg-surface p-4 sm:p-6">
       <div className="grid gap-4 sm:grid-cols-3">{MAIN_FIELDS.map(renderField)}</div>
 
+      <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2 rounded-2xl border border-line bg-ground px-3 py-2">
+        <p className="min-w-0 flex-1 basis-60 text-xs leading-relaxed text-sub">
+          全国平均 レギュラー <span className="num text-ink">{formatPrice(EXAMPLE_PRICE)}</span>円/L・ハイオク{" "}
+          <span className="num text-ink">{formatPrice(EXAMPLE_HIGH_OCTANE_PRICE)}</span>円/L（
+          <a
+            href={NATIONAL_GAS_PRICE.sourceUrl}
+            target="_blank"
+            rel="noopener"
+            className="text-accent underline underline-offset-2 hover:no-underline"
+          >
+            資源エネルギー庁
+          </a>
+          、{NATIONAL_PRICE_SURVEY_LABEL}調査）
+        </p>
+        <div role="group" aria-label="全国平均を単価に入れる" className="flex shrink-0 gap-2">
+          {NATIONAL_PRICE_BUTTONS.map(({ label, price }) => (
+            <button
+              key={label}
+              type="button"
+              onClick={() => setInput((prev) => ({ ...prev, price: formatPrice(price) }))}
+              className="inline-flex h-9 items-center rounded-lg border border-border bg-surface-2 px-3 text-xs font-bold text-ink transition-colors hover:bg-line focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
+
       <div className="mt-4 grid gap-4 sm:grid-cols-3">
         <div className="min-w-0 sm:col-span-2">
           <p className="text-sm font-medium text-ink">片道・往復</p>
@@ -153,6 +201,12 @@ export default function GasCostCalculator() {
           </p>
         ))}
       </div>
+      {/* 読み上げの対象（aria-live）の外に置き、入力のたびに PR を読み上げないようにする */}
+      <ToolPagePromoCard
+        promo={PROMO}
+        page="/gas-cost"
+        liters={Object.keys(result.errors).length === 0 ? litersFromDisplay(result.fuel) : null}
+      />
 
       <div className="mt-4 flex items-center justify-between gap-3">
         <p className="text-xs text-sub">入力した値は保存されません。</p>

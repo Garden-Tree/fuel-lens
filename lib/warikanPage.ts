@@ -283,7 +283,7 @@ export function lineShareUrl(url: string): string {
 
 // ---- 本文の例・FAQ・構造化データ ----
 
-/** 本文の計算例: 往復 300 km・燃費 15 km/L・170 円/L・高速代 4,000 円・4 人 */
+/** 本文の計算例: 往復 300 km・燃費 15 km/L・全国平均の単価（EXAMPLE_PRICE）・高速代 4,000 円・4 人 */
 export const WARIKAN_EXAMPLE: WarikanInput = {
   distance: "150",
   trip: "round",

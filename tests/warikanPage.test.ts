@@ -17,15 +17,15 @@ import {
 } from "@/lib/warikanPage";
 import { computeGasCost } from "@/lib/gasCostPage";
 
-const base: WarikanInput = { ...WARIKAN_EXAMPLE }; // 往復 150 km × 2・15 km/L・170 円/L・高速代 4,000 円・4 人・全員・100 円単位
+const base: WarikanInput = { ...WARIKAN_EXAMPLE }; // 往復 150 km × 2・15 km/L・170.1 円/L（全国平均）・高速代 4,000 円・4 人・全員・100 円単位
 
 describe("computeWarikan", () => {
   it("ガソリン代・合計・1 人あたりを出す（往復）", () => {
     expect(computeWarikan(base)).toEqual({
       errors: {},
-      fuelCost: 3400,
+      fuelCost: 3402,
       toll: 4000,
-      total: 7400,
+      total: 7402,
       people: 4,
       payers: 4,
       perPerson: 1900,
@@ -53,12 +53,12 @@ describe("computeWarikan", () => {
     expect(perPersonAmount(7400, 3, 100)).toBe(2500);
     expect(perPersonAmount(7400, 4, 100)).toBe(1900);
     expect(perPersonAmount(7400, 4, 1)).toBe(1850);
-    expect(computeWarikan({ ...base, rounding: 1 }).collected).toBe(7400);
+    expect(computeWarikan({ ...base, rounding: 1 }).collected).toBe(7404);
   });
 
   it("高速代などは任意。人数が無ければ 1 人あたりは出ない", () => {
-    expect(computeWarikan({ ...base, toll: "" })).toMatchObject({ toll: 0, total: 3400, perPerson: 900 });
-    expect(computeWarikan({ ...base, people: "" })).toMatchObject({ total: 7400, perPerson: null, people: null });
+    expect(computeWarikan({ ...base, toll: "" })).toMatchObject({ toll: 0, total: 3402, perPerson: 900 });
+    expect(computeWarikan({ ...base, people: "" })).toMatchObject({ total: 7402, perPerson: null, people: null });
     expect(computeWarikan(EMPTY_WARIKAN_INPUT)).toMatchObject({ errors: {}, fuelCost: null, total: null, perPerson: null });
   });
 
@@ -76,7 +76,7 @@ describe("computeWarikan", () => {
 describe("共有のクエリ", () => {
   it("入力からクエリを作り、読み戻すと同じ入力になる", () => {
     const query = buildWarikanQuery(base);
-    expect(query).toBe("km=150&trip=round&eff=15&price=170&toll=4000&people=4&driver=all&round=100");
+    expect(query).toBe("km=150&trip=round&eff=15&price=170.1&toll=4000&people=4&driver=all&round=100");
     expect(parseWarikanQuery(`?${query}`)).toEqual(base);
     const exclude: WarikanInput = { ...base, trip: "oneway", driver: "exclude", rounding: 10, toll: "" };
     expect(parseWarikanQuery(`?${buildWarikanQuery(exclude)}`)).toEqual(exclude);
@@ -110,9 +110,9 @@ describe("共有のクエリ", () => {
 
 describe("共有する文面", () => {
   it("1 人あたり・内訳・人数と割り方を書く", () => {
-    expect(buildWarikanShareText(base)).toBe("ガソリン代の割り勘：1人 1,900円（ガソリン代 3,400円＋高速代など 4,000円、4人で均等）");
+    expect(buildWarikanShareText(base)).toBe("ガソリン代の割り勘：1人 1,900円（ガソリン代 3,402円＋高速代など 4,000円、4人で均等）");
     expect(buildWarikanShareText({ ...base, driver: "exclude", toll: "" })).toBe(
-      "ガソリン代の割り勘：1人 1,200円（ガソリン代 3,400円、4人・運転手は払わない）"
+      "ガソリン代の割り勘：1人 1,200円（ガソリン代 3,402円、4人・運転手は払わない）"
     );
   });
 
@@ -131,7 +131,7 @@ describe("共有する文面", () => {
 describe("ページの文言と構造化データ", () => {
   it("本文の例は computeWarikan と一致する", () => {
     const { all, exclude } = warikanExample();
-    expect(all).toMatchObject({ fuelCost: 3400, total: 7400, perPerson: 1900, collected: 7600 });
+    expect(all).toMatchObject({ fuelCost: 3402, total: 7402, perPerson: 1900, collected: 7600 });
     expect(exclude).toMatchObject({ payers: 3, perPerson: 2500 });
   });
 

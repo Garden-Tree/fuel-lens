@@ -38,11 +38,11 @@ describe("区間別の表", () => {
     }
   });
 
-  it("東京〜大阪（約 470 km）・普通車 13 km/L は片道 6,146 円・往復 12,292 円", () => {
+  it("東京〜大阪（約 470 km）・普通車 13 km/L は片道 6,150 円・往復 12,300 円", () => {
     const row = routeCostTable()[0];
     const standard = CAR_TYPE_EFFICIENCIES.findIndex((c) => c.id === "standard");
-    expect(row.costs[standard]).toEqual({ oneWay: "6,146", roundTrip: "12,292" });
-    expect(routeGasCostOg().content.formula.at(-2)).toEqual({ text: "6,146", kind: "result" });
+    expect(row.costs[standard]).toEqual({ oneWay: "6,150", roundTrip: "12,300" });
+    expect(routeGasCostOg().content.formula.at(-2)).toEqual({ text: "6,150", kind: "result" });
   });
 
   it("各行のリンクは計算機と割り勘の計算機が受け取れる形", () => {

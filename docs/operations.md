@@ -235,7 +235,7 @@ Vercel Web Analytics（Hobby）はページビューしか取れないため、�
 | イベント | パラメータ | 送る場所 |
 |---|---|---|
 | `cta_click` | `page`（公開ページのパス）、`position`（`hero` / `bottom` / `header` / `cta_box` / `calc_result`） | 公開ページの `/app` へのリンクに付けた `data-ga-cta` 属性を、`GoogleAnalytics.tsx` の 1 か所の click listener が拾う（公開ページは Server Component のまま） |
-| `promo_impression` / `promo_click` | `promo_id`、`vehicle_type` | 解析待ちの PR を出したとき・リンクを押したとき（`lib/promo/useScanWaitPromo.ts`） |
+| `promo_impression` / `promo_click` | `promo_id`、`vehicle_type`（解析待ち）または `page`（公開ツールページ） | 解析待ちの PR を出したとき・リンクを押したとき（`lib/promo/useScanWaitPromo.ts`）、公開ツールページの PR（`components/ToolPagePromoCard.tsx`） |
 | `scan_start` | `mode`（`single` / `pair` / `batch`）、`logged_in`、`trial` | 解析のリクエストを始めるとき（`lib/scan/useScanPipeline.ts` の `analyzeImage`、`lib/scan/useBatchScan.ts` の `start`） |
 | `record_saved` | `source`（`scan` / `pair` / `batch` / `manual` / `calc` / `import` / `restore`）、`is_first`、`distance_mode`（`trip` / `odometer`。取り込み・復元は `mixed`） | 保存に成功したあとだけ（`lib/useRecordEditing.ts` の `addWithDuplicateCheck`、`lib/useRestoreRunner.ts`）。`is_first` は保存前の記録が 0 件か（前者は選択中の車両の一覧、後者は実行時に取り直した全記録） |
 | `sign_up_prompt_click` | `prompt`（`trial_exhausted`） | お試しを使い切ったときの「ログインして続ける」（`TrialLoginPrompt`） |
@@ -264,6 +264,16 @@ Vercel Web Analytics（Hobby）はページビューしか取れないため、�
 - キーは `scripts/indexnow.mjs` の `INDEXNOW_KEY` と、同じ名前で置いた `public/<キー>.txt`。公開してよい値で、検索エンジンがサイトの所有確認に使う。変えるときは両方を同時に変える（テストが一致を確かめる）。
 - 手動で送るときは Actions タブの IndexNow を workflow_dispatch で実行する。送る内容だけ見るなら `node scripts/indexnow.mjs --dry-run`。
 - 成功は HTTP 200 か 202。403 はキーのファイルが読めない、422 は URL がキーのホストと合わないことを示す。
+
+## 4-8. 全国平均のガソリン価格の更新
+
+`/gas-cost` の一行回答・目安表・説明文、`/warikan`・`/annual-gas-cost`・`/route-gas-cost` の例の単価は `lib/nationalGasPrice.ts` の `NATIONAL_GAS_PRICE` から作ります。週 1 回（少なくとも月 1 回）更新します。
+
+1. [資源エネルギー庁「石油製品価格調査」の調査結果](https://www.enecho.meti.go.jp/statistics/petroleum_and_lpgas/pl007/results.html)を開く。毎週水曜ごろ（祝日は前後する）に、月曜の調査分が公表される。
+2. 週次の給油所小売価格の Excel（xlsx）を開き、いちばん新しい調査日の行で **全国** の列のレギュラー・ハイオク・軽油（消費税込み、円/L）を読む。
+3. `regular` / `highOctane` / `diesel` と `surveyDate`（調査日）・`publishedDate`（公表日）をまとめて書き換える（小数第 1 位まで。ハイオクが 181 円ちょうどでも `181.0` と書く）。
+4. `npm test` を実行し、金額を固定で書いているテスト（`tests/gasCostPage.test.ts` の一行回答・目安表、`tests/warikanPage.test.ts`、`tests/annualGasCostPage.test.ts`、`tests/routeGasCostPage.test.ts` など）の期待値を新しい値に直す。説明文の長さ（100〜125 字）のテストも確認する。
+5. PR を出してマージする（本番デプロイで IndexNow も通知される）。
 
 ## 5. トラブルシューティング
 

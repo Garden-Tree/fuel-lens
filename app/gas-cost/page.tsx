@@ -6,21 +6,24 @@ import { PublicPageHeader } from "@/components/LegalPage";
 import {
   CAR_TYPE_EFFICIENCY_NOTE,
   COMMUTE_EXAMPLE,
-  EXAMPLE_HIGH_OCTANE_PRICE,
   EXAMPLE_PRICE,
+  FORMULA_EXAMPLE,
   GAS_COST_CALCULATOR_ID,
   GAS_COST_DESCRIPTION,
   GAS_COST_FAQS,
   GAS_COST_PAGE_TITLE,
   GAS_COST_PATH,
   buildGasCostJsonLd,
-  HIGH_OCTANE_PREMIUM,
   commuteExample,
+  formatPrice,
+  formulaExample,
+  quickAnswerText,
 } from "@/lib/gasCostPage";
 import GasCostCalculator from "./_components/GasCostCalculator";
 import DistanceCostTable from "./_components/DistanceCostTable";
 import { aiAvailabilityCopy } from "@/lib/landingPage";
 import { isTrialEnabled } from "@/lib/server/analyze/trialCookie";
+import AppQrHandoff from "@/components/AppQrHandoff";
 
 // ログイン不要のガソリン代計算ページ（検索からの入口）。計算機だけクライアント部品で、説明と FAQ は静的に描画する。
 
@@ -43,15 +46,19 @@ export const metadata: Metadata = {
 
 export default function GasCostPage() {
   const commute = commuteExample();
+  const formula = formulaExample();
+  const price = formatPrice(EXAMPLE_PRICE);
   return (
     <div className="min-h-screen bg-ground font-sans text-ink">
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: buildGasCostJsonLd() }} />
       <PublicPageHeader />
       <main className="mx-auto max-w-[720px] px-4 pb-16 pt-8">
         <h1 className="text-2xl font-bold">ガソリン代計算ツール</h1>
-        <p className="mt-2 text-[15px] leading-7 text-sub">
-          走行距離・燃費・ガソリン単価から、必要なガソリン量とガソリン代を計算します。
-          往復の距離や、割り勘したときの 1 人あたりの金額も出せます。登録は不要で、入力した値は保存されません。
+        <p className="mt-3 rounded-2xl border border-accent/40 bg-surface px-4 py-3 text-[15px] font-bold leading-7 text-ink">
+          {quickAnswerText()}
+        </p>
+        <p className="mt-3 text-[15px] leading-7 text-sub">
+          走行距離・燃費・単価から、ガソリン量とガソリン代を計算します。往復・割り勘にも対応し、登録は不要です。
         </p>
 
         <div id={GAS_COST_CALCULATOR_ID} className="mt-6 scroll-mt-4">
@@ -62,13 +69,11 @@ export default function GasCostPage() {
           <section>
             <h2>距離別のガソリン代の目安</h2>
             <p>
-              「300 キロ走るといくら？」を車種別にまとめました。距離をタップすると、その距離を入れた状態で上のツールが開きます。
+              距離をタップすると、その距離を入れて上のツールが開きます。
             </p>
             <DistanceCostTable />
             <p className="mt-2 text-xs text-sub">
-              {CAR_TYPE_EFFICIENCY_NOTE}単価はレギュラー <span className="num">{EXAMPLE_PRICE}</span> 円/L、ハイオク{" "}
-              <span className="num">{EXAMPLE_HIGH_OCTANE_PRICE}</span> 円/L（レギュラー＋<span className="num">{HIGH_OCTANE_PREMIUM}</span>{" "}
-              円）の例で、実際の価格は地域・時期で変わります（1 円未満は四捨五入）。
+              {CAR_TYPE_EFFICIENCY_NOTE}単価は上の計算機に出している全国平均で、実際の価格は地域・時期で変わります（1 円未満は四捨五入）。
             </p>
           </section>
 
@@ -78,13 +83,13 @@ export default function GasCostPage() {
               <p className="text-base font-bold text-ink">必要なガソリン量（L）= 走行距離（km）÷ 燃費（km/L）</p>
               <p className="mt-1 text-base font-bold text-ink">ガソリン代（円）= ガソリン量（L）× ガソリン単価（円/L）</p>
               <p className="mt-2 text-sm text-sub">
-                例: <span className="num">300</span> km ÷ <span className="num">15</span> km/L ={" "}
-                <span className="num">20</span> L、<span className="num">20</span> L × <span className="num">170</span> 円/L ={" "}
-                <span className="num text-money">3,400</span> 円
+                例: <span className="num">{FORMULA_EXAMPLE.distanceKm}</span> km ÷ <span className="num">{FORMULA_EXAMPLE.efficiency}</span> km/L ={" "}
+                <span className="num">{formula.fuel}</span> L、<span className="num">{formula.fuel}</span> L × <span className="num">{price}</span> 円/L ={" "}
+                <span className="num text-money">{formula.cost}</span> 円
               </p>
             </div>
             <p className="mt-3">
-              1km あたりのガソリン代は、ガソリン単価 ÷ 燃費で求めます。上の例なら約 <span className="num">11.3</span> 円/km で、走行距離にかけると業務の交通費精算の目安にもなります。
+              1km あたりは単価 ÷ 燃費で、上の例なら約 <span className="num">{formula.costPerKm}</span> 円/km です。交通費精算の目安にもなります。
             </p>
           </section>
 
@@ -105,8 +110,7 @@ export default function GasCostPage() {
                 </Link>
                 で測れます。
               </li>
-              <li>給油するスタンドのガソリン単価（円/L）を確認します。同じ日でもスタンドによって価格は違います。</li>
-              <li>距離・燃費・単価を上のツールに入力すると、ガソリン代がすぐに出ます。</li>
+              <li>給油するスタンドの単価（円/L）を確認します。わからなければ全国平均のボタンで入れられます。</li>
             </ol>
           </section>
 
@@ -126,7 +130,7 @@ export default function GasCostPage() {
               <li>
                 <strong>通勤の月額。</strong>片道の距離 × 2 × 出勤日数で月の走行距離を出して計算します。たとえば片道{" "}
                 <span className="num">{COMMUTE_EXAMPLE.oneWayKm}</span> km、燃費 <span className="num">{COMMUTE_EXAMPLE.efficiency}</span> km/L、
-                単価 <span className="num">{EXAMPLE_PRICE}</span> 円/L（例）なら、1 日 <span className="num">{commute.perDay}</span> 円、
+                単価 <span className="num">{price}</span> 円/L（全国平均）なら、1 日 <span className="num">{commute.perDay}</span> 円、
                 月 <span className="num">{COMMUTE_EXAMPLE.days}</span> 日出勤で <span className="num">{commute.perMonth}</span> 円です。
               </li>
             </ul>
@@ -169,6 +173,7 @@ export default function GasCostPage() {
               </Link>
               <p className="text-xs text-sub">{aiAvailabilityCopy(isTrialEnabled()).calcNote}</p>
             </div>
+            <AppQrHandoff />
           </section>
 
           <section>

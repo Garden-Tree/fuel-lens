@@ -17,6 +17,7 @@ import {
 import WarikanCalculator from "./_components/WarikanCalculator";
 import { aiAvailabilityCopy } from "@/lib/landingPage";
 import { isTrialEnabled } from "@/lib/server/analyze/trialCookie";
+import AppQrHandoff from "@/components/AppQrHandoff";
 
 // ログイン不要のガソリン代の割り勘ページ（「ガソリン代 割り勘」の検索からの入口）。計算機だけクライアント部品で、ページは静的。
 
@@ -122,6 +123,7 @@ export default function WarikanPage() {
               </Link>
               <p className="text-xs text-sub">{aiAvailabilityCopy(isTrialEnabled()).calcNote}</p>
             </div>
+            <AppQrHandoff />
           </section>
 
           <section>
