@@ -7,6 +7,7 @@ import { CALC_FAQS, CALC_PATH, buildCalcJsonLd } from "@/lib/calcPage";
 import FuelCalculator from "./_components/FuelCalculator";
 import { aiAvailabilityCopy } from "@/lib/landingPage";
 import { isTrialEnabled } from "@/lib/server/analyze/trialCookie";
+import AppQrHandoff from "@/components/AppQrHandoff";
 
 // ログイン不要の燃費計算ページ（検索からの入口）。計算機だけクライアント部品で、説明と FAQ は静的に描画する。
 
@@ -127,6 +128,7 @@ export default function CalcPage() {
               </Link>
               <p className="text-xs text-sub">{aiAvailabilityCopy(isTrialEnabled()).calcNote}</p>
             </div>
+            <AppQrHandoff />
           </section>
 
           <section>

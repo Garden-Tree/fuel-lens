@@ -5,13 +5,12 @@
 
 import { parseDraftNumber } from "./recordDraft";
 import type { FaqEntry } from "./calcPage";
+import { NATIONAL_GAS_PRICE } from "./nationalGasPrice";
 
 export const GAS_COST_PATH = "/gas-cost";
 /** ページ内の計算機への移動先（距離別の目安表の各行からリンクする） */
 export const GAS_COST_CALCULATOR_ID = "gas-cost-calculator";
 export const GAS_COST_PAGE_TITLE = "ガソリン代計算ツール｜300km走るといくら？距離・燃費・単価から計算 | FuelLens";
-export const GAS_COST_DESCRIPTION =
-  "距離・燃費・ガソリン単価を入れるだけでガソリン代を計算。300キロ・500キロなど距離別の目安表（軽自動車・普通車・ハイブリッド、ハイオクも）で「〇〇キロ走るといくら？」がすぐわかります。往復・割り勘にも対応。登録不要・無料。";
 /** 構造化データの url に使う本番の絶対 URL（canonical は metadataBase からの相対 `/gas-cost`） */
 export const GAS_COST_CANONICAL_URL = "https://fuel-lens.gadelog.com/gas-cost";
 
@@ -126,12 +125,27 @@ export function computeGasCost(input: GasCostInput): GasCostResult {
   };
 }
 
-/** 距離別の目安表・FAQ の例に使う単価（円/L）。実際の単価ではなく計算の説明用 */
-export const EXAMPLE_PRICE = 170;
-/** ハイオクの例の単価がレギュラーより高い分（円/L）。価格は地域・時期で変わるので目安 */
-export const HIGH_OCTANE_PREMIUM = 11;
-/** ハイオクの例の単価（円/L） */
-export const EXAMPLE_HIGH_OCTANE_PRICE = EXAMPLE_PRICE + HIGH_OCTANE_PREMIUM;
+/**
+ * 距離別の目安表・本文の例に使う単価（円/L）。資源エネルギー庁の全国平均（lib/nationalGasPrice.ts）に合わせる。
+ * /route-gas-cost・/warikan・/annual-gas-cost の例も同じ値を使う
+ */
+export const EXAMPLE_PRICE: number = NATIONAL_GAS_PRICE.regular;
+/** ハイオクの例の単価（円/L）。全国平均のハイオク */
+export const EXAMPLE_HIGH_OCTANE_PRICE: number = NATIONAL_GAS_PRICE.highOctane;
+
+/** 単価の表示（小数第 1 位まで。181.0 も「181.0」と出す） */
+export function formatPrice(price: number): string {
+  return price.toFixed(1);
+}
+
+/** "2026-10-26" → "2026年10月26日" */
+export function formatJaDate(iso: string): string {
+  const [y, m, d] = iso.split("-").map(Number);
+  return `${y}年${m}月${d}日`;
+}
+
+/** 全国平均の調査日（表示用） */
+export const NATIONAL_PRICE_SURVEY_LABEL = formatJaDate(NATIONAL_GAS_PRICE.surveyDate);
 
 /** 目安表の燃料の種類（切り替えの選択肢） */
 export const FUEL_GRADES = [
@@ -176,6 +190,60 @@ export function distanceCostTable(price: number = EXAMPLE_PRICE): { distance: nu
     distance,
     costs: CAR_TYPE_EFFICIENCIES.map(({ efficiency }) => exampleCost(distance, efficiency, false, price)),
   }));
+}
+
+/** ページ冒頭の一行回答の距離（km）。検索の多い「300キロ ガソリン代」に答える */
+export const QUICK_ANSWER_DISTANCE_KM = 300;
+
+/** 一行回答に出す車種（CAR_TYPE_EFFICIENCIES の id）。表と同じ exampleCost で求めるので金額は表と一致する */
+const QUICK_ANSWER_CAR_IDS = ["standard", "kei"] as const;
+
+export type QuickAnswerItem = { label: string; efficiency: number; cost: string };
+
+/** 冒頭の一行回答: 300km を普通車・軽自動車で走ったときのガソリン代（全国平均のレギュラー） */
+export function quickAnswer(): { distance: number; price: number; items: QuickAnswerItem[] } {
+  return {
+    distance: QUICK_ANSWER_DISTANCE_KM,
+    price: EXAMPLE_PRICE,
+    items: QUICK_ANSWER_CAR_IDS.map((id) => {
+      const car = CAR_TYPE_EFFICIENCIES.find((c) => c.id === id)!;
+      return { label: car.label, efficiency: car.efficiency, cost: exampleCost(QUICK_ANSWER_DISTANCE_KM, car.efficiency) };
+    }),
+  };
+}
+
+/** 一行回答の文。ページ冒頭と meta description で同じ数字を使う */
+export function quickAnswerText(): string {
+  const { distance, price, items } = quickAnswer();
+  const [first, ...rest] = items;
+  const parts = [
+    `${first.label}（燃費${first.efficiency}km/L）で約${first.cost}円`,
+    ...rest.map((i) => `${i.label}（燃費${i.efficiency}km/L）で約${i.cost}円`),
+  ];
+  return `${distance}kmなら、${parts.join("、")}です（全国平均のレギュラー${formatPrice(price)}円/Lで計算）。`;
+}
+
+/** meta description。冒頭の一行回答と同じ数字（全国平均の単価・調査日つき）で「300キロ ガソリン代」に答える */
+export const GAS_COST_DESCRIPTION = (() => {
+  const { distance, price, items } = quickAnswer();
+  const costs = items.map((i) => `${i.label}で約${i.cost}円`).join("・");
+  return (
+    `${distance}キロのガソリン代は${costs}（全国平均${formatPrice(price)}円/L、${NATIONAL_PRICE_SURVEY_LABEL}調査）。` +
+    "距離・燃費・単価を入れるだけで計算でき、距離別の目安表や往復・割り勘にも対応。登録不要・無料。"
+  );
+})();
+
+/** 本文の計算式の例（距離・燃費）。単価は EXAMPLE_PRICE */
+export const FORMULA_EXAMPLE = { distanceKm: 150, efficiency: 15 } as const;
+export function formulaExample(): { fuel: string; cost: string; costPerKm: string } {
+  const r = computeGasCost({
+    distance: String(FORMULA_EXAMPLE.distanceKm),
+    efficiency: String(FORMULA_EXAMPLE.efficiency),
+    price: String(EXAMPLE_PRICE),
+    people: "",
+    roundTrip: false,
+  });
+  return { fuel: r.fuel ?? "", cost: r.cost ?? "", costPerKm: r.costPerKm ?? "" };
 }
 
 /** 目安表の行から計算機へ飛ぶリンク（距離を `?km=` で渡す） */

@@ -4,19 +4,25 @@ import {
   DISTANCE_TABLE_DISTANCES,
   EXAMPLE_HIGH_OCTANE_PRICE,
   EXAMPLE_PRICE,
+  FORMULA_EXAMPLE,
   FUEL_GRADES,
-  HIGH_OCTANE_PREMIUM,
   GAS_COST_DESCRIPTION,
   GAS_COST_FAQS,
   GAS_COST_PAGE_TITLE,
   buildGasCostJsonLd,
   commuteExample,
   computeGasCost,
+  formatJaDate,
+  formatPrice,
+  formulaExample,
+  quickAnswer,
+  quickAnswerText,
   distanceCostTable,
   distanceLink,
   parseDistancePrefill,
   type GasCostInput,
 } from "@/lib/gasCostPage";
+import { NATIONAL_GAS_PRICE } from "@/lib/nationalGasPrice";
 
 const base: GasCostInput = { distance: "300", efficiency: "15", price: "170", people: "", roundTrip: false };
 
@@ -137,8 +143,9 @@ describe("距離別の目安表", () => {
       ["ハイブリッド車", 25],
       ["ミニバン・ワンボックス", 10],
     ]);
-    expect(EXAMPLE_PRICE).toBe(170);
-    expect(EXAMPLE_HIGH_OCTANE_PRICE).toBe(EXAMPLE_PRICE + HIGH_OCTANE_PREMIUM);
+    // 例の単価は全国平均（lib/nationalGasPrice.ts）
+    expect(EXAMPLE_PRICE).toBe(NATIONAL_GAS_PRICE.regular);
+    expect(EXAMPLE_HIGH_OCTANE_PRICE).toBe(NATIONAL_GAS_PRICE.highOctane);
     expect(FUEL_GRADES.map((g) => g.price)).toEqual([EXAMPLE_PRICE, EXAMPLE_HIGH_OCTANE_PRICE]);
   });
 
@@ -147,11 +154,12 @@ describe("距離別の目安表", () => {
     expect(table.map((r) => r.distance)).toEqual([10, 14, 20, 30, 50, 100, 150, 180, 200, 300, 500, 1000]);
     // 軽 20 / 普通車 13 / ハイブリッド 25 / ミニバン 10 km/L の順
     const cell = (d: number, i: number, t = table) => t.find((r) => r.distance === d)!.costs[i];
-    expect(cell(300, 0)).toBe("2,550");
-    expect(cell(300, 1)).toBe("3,923");
-    expect(cell(300, 2)).toBe("2,040");
-    expect(cell(1000, 3)).toBe("17,000");
-    // ハイオク 181 円/L
+    // レギュラー 170.1 円/L
+    expect(cell(300, 0)).toBe("2,552");
+    expect(cell(300, 1)).toBe("3,925");
+    expect(cell(300, 2)).toBe("2,041");
+    expect(cell(1000, 3)).toBe("17,010");
+    // ハイオク 181.0 円/L
     expect(cell(300, 0, distanceCostTable(EXAMPLE_HIGH_OCTANE_PRICE))).toBe("2,715");
   });
 
@@ -203,15 +211,37 @@ describe("距離別の目安表", () => {
     expect(GAS_COST_DESCRIPTION.length).toBeLessThanOrEqual(125);
   });
 
-  it("本文に書いている計算式の例（300km・15km/L・170円/L）は computeGasCost と一致する", () => {
-    const r = computeGasCost({ ...base, distance: "300", efficiency: "15", price: String(EXAMPLE_PRICE) });
-    expect(r.fuel).toBe("20.00");
-    expect(r.cost).toBe("3,400");
-    expect(r.costPerKm).toBe("11.3");
+  it("本文に書いている計算式の例（150km・15km/L・全国平均の単価）は computeGasCost と一致する", () => {
+    expect(FORMULA_EXAMPLE).toEqual({ distanceKm: 150, efficiency: 15 });
+    expect(formulaExample()).toEqual({ fuel: "10.00", cost: "1,701", costPerKm: "11.3" });
+  });
+
+  it("冒頭の一行回答は距離別の目安表の 300 km の行と同じ金額", () => {
+    const { distance, items } = quickAnswer();
+    expect(distance).toBe(300);
+    const row = distanceCostTable().find((r) => r.distance === 300)!;
+    for (const item of items) {
+      const i = CAR_TYPE_EFFICIENCIES.findIndex((c) => c.label === item.label);
+      expect(item.cost).toBe(row.costs[i]);
+    }
+    expect(quickAnswerText()).toBe(
+      "300kmなら、普通車（燃費13km/L）で約3,925円、軽自動車（燃費20km/L）で約2,552円です（全国平均のレギュラー170.1円/Lで計算）。"
+    );
+    // meta description も同じ数字と調査日を使う
+    expect(GAS_COST_DESCRIPTION).toContain("普通車で約3,925円");
+    expect(GAS_COST_DESCRIPTION).toContain("軽自動車で約2,552円");
+    expect(GAS_COST_DESCRIPTION).toContain("2026年10月26日調査");
+  });
+
+  it("単価と日付の表示", () => {
+    expect(formatPrice(170.1)).toBe("170.1");
+    expect(formatPrice(181.0)).toBe("181.0");
+    expect(formatJaDate("2026-10-26")).toBe("2026年10月26日");
+    expect(formatJaDate("2026-01-05")).toBe("2026年1月5日");
   });
 
   it("通勤の例は往復 × 日数で計算される", () => {
-    expect(commuteExample()).toEqual({ perDay: "340", perMonth: "6,800" });
+    expect(commuteExample()).toEqual({ perDay: "340", perMonth: "6,804" });
   });
 
   it("FAQ は本文で答えていない質問だけで、JSON-LD は < をエスケープする", () => {
