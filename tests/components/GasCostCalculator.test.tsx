@@ -90,4 +90,27 @@ describe("GasCostCalculator", () => {
     expect(screen.queryByText("走行距離は数値で入力してください")).not.toBeInTheDocument();
     expect(reset).toBeDisabled();
   });
+
+  it("全国平均の単価と出典を出し、ボタンで単価の欄に入れる", async () => {
+    const { user, distance, efficiency, price } = setup();
+    expect(price.value).toBe("");
+    expect(screen.getByText(/2026年10月26日調査/)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "資源エネルギー庁" })).toHaveAttribute(
+      "href",
+      "https://www.enecho.meti.go.jp/statistics/petroleum_and_lpgas/pl007/results.html"
+    );
+    await user.click(screen.getByRole("button", { name: "レギュラーを入れる" }));
+    expect(price.value).toBe("170.1");
+    await user.type(distance, "300");
+    await user.type(efficiency, "13");
+    expect(resultValue("ガソリン代")).toBe("3,925");
+    await user.click(screen.getByRole("button", { name: "ハイオクを入れる" }));
+    expect(price.value).toBe("181.0");
+    expect(resultValue("ガソリン代")).toBe("4,177");
+  });
+
+  it("出光でんきの PR はリンクが入るまで出さない", () => {
+    setup();
+    expect(screen.queryByText("PR")).not.toBeInTheDocument();
+  });
 });

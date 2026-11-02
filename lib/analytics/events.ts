@@ -28,12 +28,18 @@ export type A2hsAction = "shown" | "install_click" | "dismissed" | "installed";
 export type ShareMethod = "native" | "x" | "download";
 export type WarikanShareMethod = "native" | "line" | "copy";
 
+/** PR の表示・クリックのパラメータ。解析待ち（車両の種類）か、公開ツールページ（ページ）か */
+export type PromoEventParams = { promo_id: string; vehicle_type: VehicleType } | { promo_id: string; page: CtaPage };
+
 /** イベント名とパラメータ。値は列挙値・真偽値・数値だけにする（自由入力の文字列を入れない） */
 export type AnalyticsEvents = {
   cta_click: { page: CtaPage; position: CtaPosition };
-  /** promo_id は lib/promo/scanWait.ts の設定 ID（利用者の入力ではない） */
-  promo_impression: { promo_id: string; vehicle_type: VehicleType };
-  promo_click: { promo_id: string; vehicle_type: VehicleType };
+  /**
+   * promo_id は lib/promo/scanWait.ts・lib/promo/toolPage.ts の設定 ID（利用者の入力ではない）。
+   * 解析待ちの PR は vehicle_type、公開ツールページの PR は page を付ける
+   */
+  promo_impression: PromoEventParams;
+  promo_click: PromoEventParams;
   /** trial = 未ログインのお試し読み取り */
   scan_start: { mode: ScanMode; logged_in: boolean; trial: boolean };
   /** is_first = 保存前の記録が 0 件だった。distance_mode は取り込み・復元（複数車両）では mixed */

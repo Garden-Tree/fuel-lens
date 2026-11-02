@@ -21,6 +21,7 @@ import {
 import { aiAvailabilityCopy } from "@/lib/landingPage";
 import { MAX_BATCH_IMAGES } from "@/lib/scan/batch";
 import { isTrialEnabled } from "@/lib/server/analyze/trialCookie";
+import AppQrHandoff from "@/components/AppQrHandoff";
 
 // ガソリン代を経費として記録したい人向けの入口（ログイン不要・静的）。新しい計算機は持たず、アプリの既存の機能を説明する。
 // AI の読み取りの可否はお試し（TRIAL_COOKIE_SECRET）の有無で文言を切り替える（静的描画なのでビルド時の値）。
@@ -241,6 +242,7 @@ export default function ExpensePage() {
               </Link>
               <p className="text-xs text-sub">{aiCopy.calcNote}</p>
             </div>
+            <AppQrHandoff />
           </section>
 
           <section>

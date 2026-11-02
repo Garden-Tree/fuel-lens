@@ -141,13 +141,13 @@ describe("早見表と通勤の例", () => {
         expect(cell).toEqual({ monthly: r.monthlyCost, yearly: r.yearlyCost });
       });
     }
-    // 1,000 km/月・15 km/L・170 円/L: 66.67 L × 170 = 11,333 円
-    expect(table.find((r) => r.distance === 1000)!.cells[1]).toEqual({ monthly: "11,333", yearly: "136,000" });
-    expect(table.find((r) => r.distance === 300)!.cells[0]).toEqual({ monthly: "5,100", yearly: "61,200" });
+    // 1,000 km/月・15 km/L・170.1 円/L（全国平均）: 66.67 L × 170.1 = 11,340 円
+    expect(table.find((r) => r.distance === 1000)!.cells[1]).toEqual({ monthly: "11,340", yearly: "136,080" });
+    expect(table.find((r) => r.distance === 300)!.cells[0]).toEqual({ monthly: "5,103", yearly: "61,236" });
   });
 
-  it("通勤の例は 月 6,800 円・年 81,600 円", () => {
-    expect(commuteExample()).toEqual({ monthlyKm: "600", monthly: "6,800", yearly: "81,600" });
+  it("通勤の例は 月 6,804 円・年 81,648 円", () => {
+    expect(commuteExample()).toEqual({ monthlyKm: "600", monthly: "6,804", yearly: "81,648" });
   });
 });
 

@@ -7,6 +7,7 @@ import {
   FUEL_GRADES,
   distanceCostTable,
   distanceLink,
+  formatPrice,
   type FuelGradeId,
 } from "@/lib/gasCostPage";
 
@@ -31,7 +32,7 @@ export default function DistanceCostTable() {
         <div key={id} hidden={id !== grade} className="mt-3 overflow-x-auto rounded-2xl border border-line bg-surface">
           <table className="w-full border-collapse text-right text-sm">
             <caption className="sr-only">
-              距離別・車種別のガソリン代（円）。{label} {price} 円/L の例
+              距離別・車種別のガソリン代（円）。{label} {formatPrice(price)} 円/L（全国平均）の例
             </caption>
             <thead>
               <tr className="border-b border-line text-sub">

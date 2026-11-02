@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { Camera, ChevronRight } from "lucide-react";
+import AppQrHandoff from "@/components/AppQrHandoff";
 import { aiAvailabilityCopy } from "@/lib/landingPage";
 import { isTrialEnabled } from "@/lib/server/analyze/trialCookie";
 
@@ -33,6 +34,7 @@ export default function RouteCta() {
         </Link>
         <p className="text-xs text-sub">{aiAvailabilityCopy(isTrialEnabled()).calcNote}</p>
       </div>
+      <AppQrHandoff />
     </section>
   );
 }
