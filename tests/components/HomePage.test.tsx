@@ -4,6 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { createElement, type ReactNode } from "react";
 import Home from "@/app/(app)/app/page";
 import { SCAN_BUTTON_LABEL } from "@/components/AppNav";
+import { A2HS_HEADING, A2HS_HEADING_NO_RECORDS } from "@/lib/addToHomeScreen";
 import type { FuelRecord, Vehicle } from "@/lib/types";
 import type { VehicleScope } from "@/lib/useVehicleScope";
 import { renderInAppShell } from "../setup/render";
@@ -40,7 +41,15 @@ const RECORD: FuelRecord = {
   run_fuel: 30,
 };
 
-const state = vi.hoisted(() => ({ readOnly: false, mode: "trip" as "trip" | "odometer" }));
+const state = vi.hoisted(() => ({ readOnly: false, mode: "trip" as "trip" | "odometer", empty: false }));
+// 「ホーム画面に追加」の案内。端末の判定は別のテストで見るので、ここでは出す・出さないと渡された引数だけ確かめる
+const a2hs = vi.hoisted(() => ({ visible: false, loadedArg: undefined as boolean | undefined }));
+vi.mock("@/lib/useAddToHomeScreen", () => ({
+  useAddToHomeScreen: (loaded: boolean) => {
+    a2hs.loadedArg = loaded;
+    return { visible: a2hs.visible, guide: { mode: "steps", steps: "手順の文" }, install: vi.fn(), dismiss: vi.fn() };
+  },
+}));
 vi.mock("@/lib/useVehicleScope", () => ({
   useVehicleScope: (): VehicleScope =>
     ({
@@ -50,7 +59,7 @@ vi.mock("@/lib/useVehicleScope", () => ({
       selectedVehicle: { ...VEHICLE, distance_mode: state.mode },
       distanceMode: state.mode,
       defaultVehicleId: "v1",
-      records: [RECORD],
+      records: state.empty ? [] : [RECORD],
       loading: false,
       vehiclesLoading: false,
       recordsLoading: false,
@@ -78,6 +87,9 @@ describe("ホーム（/app）のスキャンの入口", () => {
     nav.replace.mockReset();
     state.readOnly = false;
     state.mode = "trip";
+    state.empty = false;
+    a2hs.visible = false;
+    a2hs.loadedArg = undefined;
     inputClick = vi.spyOn(HTMLInputElement.prototype, "click").mockImplementation(() => {});
   });
   afterEach(() => {
@@ -176,5 +188,37 @@ describe("ホーム（/app）のスキャンの入口", () => {
     expect(await screen.findByText("閲覧専用のため手動入力はできません")).toBeInTheDocument();
     expect(nav.replace).toHaveBeenCalledWith("/app");
     expect(screen.queryByRole("heading", { name: "手動で記録を追加" })).not.toBeInTheDocument();
+  });
+
+  describe("「ホーム画面に追加」の案内", () => {
+    it("記録が無くても出す。見出しは次の給油向けで、空状態の案内の下に置く", () => {
+      state.empty = true;
+      a2hs.visible = true;
+      renderInAppShell(<Home />);
+      expect(a2hs.loadedArg).toBe(true);
+      const heading = screen.getByRole("heading", { name: A2HS_HEADING_NO_RECORDS });
+      const welcome = screen.getByRole("heading", { name: "最初の給油を記録しましょう" });
+      expect(welcome.compareDocumentPosition(heading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    });
+
+    it("記録があるときは通常の見出しで出す", () => {
+      a2hs.visible = true;
+      renderInAppShell(<Home />);
+      expect(screen.getByRole("heading", { name: A2HS_HEADING })).toBeInTheDocument();
+      expect(screen.queryByRole("heading", { name: A2HS_HEADING_NO_RECORDS })).not.toBeInTheDocument();
+    });
+
+    it("端末の条件を満たさないとき（PC・閉じた後など）は出さない", () => {
+      state.empty = true;
+      renderInAppShell(<Home />);
+      expect(screen.queryByRole("heading", { name: A2HS_HEADING_NO_RECORDS })).not.toBeInTheDocument();
+    });
+
+    it("編集中は出さない", async () => {
+      a2hs.visible = true;
+      renderInAppShell(<Home />);
+      await userEvent.click(screen.getByRole("button", { name: "編集" }));
+      expect(screen.queryByRole("heading", { name: A2HS_HEADING })).not.toBeInTheDocument();
+    });
   });
 });
