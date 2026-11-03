@@ -45,8 +45,8 @@ export function isStandaloneDisplay(input: { displayModeStandalone: boolean; nav
 }
 
 export type A2hsVisibilityInput = {
-  /** 選択中の車両の記録が 1 件以上ある（読み込み完了後） */
-  hasRecords: boolean;
+  /** 記録の読み込みが終わっている（記録の有無は問わない） */
+  loaded: boolean;
   platform: A2hsPlatform;
   standalone: boolean;
   /** 以前に閉じた・インストールした */
@@ -55,9 +55,9 @@ export type A2hsVisibilityInput = {
   coarsePointer: boolean;
 };
 
-/** 案内カードを出すか。記録があり、モバイルのブラウザで開いていて、まだ閉じていないときだけ */
+/** 案内カードを出すか。読み込み後、モバイルのブラウザで開いていて、まだ閉じていないときだけ（記録の有無は問わない） */
 export function shouldShowAddToHomeScreen(input: A2hsVisibilityInput): boolean {
-  if (!input.hasRecords || input.dismissed || input.standalone) return false;
+  if (!input.loaded || input.dismissed || input.standalone) return false;
   if (input.platform === "unsupported") return false;
   return input.coarsePointer;
 }
@@ -66,6 +66,14 @@ export function shouldShowAddToHomeScreen(input: A2hsVisibilityInput): boolean {
 export type A2hsGuide = { mode: "prompt" } | { mode: "steps"; steps: string };
 
 export const A2HS_HEADING = "ホーム画面に追加すると、次回からワンタップで開けます";
+
+/** 記録がまだ無い人向けの見出し（給油所にいない初回訪問者が、次の給油で使えるようにする） */
+export const A2HS_HEADING_NO_RECORDS = "次の給油で使えるように、ホーム画面に追加しておきましょう";
+
+/** 見出し。記録が無いときだけ A2HS_HEADING_NO_RECORDS */
+export function a2hsHeadingOf(hasRecords: boolean): string {
+  return hasRecords ? A2HS_HEADING : A2HS_HEADING_NO_RECORDS;
+}
 
 export const A2HS_STEPS: Record<Exclude<A2hsPlatform, "unsupported">, string> = {
   ios: "共有ボタン（四角から上向きの矢印。見当たらないときは「…」の中）→「ホーム画面に追加」の順に選んでください。",

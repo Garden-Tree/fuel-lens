@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
+  A2HS_HEADING,
+  A2HS_HEADING_NO_RECORDS,
   A2HS_STEPS,
+  a2hsHeadingOf,
   a2hsGuideOf,
   detectA2hsPlatform,
   isStandaloneDisplay,
@@ -71,7 +74,7 @@ describe("isStandaloneDisplay", () => {
 
 describe("shouldShowAddToHomeScreen", () => {
   const base: A2hsVisibilityInput = {
-    hasRecords: true,
+    loaded: true,
     platform: "android-chrome",
     standalone: false,
     dismissed: false,
@@ -84,12 +87,24 @@ describe("shouldShowAddToHomeScreen", () => {
     expect(shouldShowAddToHomeScreen({ ...base, platform: "android-other" })).toBe(true);
   });
 
-  it("記録が無い・閉じた・standalone 表示・PC やアプリ内ブラウザ・タッチでない端末では出さない", () => {
-    expect(shouldShowAddToHomeScreen({ ...base, hasRecords: false })).toBe(false);
+  it("記録の有無は問わない（判定の入力に記録は含まれない）", () => {
+    expect(shouldShowAddToHomeScreen({ ...base, platform: "ios" })).toBe(true);
+  });
+
+  it("読み込み前・閉じた・standalone 表示・PC やアプリ内ブラウザ・タッチでない端末では出さない", () => {
+    expect(shouldShowAddToHomeScreen({ ...base, loaded: false })).toBe(false);
     expect(shouldShowAddToHomeScreen({ ...base, dismissed: true })).toBe(false);
     expect(shouldShowAddToHomeScreen({ ...base, standalone: true })).toBe(false);
     expect(shouldShowAddToHomeScreen({ ...base, platform: "unsupported" })).toBe(false);
     expect(shouldShowAddToHomeScreen({ ...base, coarsePointer: false })).toBe(false);
+  });
+});
+
+describe("a2hsHeadingOf", () => {
+  it("記録があれば通常の見出し、無ければ次の給油向けの見出し", () => {
+    expect(a2hsHeadingOf(true)).toBe(A2HS_HEADING);
+    expect(a2hsHeadingOf(false)).toBe(A2HS_HEADING_NO_RECORDS);
+    expect(A2HS_HEADING_NO_RECORDS).toBe("次の給油で使えるように、ホーム画面に追加しておきましょう");
   });
 });
 

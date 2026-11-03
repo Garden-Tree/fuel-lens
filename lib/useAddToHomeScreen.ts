@@ -108,15 +108,15 @@ export type AddToHomeScreenState = {
 };
 
 /**
- * ホーム画面の「ホーム画面に追加」の案内カードの状態。判定は lib/addToHomeScreen.ts。
+ * ホーム画面の「ホーム画面に追加」の案内カードの状態（loaded = 記録の読み込み完了。記録の有無は問わない）。判定は lib/addToHomeScreen.ts。
  * サーバー描画とハイドレーション中は出さない（端末の値はブラウザでしか読めない）。
  */
-export function useAddToHomeScreen(hasRecords: boolean): AddToHomeScreenState {
+export function useAddToHomeScreen(loaded: boolean): AddToHomeScreenState {
   const state = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
   const visible =
     state !== null &&
     shouldShowAddToHomeScreen({
-      hasRecords,
+      loaded,
       platform: state.platform,
       standalone: state.standalone,
       dismissed: state.dismissed,
