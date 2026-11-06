@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+  ANNUAL_PROMO_ENKIRO_MAX_MONTHLY_KM,
   TOOL_PAGE_PROMOS,
+  annualGasCostPromo,
   findToolPagePromo,
   fuelDiscountSavings,
   litersFromDisplay,
@@ -8,6 +10,7 @@ import {
   type ToolPagePromo,
 } from "@/lib/promo/toolPage";
 
+const enkiro = TOOL_PAGE_PROMOS.find((p) => p.id === "enkiro")!;
 const idemitsu = TOOL_PAGE_PROMOS.find((p) => p.id === "idemitsu-denki")!;
 
 describe("findToolPagePromo", () => {
@@ -41,6 +44,10 @@ describe("fuelDiscountSavings", () => {
     expect(fuelDiscountSavings(150.5, idemitsu)).toBe(200);
   });
 
+  it("値引きの無い提携先は null", () => {
+    expect(fuelDiscountSavings(20, enkiro)).toBeNull();
+  });
+
   it("給油量が出ていない・0 以下・数値でない・1 円に満たないときは null", () => {
     expect(fuelDiscountSavings(null, idemitsu)).toBeNull();
     expect(fuelDiscountSavings(0, idemitsu)).toBeNull();
@@ -63,5 +70,37 @@ describe("litersFromDisplay / savingsText", () => {
     expect(savingsText(46)).toBe("この計算の給油量なら約46円お得です。");
     expect(savingsText(1200)).toBe("この計算の給油量なら約1,200円お得です。");
     expect(savingsText(null)).toBeNull();
+  });
+});
+
+describe("annualGasCostPromo", () => {
+  it("月間 500 km 以下はエンキロ、超えたらインズウェブ（境界）", () => {
+    expect(ANNUAL_PROMO_ENKIRO_MAX_MONTHLY_KM).toBe(500);
+    expect(annualGasCostPromo(500)?.id).toBe("enkiro");
+    expect(annualGasCostPromo(501)?.id).toBe("insweb-car-annual");
+    expect(annualGasCostPromo(66.7)?.id).toBe("enkiro");
+  });
+
+  it("距離が分からない・0 以下・数値でないときは出さない", () => {
+    expect(annualGasCostPromo(null)).toBeNull();
+    expect(annualGasCostPromo(0)).toBeNull();
+    expect(annualGasCostPromo(-1)).toBeNull();
+    expect(annualGasCostPromo(Number.NaN)).toBeNull();
+  });
+
+  it("リンクが入っていなければ出さない", () => {
+    const promos = TOOL_PAGE_PROMOS.map((p) => (p.id === "enkiro" ? { ...p, href: null } : p));
+    expect(annualGasCostPromo(100, promos)).toBeNull();
+    expect(annualGasCostPromo(900, promos)?.id).toBe("insweb-car-annual");
+  });
+
+  it("2 件とも /annual-gas-cost 向けで、A8 のリンクと開示文を持つ", () => {
+    expect(enkiro.href).toBe("https://px.a8.net/svt/ejp?a8mat=4BGCF5+25ZUKI+5O9C+5YJRM");
+    const insweb = annualGasCostPromo(900)!;
+    expect(insweb.href).toBe("https://px.a8.net/svt/ejp?a8mat=4BEL1G+2ZRITE+2PS+15OZHU");
+    for (const p of [enkiro, insweb]) {
+      expect(p.pages).toEqual(["/annual-gas-cost"]);
+      expect(p.disclosure).toMatch(/報酬を受け取ることがあります/);
+    }
   });
 });
