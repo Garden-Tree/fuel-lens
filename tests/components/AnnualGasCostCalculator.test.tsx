@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import AnnualGasCostCalculator from "@/app/annual-gas-cost/_components/AnnualGasCostCalculator";
@@ -76,5 +76,47 @@ describe("AnnualGasCostCalculator", () => {
     const { user } = setup();
     await user.type(screen.getByLabelText("ガソリン単価"), "17");
     expect(screen.getByText(/50〜400 円\/L の範囲外/)).toBeInTheDocument();
+  });
+
+  describe("PR 枠", () => {
+    afterEach(() => {
+      delete window.gtag;
+    });
+
+    it("結果が出ていない・エラーのときは出さない", async () => {
+      const { user } = setup();
+      expect(screen.queryByText("PR")).not.toBeInTheDocument();
+      await user.type(screen.getByLabelText("走行距離"), "abc");
+      expect(screen.queryByText("PR")).not.toBeInTheDocument();
+    });
+
+    it("月間距離が 500 km 以下ならエンキロ、超えたらインズウェブに切り替わり、そのつど表示を送る", async () => {
+      const gtag = vi.fn();
+      window.gtag = gtag;
+      const { user } = setup();
+      const distance = screen.getByLabelText("走行距離");
+      await user.type(distance, "500");
+      expect(screen.getByRole("link", { name: "エンキロの詳細を見る" })).toBeInTheDocument();
+      expect(gtag).toHaveBeenCalledWith("event", "promo_impression", { promo_id: "enkiro", page: "/annual-gas-cost" });
+
+      await user.type(distance, "1");
+      expect(screen.queryByRole("link", { name: "エンキロの詳細を見る" })).not.toBeInTheDocument();
+      const insweb = screen.getByRole("link", { name: "無料で見積もる" });
+      expect(insweb).toHaveAttribute("rel", "sponsored noopener");
+      expect(gtag).toHaveBeenCalledWith("event", "promo_impression", { promo_id: "insweb-car-annual", page: "/annual-gas-cost" });
+
+      await user.clear(distance);
+      expect(screen.queryByText("PR")).not.toBeInTheDocument();
+    });
+
+    it("通勤モードは計算後の月間距離で決める（片道 15 km × 2 × 20 日 = 600 km）", async () => {
+      const { user } = setup();
+      await user.click(screen.getByRole("button", { name: "通勤から" }));
+      await user.type(screen.getByLabelText("片道の距離"), "15");
+      expect(screen.getByRole("link", { name: "無料で見積もる" })).toBeInTheDocument();
+      await user.clear(screen.getByLabelText("片道の距離"));
+      await user.type(screen.getByLabelText("片道の距離"), "10");
+      expect(screen.getByRole("link", { name: "エンキロの詳細を見る" })).toBeInTheDocument();
+    });
   });
 });

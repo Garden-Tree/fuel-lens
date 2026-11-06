@@ -45,6 +45,29 @@ describe("ToolPagePromoCard", () => {
   });
 });
 
+describe("ToolPagePromoCard（値引きの無い提携先）", () => {
+  const enkiro = TOOL_PAGE_PROMOS.find((p) => p.id === "enkiro")!;
+
+  afterEach(() => {
+    delete window.gtag;
+  });
+
+  it("給油量が出ていても値引き文は出さず、PR・開示文・sponsored のリンクと page 付きのイベントを出す", () => {
+    const gtag = vi.fn();
+    window.gtag = gtag;
+    render(<ToolPagePromoCard promo={enkiro} page="/annual-gas-cost" liters={50} />);
+    expect(screen.getByText("PR")).toBeInTheDocument();
+    expect(screen.queryByText(/お得です/)).not.toBeInTheDocument();
+    expect(screen.getByText(/報酬を受け取ることがあります/)).toBeInTheDocument();
+    const link = screen.getByRole("link", { name: "エンキロの詳細を見る" });
+    expect(link).toHaveAttribute("href", enkiro.href);
+    expect(link.getAttribute("rel")).toBe("sponsored noopener");
+    expect(gtag).toHaveBeenCalledWith("event", "promo_impression", { promo_id: "enkiro", page: "/annual-gas-cost" });
+    fireEvent.click(link);
+    expect(gtag).toHaveBeenCalledWith("event", "promo_click", { promo_id: "enkiro", page: "/annual-gas-cost" });
+  });
+});
+
 describe("AppQrHandoff", () => {
   it("アプリの URL を名前に持つ QR コードの画像と案内文を出す", () => {
     render(<AppQrHandoff />);

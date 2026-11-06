@@ -12,6 +12,8 @@ import {
   type AnnualMode,
   type DistancePeriod,
 } from "@/lib/annualGasCostPage";
+import { annualGasCostPromo, numberFromDisplay } from "@/lib/promo/toolPage";
+import ToolPagePromoCard from "@/components/ToolPagePromoCard";
 
 const EMPTY: AnnualGasCostInput = {
   mode: "distance",
@@ -96,6 +98,8 @@ export default function AnnualGasCostCalculator() {
   const [input, setInput] = useState<AnnualGasCostInput>(EMPTY);
   const baseId = useId();
   const result = computeAnnualGasCost(input);
+  // 入力にエラーがあるか距離が出ていないときは PR を出さない。通勤モードも計算後の月間距離を使う
+  const promo = annualGasCostPromo(Object.keys(result.errors).length === 0 ? numberFromDisplay(result.monthlyDistance) : null);
   const isEmpty =
     input.mode === "distance" &&
     input.period === "month" &&
@@ -196,6 +200,8 @@ export default function AnnualGasCostCalculator() {
           </p>
         ))}
       </div>
+      {/* 読み上げの対象（aria-live）の外に置き、入力のたびに PR を読み上げないようにする */}
+      <ToolPagePromoCard promo={promo} page="/annual-gas-cost" liters={null} />
 
       <div className="mt-4 flex items-center justify-between gap-3">
         <p className="text-xs text-sub">入力した値は保存されません。</p>
