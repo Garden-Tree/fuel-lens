@@ -83,6 +83,11 @@ describe("AnnualGasCostCalculator", () => {
       delete window.gtag;
     });
 
+    async function fillRates(user: ReturnType<typeof userEvent.setup>) {
+      await user.type(screen.getByLabelText("燃費"), "15");
+      await user.type(screen.getByLabelText("ガソリン単価"), "170");
+    }
+
     it("結果が出ていない・エラーのときは出さない", async () => {
       const { user } = setup();
       expect(screen.queryByText("PR")).not.toBeInTheDocument();
@@ -90,10 +95,19 @@ describe("AnnualGasCostCalculator", () => {
       expect(screen.queryByText("PR")).not.toBeInTheDocument();
     });
 
+    it("距離だけでは出さず、金額まで計算できたら出す", async () => {
+      const { user } = setup();
+      await user.type(screen.getByLabelText("走行距離"), "500");
+      expect(screen.queryByText("PR")).not.toBeInTheDocument();
+      await fillRates(user);
+      expect(screen.getByRole("link", { name: "エンキロの詳細を見る" })).toBeInTheDocument();
+    });
+
     it("月間距離が 500 km 以下ならエンキロ、超えたらインズウェブに切り替わり、そのつど表示を送る", async () => {
       const gtag = vi.fn();
       window.gtag = gtag;
       const { user } = setup();
+      await fillRates(user);
       const distance = screen.getByLabelText("走行距離");
       await user.type(distance, "500");
       expect(screen.getByRole("link", { name: "エンキロの詳細を見る" })).toBeInTheDocument();
@@ -112,6 +126,7 @@ describe("AnnualGasCostCalculator", () => {
     it("通勤モードは計算後の月間距離で決める（片道 15 km × 2 × 20 日 = 600 km）", async () => {
       const { user } = setup();
       await user.click(screen.getByRole("button", { name: "通勤から" }));
+      await fillRates(user);
       await user.type(screen.getByLabelText("片道の距離"), "15");
       expect(screen.getByRole("link", { name: "無料で見積もる" })).toBeInTheDocument();
       await user.clear(screen.getByLabelText("片道の距離"));

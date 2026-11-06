@@ -98,8 +98,8 @@ export default function AnnualGasCostCalculator() {
   const [input, setInput] = useState<AnnualGasCostInput>(EMPTY);
   const baseId = useId();
   const result = computeAnnualGasCost(input);
-  // 入力にエラーがあるか距離が出ていないときは PR を出さない。通勤モードも計算後の月間距離を使う
-  const promo = annualGasCostPromo(Object.keys(result.errors).length === 0 ? numberFromDisplay(result.monthlyDistance) : null);
+  // 金額まで計算できたときだけ PR を出す（距離の入力中に提携先が切り替わらないように）。通勤モードも計算後の月間距離を使う
+  const promo = annualGasCostPromo(result.monthlyCost !== null ? numberFromDisplay(result.monthlyDistance) : null);
   const isEmpty =
     input.mode === "distance" &&
     input.period === "month" &&
