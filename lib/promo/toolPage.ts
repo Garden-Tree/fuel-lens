@@ -22,6 +22,14 @@ export type ToolPagePromo = {
   disclosure: string;
 };
 
+/** インズウェブ自動車保険（A8、FuelLens のサイト ID 003）。scanWait.ts の insweb-car と同じリンク */
+const INSWEB_CAR_HREF = "https://px.a8.net/svt/ejp?a8mat=4BEL1G+2ZRITE+2PS+15OZHU";
+const INSWEB_DISCLOSURE = "FuelLens は紹介した保険会社の見積りから報酬を受け取ることがあります。";
+
+/**
+ * 同じページに複数あるときは、リンクが入っている先頭の 1 件を出す（findToolPagePromo）。
+ * /gas-cost は出光でんきのリンクが入ればそちら、入るまではインズウェブ。
+ */
 export const TOOL_PAGE_PROMOS: readonly ToolPagePromo[] = [
   {
     id: "idemitsu-denki",
@@ -36,6 +44,15 @@ export const TOOL_PAGE_PROMOS: readonly ToolPagePromo[] = [
     disclosure: "FuelLens は紹介したサービスの申し込みから報酬を受け取ることがあります。",
   },
   {
+    id: "insweb-car-gas-cost",
+    pages: ["/gas-cost"],
+    // 出光でんきのリンクが入るまでの /gas-cost の PR。/annual-gas-cost とは文言だけ変える
+    href: INSWEB_CAR_HREF,
+    body: "ガソリン代とあわせて車の維持費を見直すなら、自動車保険も。一括見積りで複数社の保険料を比べられます（無料）。",
+    cta: "無料で見積もる",
+    disclosure: INSWEB_DISCLOSURE,
+  },
+  {
     id: "enkiro",
     pages: ["/annual-gas-cost"],
     // エンキロ（A8 プログラム s00000026472001、2026-11-05 提携）を FuelLens（サイト ID 003）で作ったリンク。
@@ -48,11 +65,10 @@ export const TOOL_PAGE_PROMOS: readonly ToolPagePromo[] = [
   {
     id: "insweb-car-annual",
     pages: ["/annual-gas-cost"],
-    // scanWait.ts の insweb-car と同じリンク（インズウェブ自動車保険、FuelLens のサイト ID 003）
-    href: "https://px.a8.net/svt/ejp?a8mat=4BEL1G+2ZRITE+2PS+15OZHU",
+    href: INSWEB_CAR_HREF,
     body: "車の維持費を見直すなら、自動車保険も。一括見積りで複数社の保険料を比べられます（無料）。",
     cta: "無料で見積もる",
-    disclosure: "FuelLens は紹介した保険会社の見積りから報酬を受け取ることがあります。",
+    disclosure: INSWEB_DISCLOSURE,
   },
 ];
 

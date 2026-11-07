@@ -84,6 +84,8 @@ export default function GasCostCalculator() {
     if (km) setInput((prev) => (prev.distance === "" ? { ...prev, distance: km } : prev));
   }, []);
   const result = computeGasCost(input);
+  // PR は金額まで計算できてから出す（/annual-gas-cost と同じ）
+  const calculated = Object.keys(result.errors).length === 0 && result.cost !== null;
   const isEmpty =
     input.distance === "" && input.efficiency === "" && input.price === "" && input.people === "" && !input.roundTrip;
 
@@ -201,11 +203,11 @@ export default function GasCostCalculator() {
           </p>
         ))}
       </div>
-      {/* 読み上げの対象（aria-live）の外に置き、入力のたびに PR を読み上げないようにする */}
+      {/* 読み上げの対象（aria-live）の外に置き、入力のたびに PR を読み上げないようにする。金額まで計算できてから出す */}
       <ToolPagePromoCard
-        promo={PROMO}
+        promo={calculated ? PROMO : null}
         page="/gas-cost"
-        liters={Object.keys(result.errors).length === 0 ? litersFromDisplay(result.fuel) : null}
+        liters={calculated ? litersFromDisplay(result.fuel) : null}
       />
 
       <div className="mt-4 flex items-center justify-between gap-3">

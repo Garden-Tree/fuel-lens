@@ -204,8 +204,8 @@ curl -i -X POST "https://<project-ref>.supabase.co/rest/v1/rpc/keepalive_ping" \
 ### 4-3-4. 動作確認
 
 1. DSN を入れてデプロイする（ローカルなら `.env.local` に `NEXT_PUBLIC_SENTRY_DSN` を入れて `npm run build && npm start`）。
-2. エラーを起こす。ブラウザのコンソールから投げたエラーは Sentry に拾われないため、一時的に任意のコンポーネントの描画中に `throw new Error("sentry test")` を入れる。`app/error.tsx` の「問題が発生しました」画面が出る。
-3. Sentry の **Issues** に `sentry test` が現れ、環境が `production`（ローカルは `production` ビルドなら `production`、`npm run dev` なら `development`）、URL にクエリやハッシュが付いていないことを確認する。確認後、テスト用のコードは必ず戻す。
+2. エラーを起こす。対象のページを開き、ブラウザのコンソールで `setTimeout(() => { throw new Error("sentry test") })` を実行する（`setTimeout` の中で投げると未処理の例外として Sentry に送られる。2026-11-06 に本番で届くことを確認済み）。コードを変えずに確かめられるので、まずこの方法を使う。描画中のエラー（`app/error.tsx` の「問題が発生しました」画面）まで確かめたいときは、一時的に任意のコンポーネントの描画中に `throw new Error("sentry test")` を入れてもよい。
+3. Sentry の **Issues** に `sentry test` が現れ、環境が `production`（ローカルは `production` ビルドなら `production`、`npm run dev` なら `development`）、URL にクエリやハッシュが付いていないことを確認する。コンポーネントにテスト用のコードを入れた場合は、確認後に必ず戻す。アプリ内ブラウザなどの開発者ツールのネットワーク欄には `ingest.sentry.io` への通信が表示されないことがあるため、届いたかどうかは Sentry の画面で確認する。
 4. DSN が空のビルドでは、同じ操作をしても `ingest.sentry.io` への通信が発生しない。
 
 広告ブロッカーがブラウザからの送信を止めることがあります（ブラウザ側のエラーが一部欠ける）。必要になったら `tunnelRoute` を検討しますが、`proxy.ts` の matcher からの除外とサーバーレス関数の実行増を伴うため、現状は使っていません。

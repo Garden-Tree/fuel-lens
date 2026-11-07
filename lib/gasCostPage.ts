@@ -10,7 +10,7 @@ import { NATIONAL_GAS_PRICE } from "./nationalGasPrice";
 export const GAS_COST_PATH = "/gas-cost";
 /** ページ内の計算機への移動先（距離別の目安表の各行からリンクする） */
 export const GAS_COST_CALCULATOR_ID = "gas-cost-calculator";
-export const GAS_COST_PAGE_TITLE = "ガソリン代計算ツール｜300km走るといくら？距離・燃費・単価から計算 | FuelLens";
+export const GAS_COST_PAGE_TITLE = "ガソリン代計算ツール｜300km走るといくら？普通車・軽自動車の目安 | FuelLens";
 /** 構造化データの url に使う本番の絶対 URL（canonical は metadataBase からの相対 `/gas-cost`） */
 export const GAS_COST_CANONICAL_URL = "https://fuel-lens.gadelog.com/gas-cost";
 
@@ -223,13 +223,16 @@ export function quickAnswerText(): string {
   return `${distance}kmなら、${parts.join("、")}です（全国平均のレギュラー${formatPrice(price)}円/Lで計算）。`;
 }
 
-/** meta description。冒頭の一行回答と同じ数字（全国平均の単価・調査日つき）で「300キロ ガソリン代」に答える */
+/**
+ * meta description。冒頭の一行回答と同じ数字（全国平均の単価・調査日つき）で「300km / 300キロ ガソリン代」に答える。
+ * 検索語は「300km ガソリン代 普通車」「軽自動車 300キロ ガソリン代」のように車種つきが多いので、車種ごとの金額を先頭に置く
+ */
 export const GAS_COST_DESCRIPTION = (() => {
   const { distance, price, items } = quickAnswer();
-  const costs = items.map((i) => `${i.label}で約${i.cost}円`).join("・");
+  const costs = items.map((i) => `${i.label}で約${i.cost}円`).join("、");
   return (
-    `${distance}キロのガソリン代は${costs}（全国平均${formatPrice(price)}円/L、${NATIONAL_PRICE_SURVEY_LABEL}調査）。` +
-    "距離・燃費・単価を入れるだけで計算でき、距離別の目安表や往復・割り勘にも対応。登録不要・無料。"
+    `${distance}km（${distance}キロ）のガソリン代の目安は${costs}（全国平均${formatPrice(price)}円/L・${NATIONAL_PRICE_SURVEY_LABEL}調査）。` +
+    "距離・燃費・単価を入れるだけで計算でき、往復・割り勘にも対応。登録不要・無料。"
   );
 })();
 

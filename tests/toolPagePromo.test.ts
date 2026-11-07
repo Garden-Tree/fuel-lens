@@ -12,12 +12,29 @@ import {
 
 const enkiro = TOOL_PAGE_PROMOS.find((p) => p.id === "enkiro")!;
 const idemitsu = TOOL_PAGE_PROMOS.find((p) => p.id === "idemitsu-denki")!;
+const inswebAnnual = TOOL_PAGE_PROMOS.find((p) => p.id === "insweb-car-annual")!;
 
 describe("findToolPagePromo", () => {
-  it("出光でんきは /gas-cost 向けで、リンクが入るまでは出さない", () => {
+  it("出光でんきは /gas-cost 向けで、リンクが入るまではインズウェブ（自動車保険）を出す", () => {
     expect(idemitsu.pages).toEqual(["/gas-cost"]);
     expect(idemitsu.href).toBeNull();
-    expect(findToolPagePromo("/gas-cost")).toBeNull();
+    const promo = findToolPagePromo("/gas-cost")!;
+    expect(promo.id).toBe("insweb-car-gas-cost");
+    expect(promo.href).toBe(inswebAnnual.href);
+    expect(promo.discountYenPerL).toBeUndefined();
+    expect(promo.body).toContain("自動車保険");
+  });
+
+  it("出光でんきのリンクが入れば、/gas-cost ではインズウェブより先に出す", () => {
+    const promos = TOOL_PAGE_PROMOS.map((p) => (p.id === idemitsu.id ? { ...p, href: "https://px.a8.net/svt/ejp?a8mat=TEST" } : p));
+    expect(findToolPagePromo("/gas-cost", promos)?.id).toBe("idemitsu-denki");
+  });
+
+  it("/gas-cost の PR は /annual-gas-cost と /route-gas-cost には出さない", () => {
+    const gasCostInsweb = TOOL_PAGE_PROMOS.find((p) => p.id === "insweb-car-gas-cost")!;
+    expect(gasCostInsweb.pages).toEqual(["/gas-cost"]);
+    expect(findToolPagePromo("/route-gas-cost")).toBeNull();
+    expect(annualGasCostPromo(900)?.id).toBe("insweb-car-annual");
   });
 
   it("リンクが入っていて、ページが一致する最初の 1 件を返す", () => {

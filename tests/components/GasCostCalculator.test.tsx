@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import GasCostCalculator from "@/app/gas-cost/_components/GasCostCalculator";
@@ -24,7 +24,10 @@ function resultValue(label: string): string {
 }
 
 describe("GasCostCalculator", () => {
-  afterEach(() => window.history.replaceState(null, "", "/"));
+  afterEach(() => {
+    window.history.replaceState(null, "", "/");
+    delete window.gtag;
+  });
 
   it("?km= が目安表の距離なら距離を入れておく", () => {
     window.history.replaceState(null, "", "/gas-cost?km=180");
@@ -114,8 +117,26 @@ describe("GasCostCalculator", () => {
     expect(resultValue("ガソリン代")).toBe(yen(highOctane));
   });
 
-  it("出光でんきの PR はリンクが入るまで出さない", () => {
-    setup();
+  it("PR は金額まで計算できてから出し、出光でんきのリンクが入るまではインズウェブを出す", async () => {
+    const gtag = vi.fn();
+    window.gtag = gtag;
+    const { user, distance, efficiency, price } = setup();
+    expect(screen.queryByText("PR")).not.toBeInTheDocument();
+    await user.type(distance, "300");
+    await user.type(efficiency, "13");
+    expect(screen.queryByText("PR")).not.toBeInTheDocument();
+    await user.type(price, "170");
+    const link = screen.getByRole("link", { name: "無料で見積もる" });
+    expect(link).toHaveAttribute("href", "https://px.a8.net/svt/ejp?a8mat=4BEL1G+2ZRITE+2PS+15OZHU");
+    expect(link).toHaveAttribute("rel", "sponsored noopener");
+    expect(screen.getByText("PR")).toBeInTheDocument();
+    // 値引きの無い提携先なので、値引き額の文は出さない
+    expect(screen.queryByText(/お得です/)).not.toBeInTheDocument();
+    expect(gtag).toHaveBeenCalledWith("event", "promo_impression", { promo_id: "insweb-car-gas-cost", page: "/gas-cost" });
+    await user.click(link);
+    expect(gtag).toHaveBeenCalledWith("event", "promo_click", { promo_id: "insweb-car-gas-cost", page: "/gas-cost" });
+    // 入力を消すと消える
+    await user.clear(distance);
     expect(screen.queryByText("PR")).not.toBeInTheDocument();
   });
 });

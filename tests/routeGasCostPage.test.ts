@@ -7,6 +7,7 @@ import {
   ROUTE_GAS_COST_DESCRIPTION,
   ROUTE_GAS_COST_FAQS,
   ROUTE_GAS_COST_PAGE_TITLE,
+  ROUTE_SNIPPET_IDS,
   ROUTE_PRICE,
   buildRouteGasCostJsonLd,
   displayKm,
@@ -104,6 +105,15 @@ describe("ページの文言と構造化データ", () => {
     expect(ROUTE_GAS_COST_PAGE_TITLE).toContain("ガソリン代と高速代");
     expect(ROUTE_GAS_COST_PAGE_TITLE.endsWith("| FuelLens")).toBe(true);
     expect(ROUTE_GAS_COST_DESCRIPTION).toContain(`${ROUTES.length}区間`);
+    expect(ROUTE_GAS_COST_PAGE_TITLE).toContain(`${ROUTES.length}区間`);
+    // 区間名の検索（「名古屋から大阪 車 ガソリン代」）に合わせ、代表の区間を「AからB」で出す。区間は ROUTES に実在する
+    for (const id of ROUTE_SNIPPET_IDS) {
+      const route = ROUTES.find((r) => r.id === id);
+      expect(route).toBeDefined();
+      expect(ROUTE_GAS_COST_DESCRIPTION).toContain(route!.name.replace("〜", "から"));
+    }
+    expect(ROUTE_GAS_COST_PAGE_TITLE).toContain("東京〜大阪");
+    expect(ROUTE_GAS_COST_DESCRIPTION).toContain("高速代");
     expect(ROUTE_GAS_COST_DESCRIPTION.length).toBeLessThanOrEqual(130);
   });
 

@@ -213,6 +213,9 @@ describe("距離別の目安表", () => {
     expect(GAS_COST_PAGE_TITLE).toContain("300km");
     expect(GAS_COST_PAGE_TITLE.endsWith("| FuelLens")).toBe(true);
     expect(GAS_COST_DESCRIPTION).toContain("300キロ");
+    expect(GAS_COST_DESCRIPTION).toContain("300km");
+    expect(GAS_COST_PAGE_TITLE).toContain("普通車");
+    expect(GAS_COST_PAGE_TITLE).toContain("軽自動車");
     expect(GAS_COST_DESCRIPTION.length).toBeGreaterThanOrEqual(100);
     expect(GAS_COST_DESCRIPTION.length).toBeLessThanOrEqual(125);
   });
