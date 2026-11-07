@@ -11,9 +11,6 @@ import { CAR_TYPE_EFFICIENCIES, GAS_COST_CALCULATOR_ID, GAS_COST_PATH, exampleCo
 import { NATIONAL_GAS_PRICE } from "./nationalGasPrice";
 
 export const ROUTE_GAS_COST_PATH = "/route-gas-cost";
-export const ROUTE_GAS_COST_PAGE_TITLE = "車のガソリン代と高速代の目安｜東京〜大阪など主要12区間の片道・往復 | FuelLens";
-export const ROUTE_GAS_COST_DESCRIPTION =
-  "東京〜大阪・名古屋〜大阪・大阪〜福岡など主要12区間を車で走ったときのガソリン代と高速代（ETC）の合計を片道・往復でまとめました。逆方向も同じ金額です。軽自動車・普通車・ハイブリッド車・ミニバン別のガソリン代も。";
 export const SITE_ORIGIN = "https://fuel-lens.gadelog.com";
 export const ROUTE_GAS_COST_CANONICAL_URL = `${SITE_ORIGIN}${ROUTE_GAS_COST_PATH}`;
 
@@ -94,6 +91,27 @@ export const ROUTES: readonly RouteEntry[] = [
   { id: "osaka-fukuoka", name: "大阪〜福岡", from: "吹田IC", to: "福岡IC", via: "新名神・山陽道・中国道・九州道", sourceKm: 616.2, toll: { standard: 12570, kei: 10180 } },
   { id: "fukuoka-kagoshima", name: "福岡〜鹿児島", from: "福岡IC", to: "鹿児島IC", via: "九州道", sourceKm: 277.8, toll: { standard: 6330, kei: 5100 } },
 ];
+
+/**
+ * タイトル・説明文に名前を出す代表の区間（ROUTES の id）。検索語が「名古屋から大阪 車 ガソリン代」のような区間名なので、
+ * 検索の多い区間を「AからB」の形で並べる
+ */
+export const ROUTE_SNIPPET_IDS = ["tokyo-osaka", "nagoya-osaka", "osaka-fukuoka"] as const;
+
+function snippetRoutes(): RouteEntry[] {
+  return ROUTE_SNIPPET_IDS.map((id) => ROUTES.find((r) => r.id === id)!);
+}
+
+export const ROUTE_GAS_COST_PAGE_TITLE = `車のガソリン代と高速代｜${snippetRoutes()
+  .slice(0, 2)
+  .map((r) => r.name)
+  .join("・")}など主要${ROUTES.length}区間の片道・往復 | FuelLens`;
+
+export const ROUTE_GAS_COST_DESCRIPTION =
+  `${snippetRoutes()
+    .map((r) => r.name.replace("〜", "から"))
+    .join("・")}など主要${ROUTES.length}区間を車で走ったときの、ガソリン代と高速代（ETC）の合計を片道・往復でまとめました。` +
+  "逆方向（大阪から東京など）も同じ金額です。軽自動車・普通車・ハイブリッド車・ミニバン別のガソリン代も。";
 
 /** 表に出す距離（km）。出典の値を 5 km 単位に丸めた「約○km」。ガソリン代もこの距離で計算する */
 export function displayKm(sourceKm: number): number {
