@@ -137,7 +137,7 @@ export default function GasCostPage() {
             <p className="mt-3 text-sm text-sub">
               月額・年額を出すなら{" "}
               <Link href="/annual-gas-cost" className="text-accent underline underline-offset-2 hover:no-underline">
-                年間ガソリン代の計算ツール
+                ガソリン代が月いくら・年いくらかの計算ツール
               </Link>
               へ。L/100km や mpg の燃費しか分からないときは{" "}
               <Link href="/fuel-convert" className="text-accent underline underline-offset-2 hover:no-underline">
