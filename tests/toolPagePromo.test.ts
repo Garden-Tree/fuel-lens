@@ -33,7 +33,32 @@ describe("findToolPagePromo", () => {
   it("/gas-cost の PR は /annual-gas-cost と /route-gas-cost には出さない", () => {
     const gasCostInsweb = TOOL_PAGE_PROMOS.find((p) => p.id === "insweb-car-gas-cost")!;
     expect(gasCostInsweb.pages).toEqual(["/gas-cost"]);
-    expect(findToolPagePromo("/route-gas-cost")).toBeNull();
+    expect(findToolPagePromo("/route-gas-cost")?.id).not.toBe("insweb-car-gas-cost");
+    expect(annualGasCostPromo(900)?.id).toBe("insweb-car-annual");
+  });
+
+  it("/expense は法人専用ガソリンカード（ETC協同組合）を出す", () => {
+    const promo = findToolPagePromo("/expense")!;
+    expect(promo.id).toBe("etc-kumiai-fuel-card");
+    expect(promo.pages).toEqual(["/expense"]);
+    expect(promo.href).toBe("https://px.a8.net/svt/ejp?a8mat=4BGGBM+5FA8QQ+3EV2+HV7V6");
+    expect(promo.cta).toBe("資料を請求する");
+    expect(promo.discountYenPerL).toBeUndefined();
+  });
+
+  it("/route-gas-cost（区間ページ）は法人 ETC カード（高速情報協同組合）を出す", () => {
+    const promo = findToolPagePromo("/route-gas-cost")!;
+    expect(promo.id).toBe("kosoku-kumiai-etc-card");
+    expect(promo.pages).toEqual(["/route-gas-cost"]);
+    expect(promo.href).toBe("https://px.a8.net/svt/ejp?a8mat=4BGGBM+5IUUDE+1WW0+5YJRM");
+    expect(promo.cta).toBe("詳しく見る");
+    expect(promo.discountYenPerL).toBeUndefined();
+  });
+
+  it("法人向けの 2 件は /gas-cost と /annual-gas-cost の PR を変えない", () => {
+    expect(findToolPagePromo("/gas-cost")?.id).toBe("insweb-car-gas-cost");
+    expect(findToolPagePromo("/annual-gas-cost")?.id).toBe("enkiro");
+    expect(annualGasCostPromo(100)?.id).toBe("enkiro");
     expect(annualGasCostPromo(900)?.id).toBe("insweb-car-annual");
   });
 
@@ -47,6 +72,23 @@ describe("findToolPagePromo", () => {
     expect(findToolPagePromo("/calc", promos)?.id).toBe("b");
     expect(findToolPagePromo("/warikan", promos)).toBeNull();
   });
+});
+
+describe("法人向けの提携先の NG 語", () => {
+  // 広告主から使わないよう指定された語（ブランド名・カード会社名を含む）
+  const NG_WORDS: Record<string, readonly string[]> = {
+    "etc-kumiai-fuel-card": ["審査なし", "誰でも通る", "ブラック", "エネオス", "ENEOS", "出光", "アポロ", "apollo", "昭和シェル", "発行", "申し込み", "申込"],
+    "kosoku-kumiai-etc-card": ["ブラック", "審査なし", "誰でも通る", "セディナ", "UC", "ＵＣ"],
+  };
+
+  for (const [id, words] of Object.entries(NG_WORDS)) {
+    it(`${id} の本文・リンクの文言・開示文に NG 語を含めない`, () => {
+      const promo = TOOL_PAGE_PROMOS.find((p) => p.id === id)!;
+      expect(promo).toBeDefined();
+      const copy = [promo.body, promo.cta, promo.disclosure].join(" ").toLowerCase();
+      for (const word of words) expect(copy, word).not.toContain(word.toLowerCase());
+    });
+  }
 });
 
 describe("fuelDiscountSavings", () => {

@@ -22,6 +22,8 @@ import { aiAvailabilityCopy } from "@/lib/landingPage";
 import { MAX_BATCH_IMAGES } from "@/lib/scan/batch";
 import { isTrialEnabled } from "@/lib/server/analyze/trialCookie";
 import AppQrHandoff from "@/components/AppQrHandoff";
+import ToolPagePromoCard from "@/components/ToolPagePromoCard";
+import { findToolPagePromo } from "@/lib/promo/toolPage";
 
 // ガソリン代を経費として記録したい人向けの入口（ログイン不要・静的）。新しい計算機は持たず、アプリの既存の機能を説明する。
 // AI の読み取りの可否はお試し（TRIAL_COOKIE_SECRET）の有無で文言を切り替える（静的描画なのでビルド時の値）。
@@ -45,6 +47,8 @@ export const metadata: Metadata = {
     description: EXPENSE_DESCRIPTION,
   },
 };
+
+const PROMO = findToolPagePromo(EXPENSE_PATH);
 
 const linkClass = "text-accent underline underline-offset-2 hover:no-underline";
 
@@ -125,6 +129,7 @@ export default function ExpensePage() {
               Excel で開いても文字化けしない形式（UTF-8・BOM 付き）です。
               月ごとの支払総額は、アプリの統計画面の「月ごとの給油代」でも見られます。
             </p>
+            <ToolPagePromoCard promo={PROMO} page={EXPENSE_PATH} liters={null} />
           </section>
 
           <section>
