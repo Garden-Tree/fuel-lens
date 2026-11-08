@@ -63,6 +63,8 @@ export type RouteEntry = {
   sourceKm: number;
   /** 同じ IC・同じ経路（距離が一致するもの）の ETC 料金。確認できなければ null（ガソリン代だけ出す） */
   toll: RouteToll | null;
+  /** 距離と高速代をまとめて取得した日（例: 2026年11月8日）。省略時は ROUTE_DISTANCE_SOURCE の取得日 */
+  retrieved?: string;
 };
 
 /**
@@ -76,19 +78,39 @@ export type RouteEntry = {
  *   浦和（仙台方面）（E4 東北道, 1040013）/ 仙台宮城（E4, 1040241）/ 練馬（E17 関越道, 1800001）/ 新潟中央（1440096）/
  *   金沢東（E8 北陸道, 1080121）/ 広島（E2 山陽道, 1020206）/ 福岡（E3 九州道, 1030061）/ 鹿児島（E3 九州道, 1030261）
  * 料金は経路で変わる（例: 大阪〜広島は中国道経由だと高い）ので、距離の経路と同じ経路の料金を使うこと。
+ *
+ * retrieved が RETRIEVED_20261108 の区間: 2026-11-08 に同じ検索で、2026-11-09（月）10:20 出発・普通車 / 軽・自動二輪の
+ * 距離と ETC 料金をまとめて写した（東京〜鹿児島だけは 10:20 出発だと深夜 0〜4 時にかかり深夜割引が入るため 6:00 出発）。
+ * 阪神高速・一般道を通る経路は除き、残った候補の先頭（既存の区間と同じ選び方）を使った。追加の IC:
+ *   京都東（E1 名神, 1011126。京都南 1011131 より手前で、東京・名古屋からの距離が短い）/ 岡山（E2 山陽道, 1020096）/
+ *   高松中央（E11 高松道, 1611126。高速道路だけの候補は神戸淡路鳴門道経由の 1 本だけで、瀬戸中央道経由は候補に出ない）/
+ *   盛岡（E4 東北道, 1040366）
  */
+/** 2026-11-08 に追加した区間の取得日 */
+const RETRIEVED_20261108 = "2026年11月8日";
+
 export const ROUTES: readonly RouteEntry[] = [
   { id: "tokyo-osaka", name: "東京〜大阪", from: "東京IC", to: "吹田IC", via: "新東名・伊勢湾岸道・新名神", sourceKm: 468.5, toll: { standard: 10840, kei: 8810 } },
   { id: "tokyo-nagoya", name: "東京〜名古屋", from: "東京IC", to: "名古屋IC", via: "新東名・伊勢湾岸道", sourceKm: 314.6, toll: { standard: 7320, kei: 5890 } },
   { id: "nagoya-osaka", name: "名古屋〜大阪", from: "名古屋IC", to: "吹田IC", via: "東名・名神", sourceKm: 189.1, toll: { standard: 5120, kei: 4130 } },
+  { id: "tokyo-kyoto", name: "東京〜京都", from: "東京IC", to: "京都東IC", via: "新東名・伊勢湾岸道・新名神・名神", sourceKm: 431.5, toll: { standard: 10070, kei: 8130 }, retrieved: RETRIEVED_20261108 },
+  { id: "tokyo-hiroshima", name: "東京〜広島", from: "東京IC", to: "広島IC", via: "新東名・伊勢湾岸道・新名神・山陽道", sourceKm: 786.2, toll: { standard: 16940, kei: 13630 }, retrieved: RETRIEVED_20261108 },
+  { id: "tokyo-fukuoka", name: "東京〜福岡", from: "東京IC", to: "福岡IC", via: "新東名・伊勢湾岸道・新名神・山陽道・中国道・九州道", sourceKm: 1062.9, toll: { standard: 22310, kei: 18000 }, retrieved: RETRIEVED_20261108 },
+  { id: "tokyo-kagoshima", name: "東京〜鹿児島", from: "東京IC", to: "鹿児島IC", via: "新東名・伊勢湾岸道・新名神・山陽道・中国道・九州道", sourceKm: 1340.7, toll: { standard: 27510, kei: 22100 }, retrieved: RETRIEVED_20261108 },
   { id: "tokyo-shizuoka", name: "東京〜静岡", from: "東京IC", to: "静岡IC", via: "東名", sourceKm: 161.8, toll: { standard: 4300, kei: 3470 } },
   { id: "tokyo-sendai", name: "東京〜仙台", from: "浦和IC", to: "仙台宮城IC", via: "東北道", sourceKm: 327.6, toll: { standard: 7440, kei: 5990 } },
+  { id: "tokyo-morioka", name: "東京〜盛岡", from: "浦和IC", to: "盛岡IC", via: "東北道", sourceKm: 507.3, toll: { standard: 10800, kei: 8710 }, retrieved: RETRIEVED_20261108 },
   { id: "tokyo-niigata", name: "東京〜新潟", from: "練馬IC", to: "新潟中央IC", via: "関越道・北陸道", sourceKm: 301.9, toll: { standard: 7000, kei: 5640 } },
   { id: "tokyo-kanazawa", name: "東京〜金沢", from: "練馬IC", to: "金沢東IC", via: "関越道・上信越道・北陸道", sourceKm: 454.5, toll: { standard: 9890, kei: 7940 } },
   { id: "nagoya-kanazawa", name: "名古屋〜金沢", from: "名古屋IC", to: "金沢東IC", via: "名神・北陸道", sourceKm: 259.8, toll: { standard: 5990, kei: 4830 } },
+  { id: "nagoya-kyoto", name: "名古屋〜京都", from: "名古屋IC", to: "京都東IC", via: "東名・名神", sourceKm: 152.1, toll: { standard: 4210, kei: 3400 }, retrieved: RETRIEVED_20261108 },
+  { id: "nagoya-fukuoka", name: "名古屋〜福岡", from: "名古屋IC", to: "福岡IC", via: "名神・新名神・山陽道・中国道・九州道", sourceKm: 783.5, toll: { standard: 16470, kei: 13270 }, retrieved: RETRIEVED_20261108 },
   { id: "osaka-kanazawa", name: "大阪〜金沢", from: "吹田IC", to: "金沢東IC", via: "名神・北陸道", sourceKm: 289.7, toll: { standard: 6780, kei: 5460 } },
+  { id: "osaka-okayama", name: "大阪〜岡山", from: "吹田IC", to: "岡山IC", via: "新名神・山陽道", sourceKm: 190.8, toll: { standard: 4400, kei: 3560 }, retrieved: RETRIEVED_20261108 },
   { id: "osaka-hiroshima", name: "大阪〜広島", from: "吹田IC", to: "広島IC", via: "新名神・山陽道", sourceKm: 339.5, toll: { standard: 7250, kei: 5830 } },
   { id: "osaka-fukuoka", name: "大阪〜福岡", from: "吹田IC", to: "福岡IC", via: "新名神・山陽道・中国道・九州道", sourceKm: 616.2, toll: { standard: 12570, kei: 10180 } },
+  { id: "osaka-kagoshima", name: "大阪〜鹿児島", from: "吹田IC", to: "鹿児島IC", via: "新名神・山陽道・中国道・九州道", sourceKm: 894, toll: { standard: 17770, kei: 14270 }, retrieved: RETRIEVED_20261108 },
+  { id: "osaka-takamatsu", name: "大阪〜高松", from: "吹田IC", to: "高松中央IC", via: "新名神・山陽道・神戸淡路鳴門道・高松道", sourceKm: 224.3, toll: { standard: 6880, kei: 5580 }, retrieved: RETRIEVED_20261108 },
   { id: "fukuoka-kagoshima", name: "福岡〜鹿児島", from: "福岡IC", to: "鹿児島IC", via: "九州道", sourceKm: 277.8, toll: { standard: 6330, kei: 5100 } },
 ];
 

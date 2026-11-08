@@ -77,6 +77,16 @@ describe("区間別の表", () => {
     }
   });
 
+  it("区間のデータ: slug は from-to の英小文字、距離は正、名前は「A〜B」、取得日は「YYYY年M月D日」", () => {
+    for (const route of ROUTES) {
+      expect(route.id).toMatch(/^[a-z]+-[a-z]+$/);
+      expect(route.sourceKm).toBeGreaterThan(0);
+      expect(route.name.split("〜")).toHaveLength(2);
+      expect(route.from.endsWith("IC") && route.to.endsWith("IC")).toBe(true);
+      if (route.retrieved !== undefined) expect(route.retrieved).toMatch(/^\d{4}年\d{1,2}月\d{1,2}日$/);
+    }
+  });
+
   it("高速代が null の区間はガソリン代だけで、合計は null", () => {
     const route: RouteEntry = { ...ROUTES[0], toll: null };
     const t = routeTotal(route, 13, null, 170.1);
