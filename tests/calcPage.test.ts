@@ -7,6 +7,7 @@ import {
   CALC_PAGE_TITLE,
   buildCalcJsonLd,
   calcExample,
+  calcOgFormula,
   calcQuickAnswerText,
   calcRecordHref,
   computeCalc,
@@ -120,6 +121,14 @@ describe("タイトル・見出し・一行回答", () => {
     expect(calcQuickAnswerText()).toContain(`燃費は${fuel_efficiency!.toFixed(2)}km/L`);
     expect(calcQuickAnswerText()).toContain(`${CALC_EXAMPLE.distance}km`);
     expect(calcQuickAnswerText()).toContain(`${CALC_EXAMPLE.amount}L`);
+  });
+
+  it("OG 画像の式は一行回答と同じ計算例（距離・給油量・燃費）", () => {
+    const parts = calcOgFormula();
+    expect(parts.map((p) => p.text).join(" ")).toBe(
+      `${CALC_EXAMPLE.distance} km ÷ ${CALC_EXAMPLE.amount} L = ${calcExample().efficiency} km/L`
+    );
+    expect(parts.filter((p) => p.kind === "result")).toEqual([{ text: calcExample().efficiency, kind: "result" }]);
   });
 });
 

@@ -8,6 +8,7 @@ import { parseDraftNumber } from "./recordDraft";
 import { PLAUSIBILITY_LIMITS } from "./analyze";
 import { buildManualPrefillHref } from "./manualPrefill";
 import { CAR_TYPE_EFFICIENCIES } from "./gasCostPage";
+import type { OgFormulaPart } from "./og/renderToolOgImage";
 
 export const CALC_PATH = "/calc";
 /**
@@ -121,6 +122,20 @@ export function calcExample(): { efficiency: string; pricePerUnit: string; costP
 export function calcQuickAnswerText(): string {
   const { efficiency } = calcExample();
   return `燃費（km/L）は「走行距離 ÷ 給油量」で求めます。満タン給油から${CALC_EXAMPLE.distance}km走って、次の満タンで${CALC_EXAMPLE.amount}L入ったら、燃費は${efficiency}km/Lです。`;
+}
+
+/** OG / Twitter 画像の式（一行回答と同じ CALC_EXAMPLE・calcExample() から作り、ページの数字とずれないようにする） */
+export function calcOgFormula(): OgFormulaPart[] {
+  return [
+    { text: String(CALC_EXAMPLE.distance), kind: "num" },
+    { text: "km", kind: "unit" },
+    { text: "÷", kind: "unit" },
+    { text: String(CALC_EXAMPLE.amount), kind: "num" },
+    { text: "L", kind: "unit" },
+    { text: "=", kind: "unit" },
+    { text: calcExample().efficiency, kind: "result" },
+    { text: "km/L", kind: "unit" },
+  ];
 }
 
 export type FaqEntry = { q: string; a: string };
