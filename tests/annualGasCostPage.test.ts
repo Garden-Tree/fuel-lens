@@ -1,17 +1,26 @@
 import { describe, expect, it } from "vitest";
 import {
+  ANNUAL_GAS_COST_DESCRIPTION,
   ANNUAL_GAS_COST_FAQS,
+  ANNUAL_GAS_COST_HEADING,
+  ANNUAL_GAS_COST_PAGE_TITLE,
   ANNUAL_GAS_COST_PATH,
   ANNUAL_GAS_COST_TITLE,
+  QUICK_ANSWER_EXAMPLE,
+  YEARLY_DISTANCE_EXAMPLES,
   MONTHLY_TABLE_DISTANCES,
   MONTHLY_TABLE_EFFICIENCIES,
   buildAnnualGasCostJsonLd,
   buildMonthlyTable,
   commuteExample,
   computeAnnualGasCost,
+  exampleMonthlyAndYearly,
+  formatManYen,
+  monthlyFromYearly,
+  quickAnswerText,
   type AnnualGasCostInput,
 } from "@/lib/annualGasCostPage";
-import { EXAMPLE_PRICE } from "@/lib/gasCostPage";
+import { EXAMPLE_PRICE, NATIONAL_PRICE_SURVEY_LABEL, formatPrice } from "@/lib/gasCostPage";
 import { NATIONAL_GAS_PRICE } from "@/lib/nationalGasPrice";
 
 const base: AnnualGasCostInput = {
@@ -164,14 +173,62 @@ describe("早見表と通勤の例", () => {
   });
 });
 
+describe("一行回答・title・description", () => {
+  const typical = () => exampleMonthlyAndYearly(QUICK_ANSWER_EXAMPLE.monthlyKm, QUICK_ANSWER_EXAMPLE.efficiency);
+
+  it("典型例は 月 500 km・燃費 15 km/L で、早見表の行と列にある", () => {
+    expect(QUICK_ANSWER_EXAMPLE).toEqual({ monthlyKm: 500, efficiency: 15 });
+    expect(MONTHLY_TABLE_DISTANCES).toContain(QUICK_ANSWER_EXAMPLE.monthlyKm);
+    expect(MONTHLY_TABLE_EFFICIENCIES).toContain(QUICK_ANSWER_EXAMPLE.efficiency);
+    expect(typical()).toEqual(expectedAtExamplePrice(500, 15));
+  });
+
+  it("万円は小数第 1 位", () => {
+    expect(formatManYen("68,000")).toBe("6.8");
+    expect(formatManYen("81,600")).toBe("8.2");
+    expect(formatManYen("108,800")).toBe("10.9");
+  });
+
+  it("一行回答は典型例と通勤の例の月額を、全国平均の単価で計算した値で出す", () => {
+    const t = typical();
+    const c = commuteExample();
+    expect(quickAnswerText()).toBe(
+      `月500km・燃費15km/Lなら月約${t.monthly}円（年約${formatManYen(t.yearly)}万円）、` +
+        `片道15kmの通勤（月20日）なら月約${c.monthly}円です（全国平均のレギュラー${formatPrice(EXAMPLE_PRICE)}円/Lで計算）。`,
+    );
+  });
+
+  it("title と H1 は「月いくら」の問いで始まり、通勤を含む", () => {
+    expect(ANNUAL_GAS_COST_PAGE_TITLE).toBe("ガソリン代は月いくら？通勤・年間のガソリン代シミュレーター | FuelLens");
+    expect(ANNUAL_GAS_COST_HEADING).toBe("ガソリン代は月いくら？通勤・年間のガソリン代を計算");
+  });
+
+  it("description は「月いくら」と計算した月額・年額・単価・調査日を含み、120 文字以内", () => {
+    const t = typical();
+    expect(ANNUAL_GAS_COST_DESCRIPTION).toContain("月いくら");
+    expect(ANNUAL_GAS_COST_DESCRIPTION).toContain(`月約${t.monthly}円・年約${formatManYen(t.yearly)}万円`);
+    expect(ANNUAL_GAS_COST_DESCRIPTION).toContain(`全国平均${formatPrice(EXAMPLE_PRICE)}円/L・${NATIONAL_PRICE_SURVEY_LABEL}調査`);
+    expect([...ANNUAL_GAS_COST_DESCRIPTION].length).toBeLessThanOrEqual(120);
+  });
+
+  it("年間走行距離の目安は 12 で割った月間距離", () => {
+    expect(YEARLY_DISTANCE_EXAMPLES.map(monthlyFromYearly)).toEqual(["417", "833"]);
+  });
+});
+
 describe("定数・FAQ・JSON-LD", () => {
   it("パスと短い名前を公開する", () => {
     expect(ANNUAL_GAS_COST_PATH).toBe("/annual-gas-cost");
     expect(ANNUAL_GAS_COST_TITLE).toBe("年間ガソリン代");
   });
 
-  it("FAQ は本文と重ならない 1 問だけ", () => {
-    expect(ANNUAL_GAS_COST_FAQS.map((f) => f.q)).toEqual(["年間の金額は今後も同じになりますか？"]);
+  it("FAQ は本文と重ならない 2〜4 問", () => {
+    expect(ANNUAL_GAS_COST_FAQS.map((f) => f.q)).toEqual([
+      "自分のガソリン代の月平均を知るにはどうすればいいですか？",
+      "年間の金額は今後も同じになりますか？",
+    ]);
+    expect(ANNUAL_GAS_COST_FAQS.length).toBeGreaterThanOrEqual(2);
+    expect(ANNUAL_GAS_COST_FAQS.length).toBeLessThanOrEqual(4);
   });
 
   it("WebApplication と FAQPage を持つ JSON になり、< をエスケープする", () => {
@@ -181,9 +238,8 @@ describe("定数・FAQ・JSON-LD", () => {
     expect(data["@graph"].map((n: { "@type": string }) => n["@type"])).toEqual(["WebApplication", "FAQPage"]);
     expect(data["@graph"][0].url).toBe("https://fuel-lens.gadelog.com/annual-gas-cost");
     expect(data["@graph"][1].mainEntity).toHaveLength(ANNUAL_GAS_COST_FAQS.length);
-    expect(data["@graph"][1].mainEntity[0]).toMatchObject({
-      name: ANNUAL_GAS_COST_FAQS[0].q,
-      acceptedAnswer: { text: ANNUAL_GAS_COST_FAQS[0].a },
+    ANNUAL_GAS_COST_FAQS.forEach(({ q, a }, i) => {
+      expect(data["@graph"][1].mainEntity[i]).toMatchObject({ "@type": "Question", name: q, acceptedAnswer: { "@type": "Answer", text: a } });
     });
   });
 });

@@ -6,9 +6,13 @@
 
 import { parseDraftNumber } from "./recordDraft";
 import type { FaqEntry } from "./calcPage";
-import { EXAMPLE_PRICE, computeGasCost } from "./gasCostPage";
+import { EXAMPLE_PRICE, NATIONAL_PRICE_SURVEY_LABEL, computeGasCost, formatPrice } from "./gasCostPage";
 
 export const ANNUAL_GAS_COST_PATH = "/annual-gas-cost";
+/** ページの title（「ガソリン代 月いくら」「通勤 ガソリン代 月」の検索に合わせて問いを先頭に置く） */
+export const ANNUAL_GAS_COST_PAGE_TITLE = "ガソリン代は月いくら？通勤・年間のガソリン代シミュレーター | FuelLens";
+/** ページの H1 */
+export const ANNUAL_GAS_COST_HEADING = "ガソリン代は月いくら？通勤・年間のガソリン代を計算";
 /** 構造化データの url に使う本番の絶対 URL（canonical は metadataBase からの相対） */
 export const ANNUAL_GAS_COST_CANONICAL_URL = "https://fuel-lens.gadelog.com/annual-gas-cost";
 /** ナビなどに出す短い名前 */
@@ -159,8 +163,49 @@ export function commuteExample(): { monthlyKm: string; monthly: string; yearly: 
   return { monthlyKm: r.monthlyDistance ?? "", monthly: r.monthlyCost ?? "", yearly: r.yearlyCost ?? "" };
 }
 
-/** ページの FAQ と JSON-LD の FAQPage で共有する。本文（計算式・早見表・通勤の例）で答えていることは載せない */
+/** 冒頭の一行回答の典型例: 月 500 km・燃費 15 km/L（早見表の行・列と同じ値） */
+export const QUICK_ANSWER_EXAMPLE = { monthlyKm: 500, efficiency: 15 } as const;
+
+/** "68,000" → "6.8"（万円、小数第 1 位） */
+export function formatManYen(yen: string): string {
+  return (Number(yen.replace(/,/g, "")) / 10000).toFixed(1);
+}
+
+/** 冒頭の一行回答の文。月額は早見表と同じ exampleMonthlyAndYearly、通勤は commuteExample で求める */
+export function quickAnswerText(): string {
+  const { monthlyKm, efficiency } = QUICK_ANSWER_EXAMPLE;
+  const typical = exampleMonthlyAndYearly(monthlyKm, efficiency);
+  const commute = commuteExample();
+  return (
+    `月${monthlyKm}km・燃費${efficiency}km/Lなら月約${typical.monthly}円（年約${formatManYen(typical.yearly)}万円）、` +
+    `片道${COMMUTE_EXAMPLE.oneWayKm}kmの通勤（月${COMMUTE_EXAMPLE.days}日）なら月約${commute.monthly}円です` +
+    `（全国平均のレギュラー${formatPrice(EXAMPLE_PRICE)}円/Lで計算）。`
+  );
+}
+
+/** meta description。一行回答と同じ数字（全国平均の単価・調査日つき）で「ガソリン代 月いくら」に答える */
+export const ANNUAL_GAS_COST_DESCRIPTION = (() => {
+  const { monthlyKm, efficiency } = QUICK_ANSWER_EXAMPLE;
+  const typical = exampleMonthlyAndYearly(monthlyKm, efficiency);
+  return (
+    `ガソリン代は月いくら？月${monthlyKm}km・燃費${efficiency}km/Lなら月約${typical.monthly}円・年約${formatManYen(typical.yearly)}万円` +
+    `（全国平均${formatPrice(EXAMPLE_PRICE)}円/L・${NATIONAL_PRICE_SURVEY_LABEL}調査）。` +
+    "通勤の片道距離と出勤日数からも、月と年のガソリン代を計算できます。登録不要・無料。"
+  );
+})();
+
+/** 「月いくらが普通？」の目安に出す年間走行距離 (km)。月間は 12 で割るだけ */
+export const YEARLY_DISTANCE_EXAMPLES = [5000, 10000] as const;
+export function monthlyFromYearly(yearlyKm: number): string {
+  return Math.round(yearlyKm / 12).toLocaleString("ja-JP");
+}
+
+/** ページの FAQ と JSON-LD の FAQPage で共有する。本文（一行回答・計算式・早見表・通勤の例・距離の目安）で答えていることは載せない */
 export const ANNUAL_GAS_COST_FAQS: FaqEntry[] = [
+  {
+    q: "自分のガソリン代の月平均を知るにはどうすればいいですか？",
+    a: "数か月分の給油レシートの金額を合計し、その月数で割ると実際の月平均になります。単価や季節で月ごとの金額は変わるので、1 か月だけで判断しないのがおすすめです。",
+  },
   {
     q: "年間の金額は今後も同じになりますか？",
     a: "ガソリン単価は時期によって変わるため、年額は「今の単価が続いた場合」の目安です。走行距離や燃費が変わっても金額は変わります。実際の燃費は FuelLens などで記録して確かめると、見積もりが正確になります。",

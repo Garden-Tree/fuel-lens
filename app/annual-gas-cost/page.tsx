@@ -4,14 +4,20 @@ import { otherToolLinks } from "@/lib/publicNav";
 import { Camera, ChevronRight } from "lucide-react";
 import { PublicPageHeader } from "@/components/LegalPage";
 import {
+  ANNUAL_GAS_COST_DESCRIPTION,
   ANNUAL_GAS_COST_FAQS,
+  ANNUAL_GAS_COST_HEADING,
+  ANNUAL_GAS_COST_PAGE_TITLE,
   ANNUAL_GAS_COST_PATH,
   COMMUTE_EXAMPLE,
   EXAMPLE_PRICE,
   MONTHLY_TABLE_EFFICIENCIES,
+  YEARLY_DISTANCE_EXAMPLES,
   buildAnnualGasCostJsonLd,
   buildMonthlyTable,
   commuteExample,
+  monthlyFromYearly,
+  quickAnswerText,
 } from "@/lib/annualGasCostPage";
 import { formatPrice } from "@/lib/gasCostPage";
 import AnnualGasCostCalculator from "./_components/AnnualGasCostCalculator";
@@ -21,9 +27,8 @@ import AppQrHandoff from "@/components/AppQrHandoff";
 
 // ログイン不要の年間・月間ガソリン代シミュレーター（検索からの入口）。計算機だけクライアント部品で、説明と FAQ は静的に描画する。
 
-const TITLE = "年間・月間のガソリン代シミュレーター（通勤にも対応）| FuelLens";
-const DESCRIPTION =
-  "月間・年間の走行距離、または通勤の片道距離と出勤日数、燃費、ガソリン単価を入れるだけで、1か月と1年のガソリン代をすぐに計算。月間の給油量や1kmあたりの金額も出せます。計算式・早見表・通勤の例も掲載。登録不要・無料です。";
+const TITLE = ANNUAL_GAS_COST_PAGE_TITLE;
+const DESCRIPTION = ANNUAL_GAS_COST_DESCRIPTION;
 
 export const metadata: Metadata = {
   title: { absolute: TITLE },
@@ -49,10 +54,12 @@ export default function AnnualGasCostPage() {
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: buildAnnualGasCostJsonLd() }} />
       <PublicPageHeader />
       <main className="mx-auto max-w-[720px] px-4 pb-16 pt-8">
-        <h1 className="text-2xl font-bold">年間・月間のガソリン代シミュレーター</h1>
-        <p className="mt-2 text-[15px] leading-7 text-sub">
-          走行距離、または通勤の片道距離と出勤日数から、1 か月と 1 年のガソリン代を計算します。
-          月間の給油量や 1km あたりの金額も出せます。登録は不要で、入力した値は保存されません。
+        <h1 className="text-2xl font-bold">{ANNUAL_GAS_COST_HEADING}</h1>
+        <p className="mt-3 rounded-2xl border border-accent/40 bg-surface px-4 py-3 text-[15px] font-bold leading-7 text-ink">
+          {quickAnswerText()}
+        </p>
+        <p className="mt-3 text-[15px] leading-7 text-sub">
+          走行距離、または通勤の片道距離と出勤日数から、月と年のガソリン代を計算します。登録は不要で、入力した値は保存されません。
         </p>
 
         <div className="mt-6">
@@ -112,6 +119,21 @@ export default function AnnualGasCostPage() {
           </section>
 
           <section>
+            <h2>月のガソリン代はいくらが普通？</h2>
+            <p>
+              金額はほぼ走行距離と燃費で決まるため、人によって大きく違います。年間の走行距離から月の距離を出し、上の早見表の近い行を見てください。
+            </p>
+            <ul>
+              {YEARLY_DISTANCE_EXAMPLES.map((km) => (
+                <li key={km}>
+                  年間 <span className="num">{km.toLocaleString("ja-JP")}</span> km なら、月約 <span className="num">{monthlyFromYearly(km)}</span> km です。
+                </li>
+              ))}
+            </ul>
+            <p>年間の走行距離は、1 年前と今のオドメーター（積算距離）の差でわかります。</p>
+          </section>
+
+          <section>
             <h2>通勤の例</h2>
             <p>
               片道 <span className="num">{COMMUTE_EXAMPLE.oneWayKm}</span> km、月 <span className="num">{COMMUTE_EXAMPLE.days}</span> 日出勤、
@@ -128,6 +150,9 @@ export default function AnnualGasCostPage() {
               </li>
             </ul>
             <p className="mt-2 text-sm text-sub">休日の走行や寄り道は含みません。それらは「距離から」で別に計算して足してください。</p>
+            <p className="mt-3">
+              会社の通勤手当は、会社ごとの燃費や単価の規定で計算されます。このツールでは自分の車の燃費と今の単価で実際の費用が出せるので、手当と比べる目安になります。
+            </p>
           </section>
 
           <section>
