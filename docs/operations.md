@@ -235,7 +235,7 @@ Vercel Web Analytics（Hobby）はページビューしか取れないため、�
 
 | イベント | パラメータ | 送る場所 |
 |---|---|---|
-| `cta_click` | `page`（公開ページのパス）、`position`（`hero` / `bottom` / `header` / `cta_box` / `calc_result`） | 公開ページの `/app` へのリンクに付けた `data-ga-cta` 属性を、`GoogleAnalytics.tsx` の 1 か所の click listener が拾う（公開ページは Server Component のまま） |
+| `cta_click` | `page`（公開ページのパス）、`position`（`hero` / `bottom` / `header` / `cta_box` / `calc_result` / `calc_next`） | 公開ページの `/app` へのリンクに付けた `data-ga-cta` 属性を、`GoogleAnalytics.tsx` の 1 か所の click listener が拾う（公開ページは Server Component のまま） |
 | `promo_impression` / `promo_click` | `promo_id`、`vehicle_type`（解析待ち）または `page`（公開ツールページ） | 解析待ちの PR を出したとき・リンクを押したとき（`lib/promo/useScanWaitPromo.ts`）、公開ツールページの PR（`components/ToolPagePromoCard.tsx`） |
 | `scan_start` | `mode`（`single` / `pair` / `batch`）、`logged_in`、`trial` | 解析のリクエストを始めるとき（`lib/scan/useScanPipeline.ts` の `analyzeImage`、`lib/scan/useBatchScan.ts` の `start`） |
 | `record_saved` | `source`（`scan` / `pair` / `batch` / `manual` / `calc` / `import` / `restore`）、`is_first`、`distance_mode`（`trip` / `odometer`。取り込み・復元は `mixed`） | 保存に成功したあとだけ（`lib/useRecordEditing.ts` の `addWithDuplicateCheck`、`lib/useRestoreRunner.ts`）。`is_first` は保存前の記録が 0 件か（前者は選択中の車両の一覧、後者は実行時に取り直した全記録） |

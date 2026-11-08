@@ -39,7 +39,7 @@ function publicPages(): Page[] {
   return [
     { path: "/", title: LANDING_TITLE, description: LANDING_DESCRIPTION, answer: "燃費とガソリン代を自動で記録" },
     { path: "/ (trial)", title: LANDING_TITLE, description: LANDING_DESCRIPTION_WITH_TRIAL, answer: "燃費とガソリン代を自動で記録" },
-    { path: "/calc", title: CALC_PAGE_TITLE, description: CALC_DESCRIPTION, answer: "燃費（km/L）を計算" },
+    { path: "/calc", title: CALC_PAGE_TITLE, description: CALC_DESCRIPTION, answer: "満タン法の燃費（km/L）を計算" },
     { path: "/fuel-convert", title: FUEL_CONVERT_PAGE_TITLE, description: FUEL_CONVERT_DESCRIPTION, answer: "相互に換算" },
     { path: "/gas-cost", title: GAS_COST_PAGE_TITLE, description: GAS_COST_DESCRIPTION, answer: `普通車で約${standard.cost}円` },
     { path: "/annual-gas-cost", title: ANNUAL_GAS_COST_PAGE_TITLE, description: ANNUAL_GAS_COST_DESCRIPTION, answer: `月約${annual.monthly}円` },

@@ -116,7 +116,7 @@ export default function GasCostPage() {
               <li>
                 自分の車の燃費（km/L）を確かめます。実燃費は
                 <Link href="/calc" className="text-accent underline underline-offset-2 hover:no-underline">
-                  満タン法 燃費計算ツール
+                  燃費計算ツール（満タン法）
                 </Link>
                 で測れます。
               </li>

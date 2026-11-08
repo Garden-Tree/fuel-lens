@@ -132,7 +132,7 @@ export default function FuelConvertPage() {
             <p className="mt-3">
               海外の車の燃費を日本の感覚で比べたいときは、km/L に換算すると見比べやすくなります。自分の車の実燃費は
               <Link href="/calc" className={linkClass}>
-                満タン法 燃費計算ツール
+                燃費計算ツール（満タン法）
               </Link>
               で測れ、燃料費の見積もりは
               <Link href="/gas-cost" className={linkClass}>

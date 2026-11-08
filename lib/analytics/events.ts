@@ -15,9 +15,10 @@ export type CtaPage = (typeof CTA_PAGES)[number];
 /**
  * CTA の位置（リンクの `data-ga-cta` 属性の値）。
  * hero = ランディングの最初の画面、bottom = ランディングの最後、header = ヘッダーの「今すぐ始める」、
- * cta_box = ツールページ本文の「アプリを使う」の枠、calc_result = 燃費計算の「この内容で FuelLens に記録する」
+ * cta_box = ツールページ本文の「アプリを使う」の枠、calc_result = 燃費計算の「この内容で FuelLens に記録する」、
+ * calc_next = 燃費計算の結果の下の「次回からは写真 1 枚で自動記録」
  */
-export const CTA_POSITIONS = ["hero", "bottom", "header", "cta_box", "calc_result"] as const;
+export const CTA_POSITIONS = ["hero", "bottom", "header", "cta_box", "calc_result", "calc_next"] as const;
 export type CtaPosition = (typeof CTA_POSITIONS)[number];
 
 /** CTA のリンクに付ける属性名（components/GoogleAnalytics.tsx の 1 か所のクリック listener が拾う） */

@@ -1,5 +1,19 @@
 import { describe, expect, it } from "vitest";
-import { CALC_FAQS, buildCalcJsonLd, calcRecordHref, computeCalc } from "@/lib/calcPage";
+import {
+  CALC_DESCRIPTION,
+  CALC_EXAMPLE,
+  CALC_FAQS,
+  CALC_H1,
+  CALC_PAGE_TITLE,
+  buildCalcJsonLd,
+  calcExample,
+  calcOgFormula,
+  calcQuickAnswerText,
+  calcRecordHref,
+  computeCalc,
+} from "@/lib/calcPage";
+import { calculateFuelMetrics } from "@/lib/calculations";
+import { CAR_TYPE_EFFICIENCIES } from "@/lib/gasCostPage";
 import { parseManualPrefill } from "@/lib/manualPrefill";
 
 describe("computeCalc", () => {
@@ -83,5 +97,53 @@ describe("buildCalcJsonLd", () => {
       name: CALC_FAQS[0].q,
       acceptedAnswer: { "@type": "Answer", text: CALC_FAQS[0].a },
     });
+  });
+});
+
+describe("タイトル・見出し・一行回答", () => {
+  const len = (str: string) => [...str].length;
+
+  it("タイトルは「燃費計算」で始まり、` | FuelLens` を除いて 32 字以内", () => {
+    const title = CALC_PAGE_TITLE.replace(/ \| FuelLens$/, "");
+    expect(title.startsWith("燃費計算")).toBe(true);
+    expect(title).toContain("満タン法");
+    expect(len(title)).toBeLessThanOrEqual(32);
+    expect(CALC_H1).toContain("燃費計算");
+    expect(CALC_DESCRIPTION).toContain("登録不要・無料");
+  });
+
+  it("一行回答の燃費は calculateFuelMetrics の結果と一致する（手で書いた数字ではない）", () => {
+    const { fuel_efficiency, price_per_unit } = calculateFuelMetrics(CALC_EXAMPLE.distance, CALC_EXAMPLE.amount, CALC_EXAMPLE.cost);
+    const example = calcExample();
+    expect(example.efficiency).toBe(fuel_efficiency!.toFixed(2));
+    expect(example.pricePerUnit).toBe(price_per_unit!.toFixed(1));
+    expect(example.costPerKm).toBe((CALC_EXAMPLE.cost / CALC_EXAMPLE.distance).toFixed(1));
+    expect(calcQuickAnswerText()).toContain(`燃費は${fuel_efficiency!.toFixed(2)}km/L`);
+    expect(calcQuickAnswerText()).toContain(`${CALC_EXAMPLE.distance}km`);
+    expect(calcQuickAnswerText()).toContain(`${CALC_EXAMPLE.amount}L`);
+  });
+
+  it("OG 画像の式は一行回答と同じ計算例（距離・給油量・燃費）", () => {
+    const parts = calcOgFormula();
+    expect(parts.map((p) => p.text).join(" ")).toBe(
+      `${CALC_EXAMPLE.distance} km ÷ ${CALC_EXAMPLE.amount} L = ${calcExample().efficiency} km/L`
+    );
+    expect(parts.filter((p) => p.kind === "result")).toEqual([{ text: calcExample().efficiency, kind: "result" }]);
+  });
+});
+
+describe("CALC_FAQS", () => {
+  it("2〜4 問で、計算式の問いは計算例と同じ数字を使う", () => {
+    expect(CALC_FAQS.length).toBeGreaterThanOrEqual(2);
+    expect(CALC_FAQS.length).toBeLessThanOrEqual(4);
+    const formula = CALC_FAQS.find((f) => f.q === "燃費計算の式は？")!;
+    const { pricePerUnit, costPerKm } = calcExample();
+    expect(formula.a).toContain(`単価は${pricePerUnit}円/L`);
+    expect(formula.a).toContain(`1kmあたり${costPerKm}円`);
+  });
+
+  it("燃費の目安は CAR_TYPE_EFFICIENCIES の値をそのまま使う", () => {
+    const typical = CALC_FAQS.find((f) => f.q.includes("目安"))!;
+    for (const c of CAR_TYPE_EFFICIENCIES) expect(typical.a).toContain(`${c.label}で約${c.efficiency}km/L`);
   });
 });
