@@ -105,15 +105,17 @@ export function routeWarikanLink(route: RouteEntry, people: number = 4): string 
   return `${WARIKAN_PATH}?${buildWarikanQuery(routeWarikanInput(route, people))}#${WARIKAN_CALCULATOR_ID}`;
 }
 
-/** 近くの区間（同じ都市を含む区間を優先し、足りなければ一覧の前後で埋める）。最大 3 件 */
+/**
+ * 近くの区間（同じ都市を含む区間を優先し、足りなければ一覧の前後で埋める）。最大 3 件。
+ * どちらも一覧で近い順に選ぶので、同じ都市から出る行楽地の区間（一覧でまとめて並べている）どうしがつながる
+ */
 export function neighborRoutes(route: RouteEntry, max = 3): RouteEntry[] {
   const cities = new Set(route.name.split("〜"));
-  const others = ROUTES.filter((r) => r.id !== route.id);
-  const sharing = others.filter((r) => r.name.split("〜").some((c) => cities.has(c)));
   const index = ROUTES.findIndex((r) => r.id === route.id);
-  const nearby = [...others].sort(
+  const nearby = ROUTES.filter((r) => r.id !== route.id).sort(
     (a, b) => Math.abs(ROUTES.indexOf(a) - index) - Math.abs(ROUTES.indexOf(b) - index)
   );
+  const sharing = nearby.filter((r) => r.name.split("〜").some((c) => cities.has(c)));
   const result: RouteEntry[] = [];
   for (const r of [...sharing, ...nearby]) {
     if (result.length >= max) break;

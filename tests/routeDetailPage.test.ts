@@ -113,6 +113,13 @@ describe("近くの区間・構造化データ", () => {
     }
   });
 
+  it("同じ都市の区間は一覧で近い順に選ぶ（まとめて並べた行楽地の区間どうしがつながる）", () => {
+    const route = findRoute("tokyo-karuizawa")!;
+    const index = ROUTES.indexOf(route);
+    const ids = neighborRoutes(route).map((r) => r.id);
+    expect(ids).toEqual([ROUTES[index - 1].id, ROUTES[index + 1].id, ROUTES[index - 2].id]);
+  });
+
   it("JSON-LD は WebPage + BreadcrumbList で < をエスケープする", () => {
     for (const route of ROUTES) {
       const json = buildRouteDetailJsonLd(route);
