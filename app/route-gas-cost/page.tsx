@@ -186,12 +186,13 @@ export default function RouteGasCostPage() {
                 {ROUTE_DISTANCE_SOURCE.name}
               </a>
               で各区間の IC 間を検索し、高速道路だけを通る経路のうち最短の距離（{ROUTE_DISTANCE_SOURCE.retrieved}取得）と、
-              同じ経路の ETC 料金（{ROUTE_DISTANCE_SOURCE.tollRetrieved}取得）を使いました。料金改定や新しい道路の開通で変わることがあります。
+              同じ経路の ETC 料金（{ROUTE_DISTANCE_SOURCE.tollRetrieved}取得）を使いました。下の一覧で取得日を書いた区間は、距離と料金をその日に取得しています。料金改定や新しい道路の開通で変わることがあります。
             </p>
             <ul className="mt-2 space-y-1 text-xs leading-relaxed text-sub">
               {ROUTES.map((route) => (
                 <li key={route.id}>
                   {route.name}: {route.from}〜{route.to}（{route.via}）<span className="num">{route.sourceKm}</span> km
+                  {route.retrieved && `（${route.retrieved}取得）`}
                 </li>
               ))}
             </ul>

@@ -202,7 +202,7 @@ export default async function RouteDetailPage({ params }: Props) {
                 <a href={ROUTE_DISTANCE_SOURCE.url} target="_blank" rel="noopener noreferrer" className={LINK}>
                   {ROUTE_DISTANCE_SOURCE.name}
                 </a>
-                で{ROUTE_DISTANCE_SOURCE.tollRetrieved}に確認しました。
+                で{route.retrieved ?? ROUTE_DISTANCE_SOURCE.tollRetrieved}に確認しました。
               </li>
               <li>距離は IC 間の高速道路の距離を 5 km 単位に丸めた値で、IC までの一般道は含みません。</li>
             </ul>
