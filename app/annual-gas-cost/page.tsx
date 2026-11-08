@@ -153,6 +153,17 @@ export default function AnnualGasCostPage() {
             <p className="mt-3">
               会社の通勤手当は、会社ごとの燃費や単価の規定で計算されます。このツールでは自分の車の燃費と今の単価で実際の費用が出せるので、手当と比べる目安になります。
             </p>
+            <p className="mt-3 text-sm text-sub">
+              帰省や旅行など 1 回分の費用は、
+              <Link href="/gas-cost" className={LINK}>
+                距離からガソリン代を計算するツール
+              </Link>
+              や、高速代も足した
+              <Link href="/route-gas-cost" className={LINK}>
+                東京〜大阪など主要区間のガソリン代と高速代
+              </Link>
+              で調べられます。
+            </p>
           </section>
 
           <section>

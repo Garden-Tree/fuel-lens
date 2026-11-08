@@ -2,7 +2,8 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { otherToolLinks } from "@/lib/publicNav";
 import { PublicPageHeader } from "@/components/LegalPage";
-import { CAR_TYPE_EFFICIENCIES, CAR_TYPE_EFFICIENCY_NOTE, formatPrice } from "@/lib/gasCostPage";
+import { ANNUAL_GAS_COST_PATH } from "@/lib/annualGasCostPage";
+import { CAR_TYPE_EFFICIENCIES, CAR_TYPE_EFFICIENCY_NOTE, GAS_COST_PATH, formatPrice } from "@/lib/gasCostPage";
 import { NATIONAL_GAS_PRICE } from "@/lib/nationalGasPrice";
 import {
   ROUTES,
@@ -162,6 +163,17 @@ export default function RouteGasCostPage() {
             </div>
             <p className="mt-2 text-xs leading-relaxed text-sub">
               {CAR_TYPE_EFFICIENCY_NOTE}距離は IC 間の高速道路の距離を 5 km 単位に丸めた値で、IC までの一般道の距離は含みません。
+            </p>
+            <p className="mt-3 text-sm">
+              表にない区間は
+              <Link href={GAS_COST_PATH} className={LINK}>
+                距離からガソリン代を計算するツール
+              </Link>
+              で、通勤など毎月の費用は
+              <Link href={ANNUAL_GAS_COST_PATH} className={LINK}>
+                ガソリン代が月いくら・年いくらかの計算ツール
+              </Link>
+              で出せます。
             </p>
           </section>
 

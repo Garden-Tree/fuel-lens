@@ -3,6 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { otherToolLinks } from "@/lib/publicNav";
 import { PublicPageHeader } from "@/components/LegalPage";
+import { ANNUAL_GAS_COST_PATH } from "@/lib/annualGasCostPage";
 import { CAR_TYPE_EFFICIENCY_NOTE } from "@/lib/gasCostPage";
 import { NATIONAL_GAS_PRICE } from "@/lib/nationalGasPrice";
 import {
@@ -210,6 +211,13 @@ export default async function RouteDetailPage({ params }: Props) {
               <a href={routeGasCostLink(km)} className={LINK}>
                 自分の車の燃費と単価で計算する
               </a>
+            </p>
+            <p className="mt-1 text-sm text-sub">
+              通勤など毎月の運転なら
+              <Link href={ANNUAL_GAS_COST_PATH} className={LINK}>
+                ガソリン代が月いくら・年いくらか
+              </Link>
+              も計算できます。
             </p>
           </section>
 

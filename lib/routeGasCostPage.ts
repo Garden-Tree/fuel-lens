@@ -120,7 +120,8 @@ export const ROUTES: readonly RouteEntry[] = [
  */
 export const ROUTE_SNIPPET_IDS = ["tokyo-osaka", "nagoya-osaka", "osaka-fukuoka"] as const;
 
-function snippetRoutes(): RouteEntry[] {
+/** ROUTE_SNIPPET_IDS の区間（/gas-cost からのリンクにも使う） */
+export function snippetRoutes(): RouteEntry[] {
   return ROUTE_SNIPPET_IDS.map((id) => ROUTES.find((r) => r.id === id)!);
 }
 

@@ -75,6 +75,17 @@ export default function WarikanPage() {
               1 人あたりは、選んだ単位（1 円・10 円・100 円）で切り上げます。切り上げるのは集めた額が合計に足りなくならないようにするためで、
               その分だけ合計より少し多く集まります（上の例では <span className="num">{yen(example.all.collected)}</span> 円）。
             </p>
+            <p className="mt-3 text-sm text-sub">
+              距離と高速代は
+              <Link href="/route-gas-cost" className="text-accent underline underline-offset-2 hover:no-underline">
+                東京〜大阪など主要区間のガソリン代と高速代
+              </Link>
+              で調べられます。割らずに 1 台分のガソリン代だけ知りたいときは
+              <Link href="/gas-cost" className="text-accent underline underline-offset-2 hover:no-underline">
+                距離からガソリン代を計算するツール
+              </Link>
+              へ。
+            </p>
           </section>
 
           <section>
