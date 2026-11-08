@@ -33,6 +33,8 @@ import {
 } from "@/lib/routeDetailPage";
 import RouteCta from "../_components/RouteCta";
 import CostPair from "../_components/CostPair";
+import ToolPagePromoCard from "@/components/ToolPagePromoCard";
+import { findToolPagePromo } from "@/lib/promo/toolPage";
 
 // 区間ごとのガソリン代・高速代のページ（「大阪から東京 車 ガソリン代」などの検索からの入口）。ROUTES から静的に生成する。
 
@@ -57,6 +59,9 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     openGraph: { title, description, url: path, type: "website", locale: "ja_JP", siteName: "FuelLens" },
   };
 }
+
+// 高速代の下に 1 回だけ出す提携先（法人 ETC カード）
+const PROMO = findToolPagePromo(ROUTE_GAS_COST_PATH);
 
 const LINK = "text-accent underline underline-offset-2 hover:no-underline";
 
@@ -126,6 +131,7 @@ export default async function RouteDetailPage({ params }: Props) {
                 </dd>
               </div>
             </dl>
+            <ToolPagePromoCard promo={PROMO} page={ROUTE_GAS_COST_PATH} liters={null} />
           </section>
 
           <section>

@@ -27,6 +27,12 @@ const INSWEB_CAR_HREF = "https://px.a8.net/svt/ejp?a8mat=4BEL1G+2ZRITE+2PS+15OZH
 const INSWEB_DISCLOSURE = "FuelLens は紹介した保険会社の見積りから報酬を受け取ることがあります。";
 
 /**
+ * 法人・個人事業主向けの 2 件（ETC協同組合・高速情報協同組合、A8 で 2026-11-08 提携）の開示文。
+ * 広告主の NG 語（「申し込み」「発行」など。tests/toolPagePromo.test.ts で確認）を含めないため、ほかの提携先とは文言を変える
+ */
+const BUSINESS_CARD_DISCLOSURE = "このリンクから FuelLens が報酬を受け取ることがあります。";
+
+/**
  * 同じページに複数あるときは、リンクが入っている先頭の 1 件を出す（findToolPagePromo）。
  * /gas-cost は出光でんきのリンクが入ればそちら、入るまではインズウェブ。
  */
@@ -69,6 +75,26 @@ export const TOOL_PAGE_PROMOS: readonly ToolPagePromo[] = [
     body: "車の維持費を見直すなら、自動車保険も。一括見積りで複数社の保険料を比べられます（無料）。",
     cta: "無料で見積もる",
     disclosure: INSWEB_DISCLOSURE,
+  },
+  {
+    id: "etc-kumiai-fuel-card",
+    pages: ["/expense"],
+    // 法人専用ガソリンカード（ETC協同組合、A8）。広告主の NG 語: 審査なし・誰でも通る・ブラック・スタンドのブランド名・発行・申し込み。
+    // 使えるスタンドのブランド名は出さない（「全国の対応スタンド」と書く）
+    href: "https://px.a8.net/svt/ejp?a8mat=4BGGBM+5FA8QQ+3EV2+HV7V6",
+    body: "経費の給油をカード 1 枚にまとめるなら、法人・個人事業主向けのガソリンカードも。年会費・手数料は無料で、明細がまとまるので精算が楽になります（組合加入の出資金 1 万円、脱退時返金）。",
+    cta: "資料を請求する",
+    disclosure: BUSINESS_CARD_DISCLOSURE,
+  },
+  {
+    id: "kosoku-kumiai-etc-card",
+    // 区間ページ（/route-gas-cost/[slug]）の高速代の下に出す。一覧（/route-gas-cost）には置かない
+    pages: ["/route-gas-cost"],
+    // 法人 ETC カード（高速情報協同組合、A8）。広告主の NG 語: ブラック・審査なし・誰でも通る・カード会社名
+    href: "https://px.a8.net/svt/ejp?a8mat=4BGGBM+5IUUDE+1WW0+5YJRM",
+    body: "仕事で高速をよく使うなら、法人・個人事業主向けの ETC 専用カードも。クレジット機能なしで、新しい会社や個人事業主でも作れます（組合加入の出資金 1 万円、脱退時返金）。",
+    cta: "詳しく見る",
+    disclosure: BUSINESS_CARD_DISCLOSURE,
   },
 ];
 
