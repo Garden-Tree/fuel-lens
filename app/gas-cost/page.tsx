@@ -24,6 +24,7 @@ import DistanceCostTable from "./_components/DistanceCostTable";
 import { aiAvailabilityCopy } from "@/lib/landingPage";
 import { isTrialEnabled } from "@/lib/server/analyze/trialCookie";
 import AppQrHandoff from "@/components/AppQrHandoff";
+import { routePath, snippetRoutes } from "@/lib/routeGasCostPage";
 
 // ログイン不要のガソリン代計算ページ（検索からの入口）。計算機だけクライアント部品で、説明と FAQ は静的に描画する。
 
@@ -97,9 +98,18 @@ export default function GasCostPage() {
             <h2>距離からガソリン代を出す手順</h2>
             <ol>
               <li>
-                地図アプリで目的地までの走行距離（km）を調べます（主要区間は
+                地図アプリで目的地までの走行距離（km）を調べます（
+                {snippetRoutes().map((r, i) => (
+                  <span key={r.id}>
+                    {i > 0 && "・"}
+                    <Link href={routePath(r)} className="text-accent underline underline-offset-2 hover:no-underline">
+                      {r.name}
+                    </Link>
+                  </span>
+                ))}
+                などの主要区間は、高速代も足した
                 <Link href="/route-gas-cost" className="text-accent underline underline-offset-2 hover:no-underline">
-                  区間別のガソリン代
+                  区間別のガソリン代と高速代
                 </Link>
                 に）。
               </li>

@@ -18,6 +18,7 @@ import {
   routeGasCostOg,
   routePriceLabel,
   routeTotal,
+  snippetRoutes,
   standardTotal,
   type RouteEntry,
 } from "@/lib/routeGasCostPage";
@@ -144,5 +145,11 @@ describe("ページの文言と構造化データ", () => {
     const data = JSON.parse(json);
     expect(data["@graph"].map((n: { "@type": string }) => n["@type"])).toEqual(["WebPage", "FAQPage"]);
     expect(data["@graph"][0].url).toBe("https://fuel-lens.gadelog.com/route-gas-cost");
+  });
+});
+
+describe("代表の区間（/gas-cost からのリンク）", () => {
+  it("snippetRoutes は ROUTE_SNIPPET_IDS の順に区間を返す", () => {
+    expect(snippetRoutes().map((r) => r.id)).toEqual([...ROUTE_SNIPPET_IDS]);
   });
 });

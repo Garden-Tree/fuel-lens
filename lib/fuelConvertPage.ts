@@ -9,6 +9,12 @@ import type { FaqEntry } from "./calcPage";
 export const FUEL_CONVERT_PATH = "/fuel-convert";
 /** ナビ・フッター用の短い名前 */
 export const FUEL_CONVERT_TITLE = "燃費の単位換算";
+/** 検索結果のタイトル（absolute で指定する） */
+export const FUEL_CONVERT_PAGE_TITLE = "燃費の単位換算ツール（km/L・L/100km・mpg）| FuelLens";
+/** meta description */
+export const FUEL_CONVERT_DESCRIPTION =
+  "km/L・L/100km・mpg（US/UK）の燃費を相互に換算。1つの値を入れるだけで4つの単位を同時に表示し、ガソリン単価から1kmあたりの燃料費も出せます。換算の式と早見表つき。登録不要・無料。";
+
 /** 構造化データの url に使う本番の絶対 URL */
 export const FUEL_CONVERT_CANONICAL_URL = "https://fuel-lens.gadelog.com/fuel-convert";
 

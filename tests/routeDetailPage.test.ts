@@ -35,7 +35,8 @@ describe("区間ページの一覧", () => {
   });
 
   it("タイトル・説明文・canonical", () => {
-    expect(routePageTitle(tokyoOsaka)).toBe("東京〜大阪の車のガソリン代と高速代はいくら？片道・往復の目安 | FuelLens");
+    const t0 = standardTotal(tokyoOsaka);
+    expect(routePageTitle(tokyoOsaka)).toBe(`東京〜大阪の車のガソリン代と高速代は片道約${yenRough(t0.totalOneWay!)}円 | FuelLens`);
     expect(routeCanonicalUrl(tokyoOsaka)).toBe("https://fuel-lens.gadelog.com/route-gas-cost/tokyo-osaka");
     for (const r of ROUTES) {
       const d = routePageDescription(r);
@@ -89,6 +90,8 @@ describe("車種別の合計と割り勘", () => {
     const gasRound = standardTotal(route).gasRoundTrip;
     expect(routeSplits(route)[0].perPerson).toBe(Math.ceil(gasRound / 2 / 100) * 100);
     expect(routePageDescription(route)).not.toContain("高速代");
+    expect(routePageTitle(route)).not.toContain("高速代");
+    expect(routePageTitle(route)).toContain(`片道約${yenRough(standardTotal(route).gasOneWay)}円`);
     expect(routeDetailOg(route).content.formula.some((p) => p.kind === "result")).toBe(true);
   });
 });
@@ -103,6 +106,11 @@ describe("近くの区間・構造化データ", () => {
     }
     const names = neighborRoutes(tokyoOsaka).map((r) => r.name);
     expect(names.every((n) => n.includes("東京") || n.includes("大阪"))).toBe(true);
+    // 現在の全区間で、近くの区間は起点か終点の都市が同じ区間だけで埋まる（一覧の前後で埋める分は使わない）
+    for (const route of ROUTES) {
+      const cities = route.name.split("〜");
+      for (const n of neighborRoutes(route)) expect(n.name.split("〜").some((c) => cities.includes(c)), `${route.id} → ${n.id}`).toBe(true);
+    }
   });
 
   it("JSON-LD は WebPage + BreadcrumbList で < をエスケープする", () => {

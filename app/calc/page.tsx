@@ -3,7 +3,7 @@ import Link from "next/link";
 import { otherToolLinks } from "@/lib/publicNav";
 import { Camera, ChevronRight } from "lucide-react";
 import { PublicPageHeader } from "@/components/LegalPage";
-import { CALC_FAQS, CALC_PATH, buildCalcJsonLd } from "@/lib/calcPage";
+import { CALC_DESCRIPTION, CALC_FAQS, CALC_PAGE_TITLE, CALC_PATH, buildCalcJsonLd } from "@/lib/calcPage";
 import FuelCalculator from "./_components/FuelCalculator";
 import { aiAvailabilityCopy } from "@/lib/landingPage";
 import { isTrialEnabled } from "@/lib/server/analyze/trialCookie";
@@ -11,9 +11,8 @@ import AppQrHandoff from "@/components/AppQrHandoff";
 
 // ログイン不要の燃費計算ページ（検索からの入口）。計算機だけクライアント部品で、説明と FAQ は静的に描画する。
 
-const TITLE = "満タン法 計算ツール｜走行距離と給油量から燃費（km/L）を計算 | FuelLens";
-const DESCRIPTION =
-  "満タン法の計算がすぐできます。走行距離と給油量を入れるだけで、燃費（km/L）を計算。支払総額からガソリン単価（円/L）と1kmあたりの燃料費も出せます。正しい測り方のコツやよくある間違いも解説。登録不要・無料。";
+const TITLE = CALC_PAGE_TITLE;
+const DESCRIPTION = CALC_DESCRIPTION;
 
 export const metadata: Metadata = {
   title: { absolute: TITLE },
