@@ -19,6 +19,7 @@ import {
   routeTotal,
   standardTotal,
   totalFormula,
+  yenRough,
   type RouteEntry,
   type RouteTotal,
 } from "./routeGasCostPage";
@@ -36,8 +37,14 @@ export function routeCanonicalUrl(route: RouteEntry): string {
   return `${SITE_ORIGIN}${routePath(route)}`;
 }
 
+/**
+ * タイトル。モバイルの検索結果で切れない長さ（` | FuelLens` を除いて 32 字以内）に、区間名と片道の金額を先に出す。
+ * 金額は説明文と同じ概数（普通車・ガソリン代 + 高速代。高速代が未確認ならガソリン代だけ）
+ */
 export function routePageTitle(route: RouteEntry): string {
-  return `${route.name}の車のガソリン代と高速代はいくら？片道・往復の目安 | FuelLens`;
+  const t = standardTotal(route);
+  if (t.totalOneWay == null) return `${route.name}の車のガソリン代は片道約${yenRough(t.gasOneWay)}円 | FuelLens`;
+  return `${route.name}の車のガソリン代と高速代は片道約${yenRough(t.totalOneWay)}円 | FuelLens`;
 }
 
 export function routePageDescription(route: RouteEntry): string {
@@ -48,11 +55,6 @@ export function routePageDescription(route: RouteEntry): string {
     return `${route.name}（約${km}km）を車で走ったときのガソリン代の目安を車種別に計算。普通車なら片道約${yenRough(t.gasOneWay)}円。${reverse}も同じ金額です。`;
   }
   return `${route.name}（約${km}km）を車で走ると、普通車でガソリン代と高速代（ETC）の合計は片道約${yenRough(t.totalOneWay)}円・往復約${yenRough(t.totalRoundTrip)}円。${reverse}も同じです。車種別・人数で割った額も。`;
-}
-
-/** 説明文用の概数（100 円単位で四捨五入、3 桁区切り） */
-function yenRough(value: number): string {
-  return (Math.round(value / 100) * 100).toLocaleString("ja-JP");
 }
 
 export type RouteCarRow = {

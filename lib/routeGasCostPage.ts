@@ -124,17 +124,6 @@ function snippetRoutes(): RouteEntry[] {
   return ROUTE_SNIPPET_IDS.map((id) => ROUTES.find((r) => r.id === id)!);
 }
 
-export const ROUTE_GAS_COST_PAGE_TITLE = `車のガソリン代と高速代｜${snippetRoutes()
-  .slice(0, 2)
-  .map((r) => r.name)
-  .join("・")}など主要${ROUTES.length}区間の片道・往復 | FuelLens`;
-
-export const ROUTE_GAS_COST_DESCRIPTION =
-  `${snippetRoutes()
-    .map((r) => r.name.replace("〜", "から"))
-    .join("・")}など主要${ROUTES.length}区間を車で走ったときの、ガソリン代と高速代（ETC）の合計を片道・往復でまとめました。` +
-  "逆方向（大阪から東京など）も同じ金額です。軽自動車・普通車・ハイブリッド車・ミニバン別のガソリン代も。";
-
 /** 表に出す距離（km）。出典の値を 5 km 単位に丸めた「約○km」。ガソリン代もこの距離で計算する */
 export function displayKm(sourceKm: number): number {
   return Math.round(sourceKm / 5) * 5;
@@ -186,6 +175,28 @@ export const STANDARD_EFFICIENCY: number = CAR_TYPE_EFFICIENCIES.find((c) => c.i
 export function standardTotal(route: RouteEntry, price: number = ROUTE_PRICE): RouteTotal {
   return routeTotal(route, STANDARD_EFFICIENCY, route.toll?.standard ?? null, price);
 }
+
+/** 説明文・タイトル用の概数（100 円単位で四捨五入、3 桁区切り） */
+export function yenRough(value: number): string {
+  return (Math.round(value / 100) * 100).toLocaleString("ja-JP");
+}
+
+/**
+ * 一覧ページのタイトル。モバイルの検索結果で切れない長さ（` | FuelLens` を除いて 32 字以内）にするため、区間名は代表の 1 つだけ
+ */
+export const ROUTE_GAS_COST_PAGE_TITLE = `車のガソリン代と高速代｜${snippetRoutes()[0].name}など主要${ROUTES.length}区間の片道・往復 | FuelLens`;
+
+/** 一覧ページの説明文。モバイルで切れる前（先頭 70 字以内）に代表の区間の金額を出す */
+export const ROUTE_GAS_COST_DESCRIPTION = (() => {
+  const [first, ...rest] = snippetRoutes();
+  const t = standardTotal(first);
+  const fromTo = (r: RouteEntry) => r.name.replace("〜", "から");
+  return (
+    `${fromTo(first)}は普通車でガソリン代と高速代の合計が片道約${yenRough(t.totalOneWay ?? t.gasOneWay)}円。` +
+    `${rest.map(fromTo).join("・")}など主要${ROUTES.length}区間の合計を片道・往復でまとめました（逆方向も同じ金額）。` +
+    "軽自動車・ハイブリッド車・ミニバン別のガソリン代も。"
+  );
+})();
 
 export type RouteCostRow = {
   route: RouteEntry;

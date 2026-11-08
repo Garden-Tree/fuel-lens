@@ -35,7 +35,8 @@ describe("区間ページの一覧", () => {
   });
 
   it("タイトル・説明文・canonical", () => {
-    expect(routePageTitle(tokyoOsaka)).toBe("東京〜大阪の車のガソリン代と高速代はいくら？片道・往復の目安 | FuelLens");
+    const t0 = standardTotal(tokyoOsaka);
+    expect(routePageTitle(tokyoOsaka)).toBe(`東京〜大阪の車のガソリン代と高速代は片道約${yenRough(t0.totalOneWay!)}円 | FuelLens`);
     expect(routeCanonicalUrl(tokyoOsaka)).toBe("https://fuel-lens.gadelog.com/route-gas-cost/tokyo-osaka");
     for (const r of ROUTES) {
       const d = routePageDescription(r);
@@ -89,6 +90,8 @@ describe("車種別の合計と割り勘", () => {
     const gasRound = standardTotal(route).gasRoundTrip;
     expect(routeSplits(route)[0].perPerson).toBe(Math.ceil(gasRound / 2 / 100) * 100);
     expect(routePageDescription(route)).not.toContain("高速代");
+    expect(routePageTitle(route)).not.toContain("高速代");
+    expect(routePageTitle(route)).toContain(`片道約${yenRough(standardTotal(route).gasOneWay)}円`);
     expect(routeDetailOg(route).content.formula.some((p) => p.kind === "result")).toBe(true);
   });
 });

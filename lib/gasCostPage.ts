@@ -10,7 +10,7 @@ import { NATIONAL_GAS_PRICE } from "./nationalGasPrice";
 export const GAS_COST_PATH = "/gas-cost";
 /** ページ内の計算機への移動先（距離別の目安表の各行からリンクする） */
 export const GAS_COST_CALCULATOR_ID = "gas-cost-calculator";
-export const GAS_COST_PAGE_TITLE = "ガソリン代計算ツール｜300km走るといくら？普通車・軽自動車の目安 | FuelLens";
+export const GAS_COST_PAGE_TITLE = "ガソリン代計算ツール｜300km走るといくら？普通車・軽自動車 | FuelLens";
 /** 構造化データの url に使う本番の絶対 URL（canonical は metadataBase からの相対 `/gas-cost`） */
 export const GAS_COST_CANONICAL_URL = "https://fuel-lens.gadelog.com/gas-cost";
 

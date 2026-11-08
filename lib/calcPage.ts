@@ -9,6 +9,12 @@ import { PLAUSIBILITY_LIMITS } from "./analyze";
 import { buildManualPrefillHref } from "./manualPrefill";
 
 export const CALC_PATH = "/calc";
+/** 検索結果のタイトル（ルートレイアウトの `%s | FuelLens` を使わず absolute で指定する） */
+export const CALC_PAGE_TITLE = "満タン法 計算ツール｜走行距離と給油量から燃費（km/L）を計算 | FuelLens";
+/** meta description */
+export const CALC_DESCRIPTION =
+  "満タン法の計算がすぐできます。走行距離と給油量を入れるだけで、燃費（km/L）を計算。支払総額からガソリン単価（円/L）と1kmあたりの燃料費も出せます。正しい測り方のコツやよくある間違いも解説。登録不要・無料。";
+
 /** 構造化データの url に使う本番の絶対 URL（canonical は metadataBase からの相対 `/calc`） */
 export const CALC_CANONICAL_URL = "https://fuel-lens.gadelog.com/calc";
 

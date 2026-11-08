@@ -4,7 +4,9 @@ import { otherToolLinks } from "@/lib/publicNav";
 import { Camera, ChevronRight } from "lucide-react";
 import { PublicPageHeader } from "@/components/LegalPage";
 import {
+  FUEL_CONVERT_DESCRIPTION,
   FUEL_CONVERT_FAQS,
+  FUEL_CONVERT_PAGE_TITLE,
   FUEL_CONVERT_PATH,
   MILE_KM,
   QUICK_TABLE_KMPL,
@@ -20,9 +22,8 @@ import AppQrHandoff from "@/components/AppQrHandoff";
 
 // ログイン不要の燃費の単位換算ページ（検索からの入口）。換算機だけクライアント部品で、説明と FAQ は静的に描画する。
 
-const TITLE = "燃費の単位換算ツール（km/L・L/100km・mpg）| FuelLens";
-const DESCRIPTION =
-  "km/L・L/100km・mpg（US/UK）の燃費を相互に換算。1つの値を入れるだけで4つの単位を同時に表示し、ガソリン単価から1kmあたりの燃料費も出せます。換算の式と早見表つき。登録不要・無料。";
+const TITLE = FUEL_CONVERT_PAGE_TITLE;
+const DESCRIPTION = FUEL_CONVERT_DESCRIPTION;
 
 export const metadata: Metadata = {
   title: { absolute: TITLE },
