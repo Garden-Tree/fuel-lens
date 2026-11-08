@@ -173,7 +173,7 @@ export default function AnnualGasCostPage() {
                 <strong>実燃費を把握する。</strong>
                 カタログ燃費と実際の燃費は異なることが多いので、満タン法で測っておくと見積もりも正確になります。測り方は
                 <Link href="/calc" className={LINK}>
-                  満タン法 燃費計算ツール
+                  燃費計算ツール（満タン法）
                 </Link>
                 で解説しています。
               </li>

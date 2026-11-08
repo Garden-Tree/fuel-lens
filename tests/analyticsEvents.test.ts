@@ -70,6 +70,7 @@ describe("ctaClickParamsOf", () => {
   it("公開ページの既知の位置だけ返す", () => {
     expect(ctaClickParamsOf("/", "hero")).toEqual({ page: "/", position: "hero" });
     expect(ctaClickParamsOf("/calc", "calc_result")).toEqual({ page: "/calc", position: "calc_result" });
+    expect(ctaClickParamsOf("/calc", "calc_next")).toEqual({ page: "/calc", position: "calc_next" });
     expect(ctaClickParamsOf("/app", "hero")).toBeNull();
     expect(ctaClickParamsOf("/calc", "unknown")).toBeNull();
     expect(ctaClickParamsOf("/calc", null)).toBeNull();

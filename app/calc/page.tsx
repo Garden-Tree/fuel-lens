@@ -3,7 +3,7 @@ import Link from "next/link";
 import { otherToolLinks } from "@/lib/publicNav";
 import { Camera, ChevronRight } from "lucide-react";
 import { PublicPageHeader } from "@/components/LegalPage";
-import { CALC_DESCRIPTION, CALC_FAQS, CALC_PAGE_TITLE, CALC_PATH, buildCalcJsonLd } from "@/lib/calcPage";
+import { CALC_DESCRIPTION, CALC_FAQS, CALC_H1, CALC_PAGE_TITLE, CALC_PATH, buildCalcJsonLd, calcQuickAnswerText } from "@/lib/calcPage";
 import FuelCalculator from "./_components/FuelCalculator";
 import { aiAvailabilityCopy } from "@/lib/landingPage";
 import { isTrialEnabled } from "@/lib/server/analyze/trialCookie";
@@ -29,59 +29,44 @@ export const metadata: Metadata = {
 };
 
 export default function CalcPage() {
+  const aiCopy = aiAvailabilityCopy(isTrialEnabled());
   return (
     <div className="min-h-screen bg-ground font-sans text-ink">
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: buildCalcJsonLd() }} />
       <PublicPageHeader />
       <main className="mx-auto max-w-[720px] px-4 pb-16 pt-8">
-        <h1 className="text-2xl font-bold">満タン法 燃費計算ツール</h1>
-        <p className="mt-2 text-[15px] leading-7 text-sub">
-          前回の満タン給油からの走行距離と、今回の給油量を入れるだけで燃費（km/L）を計算します。
+        <h1 className="text-2xl font-bold">{CALC_H1}</h1>
+        <p className="mt-3 rounded-2xl border border-accent/40 bg-surface px-4 py-3 text-[15px] font-bold leading-7 text-ink">
+          {calcQuickAnswerText()}
+        </p>
+        <p className="mt-3 text-[15px] leading-7 text-sub">
+          前回の満タン給油からの走行距離と、今回の給油量を入れるだけで燃費を計算します。
           支払総額を入れると、ガソリン単価と 1km あたりの燃料費も出ます。登録は不要です。
         </p>
 
         <div className="mt-6">
-          <FuelCalculator />
+          <FuelCalculator trialNote={aiCopy.heroCheck} />
         </div>
 
         <div className="mt-12 space-y-10 text-[15px] leading-7 text-ink/90 [&_h2]:mb-3 [&_h2]:text-lg [&_h2]:font-bold [&_h2]:text-ink [&_li]:mt-1.5 [&_ol]:list-decimal [&_ol]:pl-5 [&_p+p]:mt-2 [&_p+ul]:mt-2 [&_strong]:text-ink [&_ul]:list-disc [&_ul]:pl-5">
           <section>
             <h2>満タン法とは</h2>
             <p>
-              満タン法は、燃料を満タンにしてから次に満タンにするまでに走った距離と、そのときに入った量から燃費を求める方法です。
-              満タンからの「減った分」をちょうど補給するので、特別な機器がなくても実際の燃費（実燃費）を正確に測れます。
-            </p>
-          </section>
-
-          <section>
-            <h2>計算式</h2>
-            <div className="rounded-2xl border border-line bg-surface px-4 py-4 text-center">
-              <p className="text-base font-bold text-ink">
-                燃費（km/L）= 区間距離（km）÷ 給油量（L）
-              </p>
-              <p className="mt-1 text-sm text-sub">
-                例: <span className="num">400</span> km ÷ <span className="num">25</span> L ={" "}
-                <span className="num text-accent">16.00</span> km/L
-              </p>
-            </div>
-            <p className="mt-3">
-              単価（円/L）は支払総額 ÷ 給油量、1km あたりの燃料費（円/km）は支払総額 ÷ 区間距離で求めます。
-              上の例で支払総額が <span className="num">4,000</span> 円なら、単価は <span className="num">160.0</span> 円/L、
-              1km あたり <span className="num">10.0</span> 円です。
+              満タン法は、満タンにしてから次に満タンにするまでに走った距離を、2 回目の給油量で割って燃費を求める方法です。
+              満タンから満タンまで入れると、その区間で使った燃料がちょうど給油量になるので、特別な機器がなくても実燃費を測れます。
+              距離は、前回の満タン給油でリセットしたトリップメーターの区間距離を使います。
+              オドメーターは新車からの積算距離なので、そのまま入れず、前回の値との差にしてください。
             </p>
             <p className="mt-3 text-sm text-sub">
               距離からガソリン代を見積もるなら{" "}
               <Link href="/gas-cost" className="text-accent underline underline-offset-2 hover:no-underline">
                 ガソリン代計算ツール
               </Link>
-              をどうぞ。
-            </p>
-            <p className="mt-2 text-sm text-sub">
-              L/100km や mpg で表された燃費は{" "}
+              、L/100km や mpg の燃費は{" "}
               <Link href="/fuel-convert" className="text-accent underline underline-offset-2 hover:no-underline">
                 燃費の単位換算ツール
               </Link>
-              で km/L にできます。
+              をどうぞ。
             </p>
           </section>
 
@@ -125,7 +110,7 @@ export default function CalcPage() {
                 アプリを使う（無料）
                 <ChevronRight className="h-4 w-4" aria-hidden="true" />
               </Link>
-              <p className="text-xs text-sub">{aiAvailabilityCopy(isTrialEnabled()).calcNote}</p>
+              <p className="text-xs text-sub">{aiCopy.calcNote}</p>
             </div>
             <AppQrHandoff />
           </section>

@@ -7,13 +7,19 @@ import { calculateFuelMetrics, formatPricePerUnit } from "./calculations";
 import { parseDraftNumber } from "./recordDraft";
 import { PLAUSIBILITY_LIMITS } from "./analyze";
 import { buildManualPrefillHref } from "./manualPrefill";
+import { CAR_TYPE_EFFICIENCIES } from "./gasCostPage";
 
 export const CALC_PATH = "/calc";
-/** 検索結果のタイトル（ルートレイアウトの `%s | FuelLens` を使わず absolute で指定する） */
-export const CALC_PAGE_TITLE = "満タン法 計算ツール｜走行距離と給油量から燃費（km/L）を計算 | FuelLens";
-/** meta description */
+/**
+ * 検索結果のタイトル（ルートレイアウトの `%s | FuelLens` を使わず absolute で指定する）。
+ * 検索語「燃費計算」「満タン法 計算」を先頭に置き、` | FuelLens` を除いて 32 字以内（tests/serpSnippet.test.ts）
+ */
+export const CALC_PAGE_TITLE = "燃費計算ツール｜満タン法で走行距離と給油量から燃費を計算 | FuelLens";
+/** ページの見出し（h1） */
+export const CALC_H1 = "燃費計算ツール（満タン法）";
+/** meta description。答え（何が出るか・入力は 2 つ）→ 登録不要・無料 → アプリでの記録の順 */
 export const CALC_DESCRIPTION =
-  "満タン法の計算がすぐできます。走行距離と給油量を入れるだけで、燃費（km/L）を計算。支払総額からガソリン単価（円/L）と1kmあたりの燃料費も出せます。正しい測り方のコツやよくある間違いも解説。登録不要・無料。";
+  "走行距離と給油量の2つを入れるだけで、満タン法の燃費（km/L）を計算。支払総額を足せば1kmあたりのガソリン代も出ます。登録不要・無料。結果はそのまま記録でき、次回からは写真1枚で自動記録。";
 
 /** 構造化データの url に使う本番の絶対 URL（canonical は metadataBase からの相対 `/calc`） */
 export const CALC_CANONICAL_URL = "https://fuel-lens.gadelog.com/calc";
@@ -98,19 +104,49 @@ export function calcRecordHref(input: CalcInput): string | null {
   });
 }
 
+/** ページ冒頭の一行回答と FAQ の計算例に使う値（区間距離 km・給油量 L・支払総額 円） */
+export const CALC_EXAMPLE = { distance: 400, amount: 30, cost: 4800 } as const;
+
+/** 計算例の結果。計算機と同じ computeCalc（= calculateFuelMetrics）で求める（結果の数字を手で書かない） */
+export function calcExample(): { efficiency: string; pricePerUnit: string; costPerKm: string } {
+  const r = computeCalc({
+    distance: String(CALC_EXAMPLE.distance),
+    amount: String(CALC_EXAMPLE.amount),
+    cost: String(CALC_EXAMPLE.cost),
+  });
+  return { efficiency: r.efficiency!, pricePerUnit: r.pricePerUnit!, costPerKm: r.costPerKm! };
+}
+
+/** ページ冒頭の一行回答（計算式と計算例） */
+export function calcQuickAnswerText(): string {
+  const { efficiency } = calcExample();
+  return `燃費（km/L）は「走行距離 ÷ 給油量」で求めます。満タン給油から${CALC_EXAMPLE.distance}km走って、次の満タンで${CALC_EXAMPLE.amount}L入ったら、燃費は${efficiency}km/Lです。`;
+}
+
 export type FaqEntry = { q: string; a: string };
 
-/** ページの FAQ と JSON-LD の FAQPage で共有する。本文（満タン法・計算式・正しく測るコツ）で答えていることは載せない */
-export const CALC_FAQS: FaqEntry[] = [
-  {
-    q: "走行距離にはオドメーターの数字を入れてもいいですか？",
-    a: "いいえ。オドメーターは新車からの積算距離です。使うのは前回の満タン給油からの区間距離で、トリップメーターの値か、今回と前回のオドメーターの差を入力してください。",
-  },
-  {
-    q: "満タンにしなかった（部分給油の）ときはどうしますか？",
-    a: "部分給油の量だけで割ると燃費が実際より高く出ます。次に満タンにするまで走行距離と給油量をそれぞれ合算し、満タンにした時点でまとめて割ってください。",
-  },
-];
+/**
+ * ページの FAQ と JSON-LD の FAQPage で共有する。
+ * 本文（満タン法とは・正しく測るコツ）で答えていること（オドメーターではなく区間距離を使う など）は載せない
+ */
+export const CALC_FAQS: FaqEntry[] = (() => {
+  const { pricePerUnit, costPerKm } = calcExample();
+  const typical = CAR_TYPE_EFFICIENCIES.map((c) => `${c.label}で約${c.efficiency}km/L`).join("、");
+  return [
+    {
+      q: "燃費計算の式は？",
+      a: `燃費（km/L）= 区間距離（km）÷ 給油量（L）です。単価（円/L）は支払総額 ÷ 給油量、1kmあたりのガソリン代（円/km）は支払総額 ÷ 区間距離で求めます。${CALC_EXAMPLE.distance}km・${CALC_EXAMPLE.amount}Lで支払総額が${CALC_EXAMPLE.cost.toLocaleString("ja-JP")}円なら、単価は${pricePerUnit}円/L、1kmあたり${costPerKm}円です。`,
+    },
+    {
+      q: "満タンにしなかった（部分給油の）ときはどうしますか？",
+      a: "部分給油の量だけで割ると燃費が実際より高く出ます。次に満タンにするまで走行距離と給油量をそれぞれ合算し、満タンにした時点でまとめて割ってください。",
+    },
+    {
+      q: "軽自動車・ハイブリッド車の燃費の目安は？",
+      a: `実燃費の一般的な目安は、${typical}です（カタログの WLTC モード燃費より低めの値）。車種や乗り方で変わるので、自分の車の燃費は上の計算機で測ってください。`,
+    },
+  ];
+})();
 
 /**
  * /calc の構造化データ（WebApplication + FAQPage）を JSON 文字列で返す。
@@ -122,7 +158,7 @@ export function buildCalcJsonLd(): string {
     "@graph": [
       {
         "@type": "WebApplication",
-        name: "満タン法 燃費計算ツール",
+        name: "燃費計算ツール（満タン法）",
         url: CALC_CANONICAL_URL,
         applicationCategory: "UtilitiesApplication",
         operatingSystem: "Web",
