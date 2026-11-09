@@ -226,6 +226,22 @@ describe("createBatchController", () => {
     expect(t.ends[0].message).toContain("セッション");
   });
 
+  it("お試しの 1 日の上限（429 TRIAL_IP_LIMITED）は再試行せず残りを中止し、案内を添えて終える", async () => {
+    const t = setup(3, async () => ({
+      ok: false,
+      status: 429,
+      body: { error: "この接続からのお試しの読み取りが1日の上限に達しました。ログインすると続けて使えます。", code: "TRIAL_IP_LIMITED" },
+      retryAfter: "86400",
+      trialRemaining: null,
+    }));
+    t.controller.start();
+    await flush();
+    expect(t.analyze).toHaveBeenCalledTimes(1);
+    expect(t.ends).toHaveLength(1);
+    expect(t.ends[0]).toMatchObject({ reason: "unauthorized", saved: 0, cancelled: 3 });
+    expect(t.ends[0].message).toContain("1日の上限");
+  });
+
   it("読み取れなかった写真（422・通信エラー・圧縮の失敗）は failed になり、手入力して保存（markSaved）できる", async () => {
     const t = setup(2, async (d) =>
       d === "data:r0.jpg"
