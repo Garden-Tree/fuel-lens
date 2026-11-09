@@ -149,6 +149,19 @@ describe("migrateLocalData — guards", () => {
     expect(queries).toHaveLength(0);
   });
 
+  it("ストレージの読み込みが失敗する（ブロック）なら、移行するデータは無いものとして no-op で終える", async () => {
+    // ロックのリース（fuel_lens_migration_lock_*）以外の読み込みを失敗させる
+    const getItem = localStorageStub.getItem;
+    localStorageStub.getItem = (k: string) => {
+      if (k.startsWith("fuel_lens_migration_lock_")) return getItem(k);
+      throw new DOMException("blocked", "SecurityError");
+    };
+    const { client, queries } = makeSupabase(() => ({ data: [] }));
+    const r = await migrateLocalData(client, nextUser());
+    expect(r).toEqual({ migratedVehicles: 0, migratedRecords: 0, didWrite: false });
+    expect(queries).toHaveLength(0);
+  });
+
   it("cleans up unparsable local data without calling supabase", async () => {
     localStorageStub.setItem(LOCAL_RECORDS_KEY, "{not json");
     localStorageStub.setItem(LOCAL_VEHICLES_KEY, '{"not":"an array"}');

@@ -288,10 +288,20 @@ async function runMigration(supabase: SupabaseClient, userId: string): Promise<M
 
   // --- 1. ローカルキーを「移行中」キーへ移動 ---
   // ここはクロスタブロックの中なので、移行中キーに残っているデータは前回クラッシュ分と断定でき、取り込んでよい。
-  const pendingRecordsRaw = localStorage.getItem(recKey);
-  const pendingVehiclesRaw = localStorage.getItem(vehKey);
-  const freshRecordsRaw = localStorage.getItem(LOCAL_RECORDS_KEY);
-  const freshVehiclesRaw = localStorage.getItem(LOCAL_VEHICLES_KEY);
+  // ストレージが使えない（ブロック・プライベートモード）なら、移行するローカルデータは無いものとして扱う
+  let pendingRecordsRaw: string | null;
+  let pendingVehiclesRaw: string | null;
+  let freshRecordsRaw: string | null;
+  let freshVehiclesRaw: string | null;
+  try {
+    pendingRecordsRaw = localStorage.getItem(recKey);
+    pendingVehiclesRaw = localStorage.getItem(vehKey);
+    freshRecordsRaw = localStorage.getItem(LOCAL_RECORDS_KEY);
+    freshVehiclesRaw = localStorage.getItem(LOCAL_VEHICLES_KEY);
+  } catch (e) {
+    console.error("ローカルデータの読み込みに失敗しました:", e);
+    return NOOP_RESULT;
+  }
 
   if (!pendingRecordsRaw && !pendingVehiclesRaw && !freshRecordsRaw && !freshVehiclesRaw) {
     return NOOP_RESULT;
