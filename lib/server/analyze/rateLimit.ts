@@ -12,7 +12,7 @@ export type RateLimiterOptions = {
   windowMs: number;
   /** 1 ウィンドウあたりに許可する回数 */
   max: number;
-  /** 保持するキー数の上限。超えたら全消去（メモリリーク防止） */
+  /** 保持するキー数の上限。新しいキーで超えるときは、古いキー（Map の挿入順の先頭）から消す（メモリリーク防止） */
   maxKeys: number;
   /** 現在時刻（ms）。省略時は Date.now */
   now?: () => number;
@@ -45,8 +45,17 @@ export function createRateLimiter(options: RateLimiterOptions): RateLimiter {
         windows.delete(key);
       }
     }
-    if (windows.size > maxKeys) {
-      windows.clear();
+  }
+
+  /**
+   * 新しいキーを入れる前に、上限に収まるよう古いキーから消す（期限切れは cleanup で先に消えている）。
+   * 全消去すると制限中のキーの回数まで消え、上限を超えるキーを送るだけで制限を外せてしまうため、古い順に必要な分だけ消す
+   */
+  function evictOldest() {
+    while (windows.size >= maxKeys) {
+      const oldest = windows.keys().next();
+      if (oldest.done) return;
+      windows.delete(oldest.value);
     }
   }
 
@@ -56,6 +65,7 @@ export function createRateLimiter(options: RateLimiterOptions): RateLimiter {
       cleanup(now);
       const record = windows.get(key);
       if (!record || now - record.firstRequest > windowMs) {
+        if (!record) evictOldest();
         windows.set(key, { count: 1, firstRequest: now });
         return { allowed: true, retryAfterSec: 0 };
       }
