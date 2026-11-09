@@ -6,6 +6,7 @@
 import { parseDraftNumber } from "./recordDraft";
 import type { FaqEntry } from "./calcPage";
 import { NATIONAL_GAS_PRICE } from "./nationalGasPrice";
+import { jsonLdString } from "./jsonLd";
 
 export const GAS_COST_PATH = "/gas-cost";
 /** ページ内の計算機への移動先（距離別の目安表の各行からリンクする） */
@@ -323,5 +324,5 @@ export function buildGasCostJsonLd(): string {
       },
     ],
   };
-  return JSON.stringify(data).replace(/</g, "\\u003c");
+  return jsonLdString(data);
 }

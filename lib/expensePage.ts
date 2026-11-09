@@ -13,6 +13,7 @@
 import type { FaqEntry } from "./calcPage";
 import { aiAvailabilityCopy } from "./landingPage";
 import { DEFAULT_SITE_URL } from "./siteUrl";
+import { jsonLdString } from "./jsonLd";
 
 export const EXPENSE_PATH = "/expense";
 /** ナビゲーション・関連ページのリンクの表示名 */
@@ -130,5 +131,5 @@ export function buildExpenseJsonLd(faqs: readonly FaqEntry[]): string {
       },
     ],
   };
-  return JSON.stringify(data).replace(/</g, "\\u003c");
+  return jsonLdString(data);
 }

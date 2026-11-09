@@ -14,6 +14,7 @@
 import type { FaqEntry } from "./calcPage";
 import { aiAvailabilityCopy } from "./landingPage";
 import { DEFAULT_SITE_URL } from "./siteUrl";
+import { jsonLdString } from "./jsonLd";
 
 export const FUELIO_PATH = "/fuelio";
 /** ナビゲーション・関連ページのリンクの表示名 */
@@ -96,5 +97,5 @@ export function buildFuelioJsonLd(faqs: readonly FaqEntry[]): string {
       },
     ],
   };
-  return JSON.stringify(data).replace(/</g, "\\u003c");
+  return jsonLdString(data);
 }

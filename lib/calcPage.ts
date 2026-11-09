@@ -9,6 +9,7 @@ import { PLAUSIBILITY_LIMITS } from "./analyze";
 import { buildManualPrefillHref } from "./manualPrefill";
 import { CAR_TYPE_EFFICIENCIES } from "./gasCostPage";
 import type { OgFormulaPart } from "./og/renderToolOgImage";
+import { jsonLdString } from "./jsonLd";
 
 export const CALC_PATH = "/calc";
 /**
@@ -218,5 +219,5 @@ export function buildCalcJsonLd(): string {
       },
     ],
   };
-  return JSON.stringify(data).replace(/</g, "\\u003c");
+  return jsonLdString(data);
 }

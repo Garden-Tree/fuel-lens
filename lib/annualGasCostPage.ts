@@ -7,6 +7,7 @@
 import { parseDraftNumber } from "./recordDraft";
 import type { FaqEntry } from "./calcPage";
 import { EXAMPLE_PRICE, NATIONAL_PRICE_SURVEY_LABEL, computeGasCost, formatPrice } from "./gasCostPage";
+import { jsonLdString } from "./jsonLd";
 
 export const ANNUAL_GAS_COST_PATH = "/annual-gas-cost";
 /** ページの title（「ガソリン代 月いくら」「通勤 ガソリン代 月」の検索に合わせて問いを先頭に置く） */
@@ -242,5 +243,5 @@ export function buildAnnualGasCostJsonLd(): string {
       },
     ],
   };
-  return JSON.stringify(data).replace(/</g, "\\u003c");
+  return jsonLdString(data);
 }

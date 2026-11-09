@@ -9,6 +9,7 @@ import type { FaqEntry } from "./calcPage";
 import type { ToolOgImageContent } from "./og/renderToolOgImage";
 import { CAR_TYPE_EFFICIENCIES, GAS_COST_CALCULATOR_ID, GAS_COST_PATH, exampleCost, formatPrice } from "./gasCostPage";
 import { NATIONAL_GAS_PRICE } from "./nationalGasPrice";
+import { jsonLdString } from "./jsonLd";
 
 export const ROUTE_GAS_COST_PATH = "/route-gas-cost";
 export const SITE_ORIGIN = "https://fuel-lens.gadelog.com";
@@ -349,5 +350,5 @@ export function buildRouteGasCostJsonLd(): string {
       },
     ],
   };
-  return JSON.stringify(data).replace(/</g, "\\u003c");
+  return jsonLdString(data);
 }

@@ -5,6 +5,7 @@
 
 import { parseDraftNumber } from "./recordDraft";
 import type { FaqEntry } from "./calcPage";
+import { jsonLdString } from "./jsonLd";
 
 export const FUEL_CONVERT_PATH = "/fuel-convert";
 /** ナビ・フッター用の短い名前 */
@@ -226,5 +227,5 @@ export function buildFuelConvertJsonLd(): string {
       },
     ],
   };
-  return JSON.stringify(data).replace(/</g, "\\u003c");
+  return jsonLdString(data);
 }

@@ -7,6 +7,7 @@ import { parseDraftNumber } from "./recordDraft";
 import type { FaqEntry } from "./calcPage";
 import type { ToolOgImageContent } from "./og/renderToolOgImage";
 import { EXAMPLE_PRICE, MAX_PEOPLE, computeGasCost, formatPrice } from "./gasCostPage";
+import { jsonLdString } from "./jsonLd";
 
 export const WARIKAN_PATH = "/warikan";
 export const WARIKAN_PAGE_TITLE = "ガソリン代の割り勘計算｜距離・燃費・人数から1人いくらか計算 | FuelLens";
@@ -346,5 +347,5 @@ export function buildWarikanJsonLd(): string {
       },
     ],
   };
-  return JSON.stringify(data).replace(/</g, "\\u003c");
+  return jsonLdString(data);
 }
