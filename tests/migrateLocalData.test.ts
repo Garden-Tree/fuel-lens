@@ -336,6 +336,35 @@ describe("migrateLocalData — failure / retry", () => {
   });
 });
 
+describe("migrateLocalData — progress write failure", () => {
+  it("挿入済みチャンクの進捗を書けずに失敗しても、挿入済みの記録をローカルへ戻さない（再試行で二重登録しない）", async () => {
+    // 150 件 = 100 件 + 50 件の 2 チャンク
+    const records = Array.from({ length: 150 }, (_, i) => ({ id: `r${i}`, date: "2026-09-01", fuel_amount: i + 1 }));
+    localStorageStub.setItem(LOCAL_RECORDS_KEY, JSON.stringify(records));
+
+    const userId = nextUser();
+    const recKey = `${LOCAL_RECORDS_KEY}_migrating_${userId}`;
+    // 退避（全件）の書き込みは通し、1 チャンク目の後の進捗（残り 50 件）の書き込みで容量超過にする
+    const setItem = localStorageStub.setItem;
+    localStorageStub.setItem = (k: string, v: string) => {
+      if (k === recKey && (JSON.parse(v) as unknown[]).length < records.length) {
+        throw new DOMException("quota", "QuotaExceededError");
+      }
+      setItem(k, v);
+    };
+
+    const base = cloudEmptyHandler();
+    const { client } = makeSupabase(base.handler);
+    await expect(migrateLocalData(client, userId)).rejects.toBeInstanceOf(DOMException);
+
+    expect(base.insertedRecords).toHaveLength(100);
+    // ローカルへ戻るのは未挿入の 50 件だけ
+    const restored = JSON.parse(localStorageStub.getItem(LOCAL_RECORDS_KEY)!) as Array<{ id: string }>;
+    expect(restored.map((r) => r.id)).toEqual(records.slice(100).map((r) => r.id));
+    expect(localStorageStub.getItem(recKey)).toBeNull();
+  });
+});
+
 describe("migrateLocalData — payload normalization", () => {
   it("sends created_at for every row of a chunk mixing old and new records, with defaultToNull: false", async () => {
     const records = [

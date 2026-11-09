@@ -258,11 +258,20 @@ export function clearMigrationState(userId: string): void {
   }
 }
 
-/** 退避キーの内容を元キーへマージして戻す（失敗時の復元）。 */
-function mergeBack(originalKey: string, pendingKey: string) {
-  const pendingRaw = localStorage.getItem(pendingKey);
-  if (!pendingRaw) return;
-  const pending = parseArray(pendingRaw);
+/**
+ * 退避キーの内容を元キーへマージして戻す（失敗時の復元）。
+ * inMemory を渡すと退避キーを読み直さずにそれを戻す（退避キーへの進捗の書き込みが失敗して、
+ * 挿入済みの分が退避キーに残っている場合に、それを二重に戻さないため）。
+ */
+function mergeBack(originalKey: string, pendingKey: string, inMemory?: readonly unknown[]) {
+  let pending: unknown[];
+  if (inMemory) {
+    pending = [...inMemory];
+  } else {
+    const pendingRaw = localStorage.getItem(pendingKey);
+    if (!pendingRaw) return;
+    pending = parseArray(pendingRaw);
+  }
   if (pending.length === 0) {
     // 解析不能な残骸は捨てる
     localStorage.removeItem(pendingKey);
@@ -277,6 +286,13 @@ function mergeBack(originalKey: string, pendingKey: string) {
   } catch (e) {
     // 書き戻せなかった場合は退避キーを残し、次回に再試行できるようにする
     console.error("ローカルデータの復元に失敗しました:", e);
+    if (inMemory) {
+      try {
+        localStorage.setItem(pendingKey, JSON.stringify(pending));
+      } catch {
+        // ベストエフォート
+      }
+    }
     return;
   }
   localStorage.removeItem(pendingKey);
@@ -328,9 +344,12 @@ async function runMigration(supabase: SupabaseClient, userId: string): Promise<M
   localStorage.removeItem(LOCAL_RECORDS_KEY);
   localStorage.removeItem(LOCAL_VEHICLES_KEY);
 
+  // まだクラウドへ入れていない記録（チャンクの挿入が成功するたびに縮める）。
+  // 失敗時はこれを戻し、退避キーは読み直さない（進捗の書き込みが失敗していると挿入済みの分が残っているため）
+  let remainingRecords: LocalRecordRaw[] = localRecords;
   const restore = () => {
     try {
-      mergeBack(LOCAL_RECORDS_KEY, recKey);
+      mergeBack(LOCAL_RECORDS_KEY, recKey, remainingRecords);
       mergeBack(LOCAL_VEHICLES_KEY, vehKey);
     } catch (e) {
       console.error("ローカルデータの復元に失敗しました:", e);
@@ -435,8 +454,8 @@ async function runMigration(supabase: SupabaseClient, userId: string): Promise<M
       migratedRecords += chunk.length;
       // 挿入済みチャンクを退避データから取り除き、途中失敗時の再試行で二重登録しない
       // （payload と localRecords は同じ配列から 1:1 で作られているので添字が一致する）
-      const remaining = localRecords.slice(i + CHUNK);
-      if (remaining.length > 0) localStorage.setItem(recKey, JSON.stringify(remaining));
+      remainingRecords = localRecords.slice(i + CHUNK);
+      if (remainingRecords.length > 0) localStorage.setItem(recKey, JSON.stringify(remainingRecords));
       else localStorage.removeItem(recKey);
     }
 
