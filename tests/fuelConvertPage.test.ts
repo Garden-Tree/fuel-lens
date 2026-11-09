@@ -52,6 +52,28 @@ describe("computeFuelConvert", () => {
     });
   });
 
+  it("範囲外（0.1〜1,000 km/L 相当の外）・高すぎる単価は ∞ や 1e+300 を出さずに日本語のエラーにする", () => {
+    const huge = "9".repeat(301);
+    expect(computeFuelConvert({ value: huge, unit: "kmpl", price: "" })).toMatchObject({
+      errors: { value: "km/Lは 0.1〜1,000 の範囲で入力してください" },
+      values: null,
+    });
+    // L/100km は向きが逆（0.1 L/100km = 1,000 km/L）
+    expect(computeFuelConvert({ value: "0.01", unit: "l100km", price: "" }).errors.value).toBe(
+      "L/100kmは 0.1〜1,000 の範囲で入力してください"
+    );
+    expect(computeFuelConvert({ value: huge, unit: "mpgUs", price: "" }).errors.value).toMatch(/^mpg \(US\)は .+〜.+ の範囲で入力してください$/);
+    const r = computeFuelConvert({ value: "15", unit: "kmpl", price: huge });
+    expect(r.errors.price).toBe("ガソリン単価は 10,000 円/L 以下で入力してください");
+    expect(r.costPerKm).toBeNull();
+    expect(JSON.stringify(r)).not.toMatch(/Infinity|∞|e\+/);
+
+    // 境界ちょうどは換算する
+    expect(computeFuelConvert({ value: "1000", unit: "kmpl", price: "10000" }).errors).toEqual({});
+    expect(computeFuelConvert({ value: "0.1", unit: "l100km", price: "" }).errors).toEqual({});
+    expect(computeFuelConvert({ value: "1000", unit: "l100km", price: "" }).errors).toEqual({});
+  });
+
   it("0 以下・数値でない入力は日本語のエラーにする", () => {
     expect(computeFuelConvert({ value: "0", unit: "kmpl", price: "" })).toMatchObject({
       errors: { value: "km/Lは 0 より大きい数値で入力してください" },

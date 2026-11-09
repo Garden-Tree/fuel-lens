@@ -100,6 +100,16 @@ export type FuelConvertResult = {
   costPer100km: string | null;
 };
 
+/**
+ * 入力の上限・下限（実在の車より十分広く、∞ や 1e+300 のような表示にならない範囲）。
+ * 燃費は km/L に換算して 0.1〜1,000 km/L、ガソリン単価は 10,000 円/L まで
+ */
+export const FUEL_CONVERT_LIMITS = {
+  minKmPerL: 0.1,
+  maxKmPerL: 1_000,
+  price: 10_000,
+} as const;
+
 /** 任意でない・任意の数値欄を検証する。空は value null でエラーにしない */
 function parsePositive(raw: string, label: string): { value: number | null; error?: string } {
   const parsed = parseDraftNumber(raw);
@@ -109,12 +119,40 @@ function parsePositive(raw: string, label: string): { value: number | null; erro
   return { value: parsed.value };
 }
 
+/** 単位ごとの燃費の入力範囲（FUEL_CONVERT_LIMITS の km/L を換算。L/100km は向きが逆なので小さい方を下限にする） */
+function efficiencyRange(unit: FuelUnit): { min: number; max: number } {
+  const a = fromKmPerL(FUEL_CONVERT_LIMITS.minKmPerL, unit);
+  const b = fromKmPerL(FUEL_CONVERT_LIMITS.maxKmPerL, unit);
+  return { min: Math.min(a, b), max: Math.max(a, b) };
+}
+
+const formatLimit = (value: number) => value.toLocaleString("ja-JP", { maximumFractionDigits: 2 });
+
 /** 入力中の文字列から換算結果を作る。未入力はエラーにしない（結果が出ないだけ） */
 export function computeFuelConvert(input: FuelConvertInput): FuelConvertResult {
   const errors: FuelConvertResult["errors"] = {};
-  const main = parsePositive(input.value, FUEL_UNIT_LABELS[input.unit]);
+  const label = FUEL_UNIT_LABELS[input.unit];
+  const main = parsePositive(input.value, label);
+  if (main.value != null) {
+    const kmPerL = toKmPerL(main.value, input.unit);
+    // 境界の値（例: 1000 km/L = 0.1 L/100km）は換算の誤差で弾かないよう、わずかに許容する
+    const tolerance = 1e-9;
+    if (
+      !Number.isFinite(kmPerL) ||
+      kmPerL < FUEL_CONVERT_LIMITS.minKmPerL * (1 - tolerance) ||
+      kmPerL > FUEL_CONVERT_LIMITS.maxKmPerL * (1 + tolerance)
+    ) {
+      const { min, max } = efficiencyRange(input.unit);
+      main.value = null;
+      main.error = `${label}は ${formatLimit(min)}〜${formatLimit(max)} の範囲で入力してください`;
+    }
+  }
   if (main.error) errors.value = main.error;
   const priceParsed = parsePositive(input.price, "ガソリン単価");
+  if (priceParsed.value != null && priceParsed.value > FUEL_CONVERT_LIMITS.price) {
+    priceParsed.value = null;
+    priceParsed.error = `ガソリン単価は ${FUEL_CONVERT_LIMITS.price.toLocaleString("ja-JP")} 円/L 以下で入力してください`;
+  }
   if (priceParsed.error) errors.price = priceParsed.error;
 
   const value = main.value;

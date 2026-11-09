@@ -44,13 +44,28 @@ export type CalcResult = {
 
 const LABELS: Record<CalcField, string> = { distance: "走行距離", amount: "給油量", cost: "支払総額" };
 
-/** 必須の欄（走行距離・給油量）は 0 より大きいこと。支払総額は任意で 0 以上 */
+/**
+ * 入力の上限（実在の車より十分大きく、∞ や 1e+300 のような表示にならない範囲）。
+ * 走行距離 km・給油量 L・支払総額 円。燃費 km/L・単価 円/L は計算結果の上限（超えたら結果を出さずにエラーにする）
+ */
+export const CALC_LIMITS = {
+  distance: 100_000,
+  amount: 1_000,
+  cost: 10_000_000,
+  efficiency: 1_000,
+  pricePerUnit: 10_000,
+} as const;
+
+/** 必須の欄（走行距離・給油量）は 0 より大きいこと。支払総額は任意で 0 以上。どれも CALC_LIMITS 以下 */
 function parseField(field: CalcField, raw: string): { value: number | null; error?: string } {
   const parsed = parseDraftNumber(raw);
   if (parsed.error) return { value: null, error: `${LABELS[field]}は数値で入力してください` };
   if (parsed.value === null) return { value: null };
   if (field !== "cost" && parsed.value <= 0) {
     return { value: null, error: `${LABELS[field]}は 0 より大きい数値で入力してください` };
+  }
+  if (parsed.value > CALC_LIMITS[field]) {
+    return { value: null, error: `${LABELS[field]}は ${CALC_LIMITS[field].toLocaleString("ja-JP")} 以下で入力してください` };
   }
   return { value: parsed.value };
 }
@@ -71,7 +86,17 @@ function parseCalcInput(input: CalcInput): { values: Record<CalcField, number | 
 export function computeCalc(input: CalcInput): CalcResult {
   const { values, errors } = parseCalcInput(input);
   const { distance, amount, cost } = values;
-  const { fuel_efficiency, price_per_unit } = calculateFuelMetrics(distance, amount, cost);
+  const metrics = calculateFuelMetrics(distance, amount, cost);
+  let { fuel_efficiency, price_per_unit } = metrics;
+  // 給油量が極端に少ないと燃費・単価が桁外れ（∞ を含む）になる。結果は出さずに給油量のエラーにする
+  if (fuel_efficiency != null && !(Number.isFinite(fuel_efficiency) && fuel_efficiency <= CALC_LIMITS.efficiency)) {
+    fuel_efficiency = null;
+    errors.amount ??= `燃費が ${CALC_LIMITS.efficiency.toLocaleString("ja-JP")} km/L を超えます。給油量を確認してください`;
+  }
+  if (price_per_unit != null && !(Number.isFinite(price_per_unit) && price_per_unit <= CALC_LIMITS.pricePerUnit)) {
+    price_per_unit = null;
+    errors.cost ??= `単価が ${CALC_LIMITS.pricePerUnit.toLocaleString("ja-JP")} 円/L を超えます。支払総額と給油量を確認してください`;
+  }
 
   const efficiency = fuel_efficiency != null ? fuel_efficiency.toFixed(2) : null;
   const pricePerUnit = price_per_unit != null ? formatPricePerUnit(price_per_unit) : null;
@@ -94,8 +119,9 @@ export function computeCalc(input: CalcInput): CalcResult {
  * （全角数字・桁区切りの入力も正規化される）。何も保存しない。保存は利用者がアプリのフォームで日付・車両を確認してから
  */
 export function calcRecordHref(input: CalcInput): string | null {
-  const { values, errors } = parseCalcInput(input);
-  if (Object.keys(errors).length > 0) return null;
+  const { values } = parseCalcInput(input);
+  // 計算結果のエラー（燃費が桁外れ）も含めて、computeCalc がエラーを出す入力ではボタンを出さない
+  if (Object.keys(computeCalc(input).errors).length > 0) return null;
   const { distance, amount, cost } = values;
   if (distance == null || amount == null) return null;
   return buildManualPrefillHref({
