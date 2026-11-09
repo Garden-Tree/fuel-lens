@@ -12,7 +12,6 @@ import {
   buildGasCostJsonLd,
   commuteExample,
   computeGasCost,
-  formatJaDate,
   formatPrice,
   formulaExample,
   quickAnswer,
@@ -23,6 +22,7 @@ import {
   type GasCostInput,
 } from "@/lib/gasCostPage";
 import { NATIONAL_GAS_PRICE } from "@/lib/nationalGasPrice";
+import { formatJaDate } from "@/lib/format";
 
 const base: GasCostInput = { distance: "300", efficiency: "15", price: "170", people: "", roundTrip: false };
 
@@ -40,6 +40,7 @@ describe("computeGasCost", () => {
       totalDistance: "300",
       fuel: "20.00",
       cost: "3,400",
+      costYen: 3400,
       people: null,
       perPerson: null,
       costPerKm: "11.3",
@@ -281,5 +282,22 @@ describe("距離別の目安表", () => {
     } finally {
       GAS_COST_FAQS.splice(0, GAS_COST_FAQS.length, ...original);
     }
+  });
+});
+
+describe("computeGasCost の costYen", () => {
+  it("cost の表示文字列と同じ値の整数を返し、出せないときは null", () => {
+    for (const [distance, efficiency, price] of [
+      ["300", "15", "170"],
+      ["1000", "13", "174.4"],
+      ["12345", "7.3", "181.9"],
+      ["1", "30", "160"],
+    ] as const) {
+      const r = computeGasCost({ distance, efficiency, price, people: "", roundTrip: false });
+      expect(r.costYen).not.toBeNull();
+      expect(Number.isInteger(r.costYen)).toBe(true);
+      expect(Number(r.cost!.replace(/,/g, ""))).toBe(r.costYen);
+    }
+    expect(computeGasCost({ distance: "", efficiency: "15", price: "170", people: "", roundTrip: false }).costYen).toBeNull();
   });
 });

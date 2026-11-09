@@ -3,6 +3,7 @@
  */
 
 import type { FuelRecord } from "../types";
+import { roundFuelEfficiency } from "../calculations";
 import { normalizeDateString, parseLocalDate } from "../dates";
 import { detectStationBrand, normalizeStationName } from "../stations";
 import { hasNumber, hasPositiveNumber } from "./period";
@@ -130,10 +131,11 @@ function buildValueAxis(
   return { domain: [yMin, yMax], ticks, averageTick };
 }
 
-/** 小数第2位で丸める（toFixed(2) と同じ丸め） */
-export function roundTo2(v: number): number {
-  return parseFloat(v.toFixed(2));
-}
+/**
+ * 小数第2位で丸める（toFixed(2) と同じ丸め）。燃費の Y 軸の目盛りに使う。
+ * 丸めの正本は lib/calculations.ts の roundFuelEfficiency（燃費の保存値と同じ桁にそろえる）。
+ */
+export const roundTo2: (v: number) => number = roundFuelEfficiency;
 
 /**
  * X 軸（時刻）の表示範囲。データ範囲の 5%（最低 1 日）を前後に余白として付ける。

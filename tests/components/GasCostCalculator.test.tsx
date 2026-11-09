@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import GasCostCalculator from "@/app/gas-cost/_components/GasCostCalculator";
-import { formatJaDate } from "@/lib/gasCostPage";
+import { formatJaDate } from "@/lib/format";
 import { NATIONAL_GAS_PRICE } from "@/lib/nationalGasPrice";
 
 function setup() {

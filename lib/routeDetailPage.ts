@@ -23,6 +23,7 @@ import {
   type RouteEntry,
   type RouteTotal,
 } from "./routeGasCostPage";
+import { jsonLdString } from "./jsonLd";
 
 export function findRoute(slug: string): RouteEntry | undefined {
   return ROUTES.find((r) => r.id === slug);
@@ -160,5 +161,5 @@ export function buildRouteDetailJsonLd(route: RouteEntry): string {
       },
     ],
   };
-  return JSON.stringify(data).replace(/</g, "\\u003c");
+  return jsonLdString(data);
 }

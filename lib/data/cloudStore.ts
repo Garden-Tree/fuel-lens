@@ -11,6 +11,7 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { withCrossTabLock } from "../crossTabLock";
+import { singleFlight } from "../singleFlight";
 import { normalizeTimestamp } from "../dates";
 import { isDistanceMode, isFuelType, normalizeRecord, normalizeVehicle } from "../fillChain";
 import { isUuid } from "../recordFilters";
@@ -85,20 +86,17 @@ const userRowInflight = new Map<string, Promise<void>>();
  * @throws Supabase エラー（status 付き）
  */
 export function ensureUserRow(supabase: SupabaseClient, userId: string): Promise<void> {
-  const existing = userRowInflight.get(userId);
-  if (existing) return existing;
-
-  const run = (async () => {
-    const { error, status } = await supabase
-      .from("users")
-      .upsert({ id: userId }, { onConflict: "id", ignoreDuplicates: true });
-    if (error) throw withStatus(error, status);
-  })();
-  userRowInflight.set(userId, run);
-  run.catch(() => {
-    if (userRowInflight.get(userId) === run) userRowInflight.delete(userId);
-  });
-  return run;
+  return singleFlight(
+    userRowInflight,
+    userId,
+    async () => {
+      const { error, status } = await supabase
+        .from("users")
+        .upsert({ id: userId }, { onConflict: "id", ignoreDuplicates: true });
+      if (error) throw withStatus(error, status);
+    },
+    { retainOnSuccess: true }
+  );
 }
 
 /** アカウント削除の後に、タブ内で使い回している users 行の保証を忘れる（次の挿入で users 行を作り直す） */
@@ -147,15 +145,9 @@ const ensureInflight = new Map<string, Promise<Vehicle[]>>();
  * @throws Supabase エラー（呼び出し側で障害分類する）。エラーには `status` を付与する。
  */
 export function ensureDefaultVehicle(supabase: SupabaseClient, userId: string, seed?: VehicleSeed): Promise<Vehicle[]> {
-  const existing = ensureInflight.get(userId);
-  if (existing) return existing;
-
-  const run = withCrossTabLock(userId, async () => (await ensureDefaultVehicleUnlocked(supabase, userId, seed)).vehicles);
-  ensureInflight.set(userId, run);
-  run.finally(() => {
-    if (ensureInflight.get(userId) === run) ensureInflight.delete(userId);
-  }).catch(() => {});
-  return run;
+  return singleFlight(ensureInflight, userId, () =>
+    withCrossTabLock(userId, async () => (await ensureDefaultVehicleUnlocked(supabase, userId, seed)).vehicles)
+  );
 }
 
 // ------------------------------------------------------------------

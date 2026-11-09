@@ -3,8 +3,10 @@
  * 換算は丸める前の値で行い、丸めるのは表示用の文字列にするときだけ。
  */
 
-import { parseDraftNumber } from "./recordDraft";
+import { parsePositiveField } from "./numericField";
 import type { FaqEntry } from "./calcPage";
+import { jsonLdString } from "./jsonLd";
+import { formatInt } from "./format";
 
 export const FUEL_CONVERT_PATH = "/fuel-convert";
 /** ナビ・フッター用の短い名前 */
@@ -79,7 +81,6 @@ export function convertFuelEconomy(value: number, from: FuelUnit, to: FuelUnit):
 
 const format2 = (value: number) => value.toLocaleString("ja-JP", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const format1 = (value: number) => value.toLocaleString("ja-JP", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
-const formatInt = (value: number) => value.toLocaleString("ja-JP", { maximumFractionDigits: 0 });
 
 export type FuelConvertInput = {
   value: string;
@@ -110,15 +111,6 @@ export const FUEL_CONVERT_LIMITS = {
   price: 10_000,
 } as const;
 
-/** 任意でない・任意の数値欄を検証する。空は value null でエラーにしない */
-function parsePositive(raw: string, label: string): { value: number | null; error?: string } {
-  const parsed = parseDraftNumber(raw);
-  if (parsed.error) return { value: null, error: `${label}は数値で入力してください` };
-  if (parsed.value === null) return { value: null };
-  if (parsed.value <= 0) return { value: null, error: `${label}は 0 より大きい数値で入力してください` };
-  return { value: parsed.value };
-}
-
 /** 単位ごとの燃費の入力範囲（FUEL_CONVERT_LIMITS の km/L を換算。L/100km は向きが逆なので小さい方を下限にする） */
 function efficiencyRange(unit: FuelUnit): { min: number; max: number } {
   const a = fromKmPerL(FUEL_CONVERT_LIMITS.minKmPerL, unit);
@@ -132,7 +124,7 @@ const formatLimit = (value: number) => value.toLocaleString("ja-JP", { maximumFr
 export function computeFuelConvert(input: FuelConvertInput): FuelConvertResult {
   const errors: FuelConvertResult["errors"] = {};
   const label = FUEL_UNIT_LABELS[input.unit];
-  const main = parsePositive(input.value, label);
+  const main = parsePositiveField(label, input.value);
   if (main.value != null) {
     const kmPerL = toKmPerL(main.value, input.unit);
     // 境界の値（例: 1000 km/L = 0.1 L/100km）は換算の誤差で弾かないよう、わずかに許容する
@@ -148,7 +140,7 @@ export function computeFuelConvert(input: FuelConvertInput): FuelConvertResult {
     }
   }
   if (main.error) errors.value = main.error;
-  const priceParsed = parsePositive(input.price, "ガソリン単価");
+  const priceParsed = parsePositiveField("ガソリン単価", input.price);
   if (priceParsed.value != null && priceParsed.value > FUEL_CONVERT_LIMITS.price) {
     priceParsed.value = null;
     priceParsed.error = `ガソリン単価は ${FUEL_CONVERT_LIMITS.price.toLocaleString("ja-JP")} 円/L 以下で入力してください`;
@@ -226,5 +218,5 @@ export function buildFuelConvertJsonLd(): string {
       },
     ],
   };
-  return JSON.stringify(data).replace(/</g, "\\u003c");
+  return jsonLdString(data);
 }

@@ -103,11 +103,6 @@ export function formatEfficiency(value: number | null | undefined): string | nul
   return value ? fixed(value, 2) : null;
 }
 
-/** 金額（円）の表示（「¥4,920」）。無ければ null */
-export function formatYen(value: number | null | undefined): string | null {
-  return typeof value === "number" && Number.isFinite(value) ? `¥${Math.round(value).toLocaleString("ja-JP")}` : null;
-}
-
 /** 距離（km）の表示（桁区切り・小数 1 桁）。無ければ null */
 export function formatDistance(value: number | null | undefined): string | null {
   return typeof value === "number" && Number.isFinite(value)

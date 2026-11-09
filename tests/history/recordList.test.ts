@@ -6,11 +6,11 @@ import {
   formatDistance,
   formatEfficiency,
   formatLiters,
-  formatYen,
   recordElementId,
   recordIdFromHash,
   sortRecords,
 } from "@/lib/history/recordList";
+import { formatYenSymbol as formatYen } from "@/lib/format";
 
 type R = { id: string; date: string; created_at?: string | null };
 

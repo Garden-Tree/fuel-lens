@@ -1,8 +1,7 @@
 "use client";
 
 import { useId, useState } from "react";
-import { RotateCcw } from "lucide-react";
-import { SegmentedControl, type SegmentedOption } from "@/components/ui";
+import { CalculatorField, ResetButton, SegmentedControl, type SegmentedOption } from "@/components/ui";
 import {
   FUEL_UNITS,
   FUEL_UNIT_BETTER,
@@ -21,19 +20,12 @@ const UNIT_OPTIONS: readonly SegmentedOption<FuelUnit>[] = FUEL_UNITS.map((unit)
 
 const PLACEHOLDERS: Record<FuelUnit, string> = { kmpl: "例: 15", l100km: "例: 6.7", mpgUs: "例: 35", mpgUk: "例: 42" };
 
-const inputClass = (error: boolean) =>
-  `num h-11 w-full min-w-0 rounded-xl border bg-ground pl-3 pr-20 text-base text-ink placeholder:text-faint focus:outline-none focus-visible:ring-2 focus-visible:ring-accent ${
-    error ? "border-red-500" : "border-border"
-  }`;
-
 /** 燃費の単位換算機。入力は state にだけ持ち、どこにも保存しない */
 export default function FuelConvertCalculator() {
   const [input, setInput] = useState<FuelConvertInput>(EMPTY);
   const baseId = useId();
   const result = computeFuelConvert(input);
   const isEmpty = input.value === "" && input.price === "" && input.unit === "kmpl";
-  const valueId = `${baseId}-value`;
-  const priceId = `${baseId}-price`;
 
   return (
     <div className="rounded-hero border border-line bg-surface p-4 sm:p-6">
@@ -49,61 +41,27 @@ export default function FuelConvertCalculator() {
       </div>
 
       <div className="mt-4 grid gap-4 sm:grid-cols-2">
-        <div className="min-w-0">
-          <label htmlFor={valueId} className="block text-sm font-medium text-ink">
-            燃費の値
-          </label>
-          <div className="relative mt-1.5">
-            <input
-              id={valueId}
-              type="text"
-              inputMode="decimal"
-              autoComplete="off"
-              placeholder={PLACEHOLDERS[input.unit]}
-              value={input.value}
-              onChange={(e) => setInput((prev) => ({ ...prev, value: e.target.value }))}
-              aria-invalid={result.errors.value ? true : undefined}
-              aria-describedby={result.errors.value ? `${valueId}-error` : undefined}
-              className={inputClass(!!result.errors.value)}
-            />
-            <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-[13px] text-sub">
-              {FUEL_UNIT_LABELS[input.unit]}
-            </span>
-          </div>
-          {result.errors.value && (
-            <p id={`${valueId}-error`} className="mt-1 text-xs text-red-400">
-              {result.errors.value}
-            </p>
-          )}
-        </div>
-        <div className="min-w-0">
-          <label htmlFor={priceId} className="block text-sm font-medium text-ink">
-            ガソリン単価（任意）
-          </label>
-          <div className="relative mt-1.5">
-            <input
-              id={priceId}
-              type="text"
-              inputMode="decimal"
-              autoComplete="off"
-              placeholder="例: 170"
-              value={input.price}
-              onChange={(e) => setInput((prev) => ({ ...prev, price: e.target.value }))}
-              aria-invalid={result.errors.price ? true : undefined}
-              aria-describedby={`${priceId}-hint${result.errors.price ? ` ${priceId}-error` : ""}`}
-              className={inputClass(!!result.errors.price)}
-            />
-            <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-[13px] text-sub">円/L</span>
-          </div>
-          <p id={`${priceId}-hint`} className="mt-1 text-xs leading-relaxed text-sub">
-            入れると 1km・100km あたりの燃料費も出します
-          </p>
-          {result.errors.price && (
-            <p id={`${priceId}-error`} className="mt-1 text-xs text-red-400">
-              {result.errors.price}
-            </p>
-          )}
-        </div>
+        <CalculatorField
+          id={`${baseId}-value`}
+          label="燃費の値"
+          unit={FUEL_UNIT_LABELS[input.unit]}
+          unitSpace="lg"
+          placeholder={PLACEHOLDERS[input.unit]}
+          value={input.value}
+          onChange={(value) => setInput((prev) => ({ ...prev, value }))}
+          error={result.errors.value}
+        />
+        <CalculatorField
+          id={`${baseId}-price`}
+          label="ガソリン単価（任意）"
+          unit="円/L"
+          unitSpace="lg"
+          placeholder="例: 170"
+          hint="入れると 1km・100km あたりの燃料費も出します"
+          value={input.price}
+          onChange={(price) => setInput((prev) => ({ ...prev, price }))}
+          error={result.errors.price}
+        />
       </div>
 
       <div aria-live="polite" className="mt-5">
@@ -166,15 +124,7 @@ export default function FuelConvertCalculator() {
 
       <div className="mt-4 flex items-center justify-between gap-3">
         <p className="text-xs text-sub">入力した値は保存されません。</p>
-        <button
-          type="button"
-          onClick={() => setInput(EMPTY)}
-          disabled={isEmpty}
-          className="inline-flex h-11 shrink-0 items-center gap-1.5 rounded-xl border border-border bg-surface-2 px-4 text-sm font-bold text-ink transition-colors hover:bg-line focus:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          <RotateCcw className="h-4 w-4" aria-hidden="true" />
-          リセット
-        </button>
+        <ResetButton onClick={() => setInput(EMPTY)} disabled={isEmpty} />
       </div>
     </div>
   );

@@ -62,7 +62,9 @@ FuelLens の構成、データの流れ、主要なモジュールの役割を�
 | `lib/supabaseClient.ts` | ユーザーごとの Supabase クライアント（Clerk JWT 付き） |
 | `lib/supabaseHealth.ts` | 障害の分類、閲覧専用モード、キャッシュ、再試行（[6 章](#6-障害時の動作)） |
 | `lib/supabase/errors.ts` / `outage.ts` / `retry.ts` / `cache.ts` | `supabaseHealth.ts` の実体。errors = 失敗の分類とエラーメッセージ（純粋関数。`migrateLocalData.ts` は `lib/supabase/` のうちここだけを import）、outage = 障害状態の記録・通知・`useSupabaseOutage`、retry = 再試行イベントと自動再試行、cache = per-user キャッシュ。`supabaseHealth.ts` は互換用の再エクスポート |
-| `lib/format.ts` | 表示用の純粋フォーマット（`efficiencyNullReason` / `formatOdometer` / `formatKm` / `formatPriceDiff`） |
+| `lib/format.ts` | 表示用の純粋フォーマット（`efficiencyNullReason` / `formatOdometer` / `formatKm` / `formatPriceDiff`、金額の `formatInt`（3 桁区切り）/ `formatYenSymbol`（「¥4,920」）、日付の `formatJaDate`（「2026年10月26日」）） |
+| `lib/numericField.ts` / `lib/jsonLd.ts` | 公開の計算ツールの数値欄の検証（`parsePositiveField` / `parseIntInRange`。読み取りは `parseDraftNumber`、文言は「{欄名}は〜で入力してください」）と、JSON-LD の文字列化 `jsonLdString`（`<` をエスケープ） |
+| `lib/singleFlight.ts` | 実行中の Promise をキーごとに共有する `singleFlight`（`ensureUserRow` / `ensureDefaultVehicle` / `migrateLocalData`） |
 | `lib/home/` | ホーム画面の表示用の純粋関数。`hero`（ヒーローのモデルと前回比）/ `gauge`（燃費メーターの目盛りと円弧の座標）/ `month`（今月の集計）/ `recent`（最近の記録の行と日付の書式）。フックは `useCurrentMonthKey` / `useTodayKey`（いまの月 / 今日。画面に戻ってきたときに読み直す）だけ |
 | `lib/history/` | 履歴画面の純粋関数。`recordList`（年・月の絞り込み・並べ替え・数値の書式・行の DOM id と `#record-<id>` の解析）/ `groupByMonth`（月ごとのまとまりと合計） |
 | `lib/importers/csvParse.ts` | CSV 取り込みの共有プリミティブ（`parseCsvRows` / `parseCsvNumber` / `parseFlexibleDate` / `hashString` / `isBlankRow`）。`fuelio.ts` は互換のため再エクスポート |
@@ -161,7 +163,7 @@ useVehicles / useFuelRecords
 | `initialAuth.ts` / `initialAuthContext.tsx` | サーバーの初期認証状態（`InitialAuth`）と、Clerk の読み込み前の判定 `resolveAuth`、キャッシュの先行表示 `createCachePreview`（持ち主を読むたびに確認）。`InitialAuthProvider` / `useInitialAuth` / `useResolvedAuth`（画面の「未ログイン」表示用）。上の「最初の描画」 |
 | `useDataStores.ts` | ログイン状態に応じたストア（クラウドは userId・getToken ごとにメモ化）。Clerk の読み込み前はサーバーの初期認証状態で補い（`isLoaded` / `authLoaded` / `cachePreview`）、保存先を決められない間は `stores: null`。フックのアンマウント・ユーザー切り替え後に届いた応答ではキャッシュを書かない。ストアのほかに、クラウドは `deleteAccountData()`（アカウント削除の 1 段目）、ローカルは `clearAll()`（この端末のデータの削除。`clearLocalData`）を持つ（[アカウント削除](#アカウント削除)） |
 | `accountDeletion.ts` | `deleteOwnData(supabase, userId)`: 利用者自身の JWT（RLS）で記録 → 車両 → `users` 行の順に削除し、記録・車両が 0 件になったことを確かめる（残っていれば `DataError`（`DELETE_INCOMPLETE_CODE`））。冪等 |
-| `columns.ts` / `scope.ts` | `pickRecordColumns`（保存する列のホワイトリストと検証）、`sanitizeVehicleSettings`、`applyRecordPatch` / `applyVehiclePatch`、`recordScopeOf` / `matchesRecordScope`（`matchesSelectedVehicle` と同じ判定） |
+| `columns.ts` / `scope.ts` | `pickRecordColumns`（保存する列のホワイトリストと検証）、`sanitizeVehicleSettings`、`applyRecordPatch` / `applyVehiclePatch`、`recordScopeOf` / `matchesRecordScope`（判定は `lib/recordFilters.ts` の `matchesVehicleScope`。`matchesSelectedVehicle` と同じ実装） |
 
 クラウドのクエリ（`cloudStore.ts`）:
 
@@ -455,7 +457,7 @@ useVehicles / useFuelRecords
 
 `app/calc/page.tsx` はログイン不要の公開ページ（「満タン法 燃費計算」などの検索からの入口）で、`AppShell` は使わず、規約ページと同じヘッダー（`components/LegalPage.tsx` の `PublicPageHeader`）で包みます。
 計算機 `app/calc/_components/FuelCalculator.tsx`（クライアント）は走行距離（区間距離）・給油量・任意の支払総額から燃費・単価・1km あたりの燃料費を出し、入力は state にだけ持って保存しません。
-検証と計算は `lib/calcPage.ts` の `computeCalc`（数値の読み取りは `parseDraftNumber`、燃費と単価は `calculateFuelMetrics`、オドメーターらしい値の注意は `PLAUSIBILITY_LIMITS`）。
+検証と計算は `lib/calcPage.ts` の `computeCalc`（数値の読み取りは `parsePositiveField`（`parseDraftNumber` の上に欄名つきの文言と上限）、燃費と単価は `calculateFuelMetrics`、オドメーターらしい値の注意は `PLAUSIBILITY_LIMITS`）。
 FAQ（`CALC_FAQS`）はページと構造化データで共有し、`buildCalcJsonLd`（`WebApplication` + `FAQPage`、固定文言のみ・`<` をエスケープ）を `<script type="application/ld+json">` で出します。
 説明の下の CTA から `/app` へ誘導し、ランディングのフッターと機能紹介からリンクしています。
 

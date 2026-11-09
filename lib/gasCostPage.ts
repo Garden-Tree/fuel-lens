@@ -3,9 +3,11 @@
  * 計算は丸める前の値で行い、丸めるのは表示用の文字列にするときだけ。
  */
 
-import { parseDraftNumber } from "./recordDraft";
+import { parseIntInRange, parsePositiveField } from "./numericField";
 import type { FaqEntry } from "./calcPage";
 import { NATIONAL_GAS_PRICE } from "./nationalGasPrice";
+import { jsonLdString } from "./jsonLd";
+import { formatInt, formatJaDate } from "./format";
 
 export const GAS_COST_PATH = "/gas-cost";
 /** ページ内の計算機への移動先（距離別の目安表の各行からリンクする） */
@@ -44,6 +46,8 @@ export type GasCostResult = {
   fuel: string | null;
   /** ガソリン代 (円) の表示文字列（1 円未満を四捨五入、3 桁区切り） */
   cost: string | null;
+  /** ガソリン代 (円、整数)。cost と同じ値の数値（表示文字列から戻さずに計算へ使う） */
+  costYen: number | null;
   /** 割り勘の人数（2 人以上のときだけ。1 人なら null） */
   people: number | null;
   /** 1 人あたりのガソリン代 (円)。2 人以上のときだけ */
@@ -59,40 +63,19 @@ const LABELS: Record<GasCostField, string> = {
   people: "人数",
 };
 
-/** 必須の欄（距離・燃費・単価）は 0 より大きいこと */
-function parsePositive(field: Exclude<GasCostField, "people">, raw: string): { value: number | null; error?: string } {
-  const parsed = parseDraftNumber(raw);
-  if (parsed.error) return { value: null, error: `${LABELS[field]}は数値で入力してください` };
-  if (parsed.value === null) return { value: null };
-  if (parsed.value <= 0) return { value: null, error: `${LABELS[field]}は 0 より大きい数値で入力してください` };
-  return { value: parsed.value };
-}
-
-/** 人数は 1〜99 の整数。空なら 1 人 */
-function parsePeople(raw: string): { value: number; error?: string } {
-  const parsed = parseDraftNumber(raw);
-  if (!parsed.error && parsed.value === null) return { value: 1 };
-  const n = parsed.value;
-  if (parsed.error || n === null || !Number.isInteger(n) || n < 1 || n > MAX_PEOPLE) {
-    return { value: 1, error: `${LABELS.people}は 1〜${MAX_PEOPLE} の整数で入力してください` };
-  }
-  return { value: n };
-}
-
-const formatInt = (value: number) => value.toLocaleString("ja-JP", { maximumFractionDigits: 0 });
-
 /** 入力中の文字列から計算結果を作る。未入力の欄はエラーにしない（結果が出ないだけ） */
 export function computeGasCost(input: GasCostInput): GasCostResult {
   const errors: GasCostResult["errors"] = {};
   const read = (field: Exclude<GasCostField, "people">) => {
-    const { value, error } = parsePositive(field, input[field]);
+    const { value, error } = parsePositiveField(LABELS[field], input[field]);
     if (error) errors[field] = error;
     return value;
   };
   const distance = read("distance");
   const efficiency = read("efficiency");
   const price = read("price");
-  const peopleParsed = parsePeople(input.people);
+  // 人数は 1〜MAX_PEOPLE の整数。空なら 1 人
+  const peopleParsed = parseIntInRange(LABELS.people, input.people, 1, MAX_PEOPLE, { empty: 1 });
   if (peopleParsed.error) errors.people = peopleParsed.error;
 
   const totalKm = distance != null ? (input.roundTrip ? distance * 2 : distance) : null;
@@ -119,6 +102,7 @@ export function computeGasCost(input: GasCostInput): GasCostResult {
     totalDistance: totalKm != null ? totalKm.toLocaleString("ja-JP", { maximumFractionDigits: 1 }) : null,
     fuel: fuelL != null ? fuelL.toLocaleString("ja-JP", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : null,
     cost: costYen != null ? formatInt(costYen) : null,
+    costYen,
     people,
     perPerson: perPersonYen != null ? formatInt(perPersonYen) : null,
     costPerKm: costPerKm != null ? costPerKm.toFixed(1) : null,
@@ -136,12 +120,6 @@ export const EXAMPLE_HIGH_OCTANE_PRICE: number = NATIONAL_GAS_PRICE.highOctane;
 /** 単価の表示（小数第 1 位まで。181.0 も「181.0」と出す） */
 export function formatPrice(price: number): string {
   return price.toFixed(1);
-}
-
-/** "2026-10-26" → "2026年10月26日" */
-export function formatJaDate(iso: string): string {
-  const [y, m, d] = iso.split("-").map(Number);
-  return `${y}年${m}月${d}日`;
 }
 
 /** 全国平均の調査日（表示用） */
@@ -171,17 +149,29 @@ export const CAR_TYPE_EFFICIENCY_NOTE =
 /** 距離別の目安表の行（距離 km）。検索されやすい距離を並べる */
 export const DISTANCE_TABLE_DISTANCES = [10, 14, 20, 30, 50, 100, 150, 180, 200, 300, 500, 1000] as const;
 
+function exampleResult(distanceKm: number, efficiencyKmPerL: number, roundTrip: boolean, price: number): GasCostResult {
+  return computeGasCost({
+    distance: String(distanceKm),
+    efficiency: String(efficiencyKmPerL),
+    price: String(price),
+    people: "",
+    roundTrip,
+  });
+}
+
 /** 例の単価でのガソリン代（表示用の文字列）。電卓と同じ computeGasCost で求めるので丸めも一致する */
 export function exampleCost(distanceKm: number, efficiencyKmPerL: number, roundTrip = false, price: number = EXAMPLE_PRICE): string {
-  return (
-    computeGasCost({
-      distance: String(distanceKm),
-      efficiency: String(efficiencyKmPerL),
-      price: String(price),
-      people: "",
-      roundTrip,
-    }).cost ?? ""
-  );
+  return exampleResult(distanceKm, efficiencyKmPerL, roundTrip, price).cost ?? "";
+}
+
+/** exampleCost の数値版（円、整数）。出せなければ null */
+export function exampleCostYen(
+  distanceKm: number,
+  efficiencyKmPerL: number,
+  roundTrip = false,
+  price: number = EXAMPLE_PRICE
+): number | null {
+  return exampleResult(distanceKm, efficiencyKmPerL, roundTrip, price).costYen;
 }
 
 /** 距離別の目安表: 行ごとに距離と、車種ごと（CAR_TYPE_EFFICIENCIES の順）のガソリン代（円）の表示文字列 */
@@ -323,5 +313,5 @@ export function buildGasCostJsonLd(): string {
       },
     ],
   };
-  return JSON.stringify(data).replace(/</g, "\\u003c");
+  return jsonLdString(data);
 }

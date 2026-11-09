@@ -14,7 +14,7 @@
 import { localDateString, normalizeDateString } from "../dates";
 import { gaugeBasisOf, gaugeFraction, gaugeScaleOf, type GaugeScale } from "../home/gauge";
 import { monthKeyOf } from "../home/month";
-import { formatYen } from "../home/recent";
+import { formatYenSymbol } from "../format";
 import { hasNumber, hasPositiveNumber, summarize } from "../stats";
 import { DEFAULT_SITE_URL } from "../siteUrl";
 import type { FuelRecord } from "../types";
@@ -127,7 +127,7 @@ export function shareCardModelOf(
 
     const stats: ShareCardStat[] = [{ label: "給油", value: String(inPeriod.length), unit: "回" }];
     if (distance > 0) stats.push({ label: "走行", value: formatDistance(distance), unit: "km" });
-    const costText = costKnown ? formatYen(cost) : null;
+    const costText = costKnown ? formatYenSymbol(cost) : null;
     if (costText) stats.push({ label: "給油代", value: costText, unit: "" });
 
     // 目盛りはヒーローと同じく直近の燃費（外れ値を除く）から決め、表示する値は必ず含める

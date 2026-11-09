@@ -3,10 +3,10 @@
 import type { ReactNode } from "react";
 import { Car, Pencil, Trash2 } from "lucide-react";
 import { Menu, MenuItem } from "@/components/ui";
-import { efficiencyNullReason, formatKm, formatOdometer } from "@/lib/format";
+import { efficiencyNullReason, formatKm, formatOdometer, formatYenSymbol } from "@/lib/format";
 import { formatPricePerUnit } from "@/lib/calculations";
 import { isFuelType } from "@/lib/fillChain";
-import { dayParts, formatEfficiency, formatLiters, formatYen } from "@/lib/history/recordList";
+import { dayParts, formatEfficiency, formatLiters } from "@/lib/history/recordList";
 import { FUEL_TYPE_LABELS, type DistanceMode, type FuelRecord, type Vehicle } from "@/lib/types";
 
 export type RecordDetailProps = {
@@ -52,7 +52,7 @@ export default function RecordDetail({
   const day = dayParts(record.date);
   const liters = formatLiters(record.fuel_amount);
   const efficiency = formatEfficiency(record.fuel_efficiency);
-  const cost = formatYen(record.total_cost);
+  const cost = formatYenSymbol(record.total_cost);
   const price = formatPricePerUnit(record.price_per_unit);
   const hasDistance = typeof record.total_distance === "number" && Number.isFinite(record.total_distance);
   const showOdometer = distanceMode === "odometer" || typeof record.odometer === "number";

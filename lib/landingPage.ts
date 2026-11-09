@@ -7,6 +7,7 @@
  */
 
 import { DEFAULT_SITE_URL } from "./siteUrl";
+import { jsonLdString } from "./jsonLd";
 
 /** 検索結果のタイトル（ルートレイアウトの `%s | FuelLens` を使わず absolute で指定する） */
 export const LANDING_TITLE = "FuelLens｜写真1枚で燃費を記録できる無料の燃費管理アプリ";
@@ -91,5 +92,5 @@ export function buildLandingJsonLd(description: string = LANDING_DESCRIPTION): s
     description,
     offers: { "@type": "Offer", price: "0", priceCurrency: "JPY" },
   };
-  return JSON.stringify(data).replace(/</g, "\\u003c");
+  return jsonLdString(data);
 }

@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useId, useRef, useState, type ReactNode } from "react";
-import { Check, Copy, MessageCircle, RotateCcw, Share2 } from "lucide-react";
-import { SegmentedControl, type SegmentedOption } from "@/components/ui";
+import { useEffect, useId, useRef, useState } from "react";
+import { Check, Copy, MessageCircle, Share2 } from "lucide-react";
+import { CalculatorField, ResetButton, ResultItem, SegmentedControl, type SegmentedOption } from "@/components/ui";
 import { trackEvent } from "@/lib/analytics/events";
 import {
   EMPTY_WARIKAN_INPUT,
@@ -139,42 +139,20 @@ export default function WarikanCalculator() {
     });
   };
 
-  const renderField = ({ field, label, unit, placeholder, hint, inputMode }: FieldDef) => {
-    const id = `${baseId}-${field}`;
-    const error = result.errors[field];
-    return (
-      <div key={field} className="min-w-0">
-        <label htmlFor={id} className="block text-sm font-medium text-ink">
-          {label}
-        </label>
-        <div className="relative mt-1.5">
-          <input
-            id={id}
-            type="text"
-            inputMode={inputMode}
-            autoComplete="off"
-            placeholder={placeholder}
-            value={input[field]}
-            onChange={(e) => update({ [field]: e.target.value })}
-            aria-invalid={error ? true : undefined}
-            aria-describedby={`${id}-hint${error ? ` ${id}-error` : ""}`}
-            className={`num h-11 w-full min-w-0 rounded-xl border bg-ground pl-3 pr-12 text-base text-ink placeholder:text-faint focus:outline-none focus-visible:ring-2 focus-visible:ring-accent ${
-              error ? "border-red-500" : "border-border"
-            }`}
-          />
-          <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-[13px] text-sub">{unit}</span>
-        </div>
-        <p id={`${id}-hint`} className="mt-1 text-xs leading-relaxed text-sub">
-          {hint}
-        </p>
-        {error && (
-          <p id={`${id}-error`} className="mt-1 text-xs text-red-400">
-            {error}
-          </p>
-        )}
-      </div>
-    );
-  };
+  const renderField = ({ field, label, unit, placeholder, hint, inputMode }: FieldDef) => (
+    <CalculatorField
+      key={field}
+      id={`${baseId}-${field}`}
+      label={label}
+      unit={unit}
+      placeholder={placeholder}
+      hint={hint}
+      inputMode={inputMode}
+      value={input[field]}
+      onChange={(value) => update({ [field]: value })}
+      error={result.errors[field]}
+    />
+  );
 
   const roundingLabel = input.rounding === 1 ? "1 円未満" : `${input.rounding} 円未満`;
 
@@ -200,8 +178,8 @@ export default function WarikanCalculator() {
         )}
       </div>
       <dl className="mt-3 grid grid-cols-1 divide-y divide-line overflow-hidden rounded-2xl border border-line bg-ground sm:grid-cols-2 sm:divide-x sm:divide-y-0">
-        <ResultItem label={input.trip === "round" ? "ガソリン代（往復）" : "ガソリン代（片道）"} value={result.fuelCost} />
-        <ResultItem label="合計（ガソリン代＋高速代など）" value={result.total} />
+        <YenResultItem label={input.trip === "round" ? "ガソリン代（往復）" : "ガソリン代（片道）"} value={result.fuelCost} />
+        <YenResultItem label="合計（ガソリン代＋高速代など）" value={result.total} />
       </dl>
 
       {result.perPerson != null && shareUrl && shareText && (
@@ -304,18 +282,13 @@ export default function WarikanCalculator() {
 
       <div className="mt-4 flex items-center justify-between gap-3">
         <p className="text-xs text-sub">入力した値は保存されません。</p>
-        <button
-          type="button"
+        <ResetButton
           onClick={() => {
             setFromShare(false);
             update(EMPTY_WARIKAN_INPUT);
           }}
           disabled={isEmpty}
-          className="inline-flex h-11 shrink-0 items-center gap-1.5 rounded-xl border border-border bg-surface-2 px-4 text-sm font-bold text-ink transition-colors hover:bg-line focus:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          <RotateCcw className="h-4 w-4" aria-hidden="true" />
-          リセット
-        </button>
+        />
       </div>
     </div>
   );
@@ -324,16 +297,7 @@ export default function WarikanCalculator() {
 const SHARE_BUTTON =
   "inline-flex h-11 items-center gap-1.5 rounded-xl border border-border bg-surface-2 px-4 text-sm font-bold text-ink transition-colors hover:bg-line focus:outline-none focus-visible:ring-2 focus-visible:ring-accent";
 
-function ResultItem({ label, value }: { label: string; value: number | null }): ReactNode {
-  return (
-    <div className="flex items-baseline justify-between gap-3 px-4 py-3 sm:block">
-      <dt className="text-[13px] text-sub">{label}</dt>
-      <dd className="flex items-baseline gap-1 sm:mt-1">
-        <span className={`num text-xl font-bold ${value != null ? "text-money" : "text-faint"}`}>
-          {value != null ? formatYen(value) : "--"}
-        </span>
-        <span className="text-[13px] text-sub">円</span>
-      </dd>
-    </div>
-  );
+/** 金額（円）の結果。値が無ければ null（ResultItem が「--」を出す） */
+function YenResultItem({ label, value }: { label: string; value: number | null }) {
+  return <ResultItem label={label} unit="円" value={value != null ? formatYen(value) : null} tone="text-money" />;
 }

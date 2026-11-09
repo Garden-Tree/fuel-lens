@@ -3,10 +3,9 @@
 import { useMemo } from "react";
 import { GroupedList, Section, ValueRow } from "@/components/ui";
 import { formatPricePerUnit } from "@/lib/calculations";
-import { formatPriceDiff } from "@/lib/format";
+import { formatPriceDiff, formatYenSymbol } from "@/lib/format";
 import { monthStartOf, monthSummaryOf } from "@/lib/home/month";
 import { useCurrentMonthKey } from "@/lib/home/useCurrentMonthKey";
-import { formatYen } from "@/lib/home/recent";
 import type { FuelRecord } from "@/lib/types";
 import ShareCardButton from "@/components/share/ShareCardButton";
 
@@ -42,7 +41,7 @@ export default function MonthSummarySection({ records, vehicleName, shareDisable
           <p className="flex min-h-[46px] items-center px-4 text-sm text-sub">この月の給油記録はまだありません</p>
         ) : (
           <>
-            <ValueRow label="給油代" value={formatYen(s.totalCost) ?? "--"} tone={s.totalCost !== null ? "money" : "sub"} />
+            <ValueRow label="給油代" value={formatYenSymbol(s.totalCost) ?? "--"} tone={s.totalCost !== null ? "money" : "sub"} />
             <ValueRow label="給油量" value={s.totalFuel.toFixed(2)} unit={` L・${s.count}回`} />
             <ValueRow
               label="単価"

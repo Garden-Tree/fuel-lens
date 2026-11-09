@@ -70,7 +70,8 @@ export function clearLocalData(storage: Storage | null = browserStorage()): void
   }
 }
 
-function parseArray(raw: string | null): unknown[] {
+/** localStorage の JSON 文字列を配列として読む。無い・壊れている・配列でなければ空配列（lib/migrateLocalData.ts と共有） */
+export function parseArray(raw: string | null): unknown[] {
   if (!raw) return [];
   try {
     const parsed: unknown = JSON.parse(raw);

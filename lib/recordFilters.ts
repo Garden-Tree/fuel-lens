@@ -61,12 +61,23 @@ export function matchesSelectedVehicle(
   selectedVehicleId: string | null | undefined,
   defaultVehicleId: string | null | undefined
 ): boolean {
-  const unclassified = isUnclassifiedRecord(record);
-  if (!selectedVehicleId || selectedVehicleId.startsWith("default-")) {
-    return unclassified;
-  }
-  if (record.vehicle_id === selectedVehicleId) return true;
-  return unclassified && isDefaultVehicleSelected(selectedVehicleId, defaultVehicleId);
+  return matchesVehicleScope(record, {
+    vehicleId: selectedVehicleId || null,
+    includeUnclassified: isDefaultVehicleSelected(selectedVehicleId, defaultVehicleId),
+  });
+}
+
+/**
+ * matchesSelectedVehicle の判定を、組み立て済みの範囲（lib/data/scope.ts の recordScopeOf / RecordScope と同じ形）で行う。
+ * 選択中の車両（ローカル既定車両 default-* を除く）と一致する記録は含め、未分類の記録は includeUnclassified のときだけ含める。
+ */
+export function matchesVehicleScope(
+  record: { vehicle_id?: string | null },
+  scope: { vehicleId: string | null; includeUnclassified: boolean }
+): boolean {
+  const { vehicleId } = scope;
+  if (vehicleId && !vehicleId.startsWith("default-") && record.vehicle_id === vehicleId) return true;
+  return scope.includeUnclassified && isUnclassifiedRecord(record);
 }
 
 /**
