@@ -187,6 +187,17 @@ describe("cloud RecordStore writes", () => {
     expect(op(queries[0], "eq")!.args).toEqual(["id", "r1"]);
   });
 
+  it("update は vehicle_id を UUID 以外（null・ローカルの id）へ変えようとすると送らずに拒否する", async () => {
+    const { records, queries } = setup();
+    for (const vehicle_id of [null, "default-car", "local-vehicle-1"]) {
+      const err = await records.update("r1", { memo: "x", vehicle_id }).catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(DataError);
+      expect(err).toMatchObject({ code: VALIDATION_CODE });
+      expect((err as Error).message).toContain("保存できません");
+    }
+    expect(queries).toHaveLength(0);
+  });
+
   it("remove / removeByVehicle build the delete filters", async () => {
     const { records, queries } = setup();
     await records.remove("r1");

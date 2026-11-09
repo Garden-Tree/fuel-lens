@@ -280,6 +280,12 @@ export function createCloudStores(supabase: SupabaseClient, userId: string): Clo
     async update(id, patch) {
       const columns = pickUpdateColumns(patch);
       if (Object.keys(columns).length === 0) return;
+      if ("vehicle_id" in columns && !isUuid(columns.vehicle_id)) {
+        // add と同じく、ログイン中に vehicle_id=null（未分類）や未確定の車両 ID へ付け替えない
+        throw new DataError("車両情報の読み込みが完了していないため保存できません。しばらく待ってから再度お試しください。", {
+          code: VALIDATION_CODE,
+        });
+      }
       const { error, status } = await supabase.from("fuel_records").update(columns).eq("id", id);
       if (error) throw withStatus(error, status);
     },
