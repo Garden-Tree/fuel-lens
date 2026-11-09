@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { FIRST_RECORD_REASON, efficiencyDeltaOf, heroDisplayOf, heroModelOf } from "@/lib/home/hero";
-import { formatMonthDay, formatShortDate, formatYen, recentRowOf, stationLabel } from "@/lib/home/recent";
+import { formatMonthDay, formatShortDate, recentRowOf, stationLabel } from "@/lib/home/recent";
+import { formatYenSymbol as formatYen } from "@/lib/format";
 import type { FuelRecord } from "@/lib/types";
 
 function rec(id: string, date: string, extra: Partial<FuelRecord> = {}): FuelRecord {

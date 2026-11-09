@@ -37,3 +37,19 @@ export function formatPriceDiff(diff: number): string {
   return `${rounded > 0 ? "+" : "−"}${Math.abs(rounded).toFixed(1)}`;
 }
 
+
+/** 整数の 3 桁区切り（例: 12345.6 → "12,346"）。小数は四捨五入して出さない。公開の計算ツールの金額（円）に使う */
+export function formatInt(value: number): string {
+  return value.toLocaleString("ja-JP", { maximumFractionDigits: 0 });
+}
+
+/** 金額の表示（例: 4920 → 「¥4,920」）。整数に四捨五入する。数値でない・非有限値なら null */
+export function formatYenSymbol(value: number | null | undefined): string | null {
+  return typeof value === "number" && Number.isFinite(value) ? `¥${Math.round(value).toLocaleString("ja-JP")}` : null;
+}
+
+/** "2026-10-26" → "2026年10月26日"（月日はゼロ埋めしない） */
+export function formatJaDate(iso: string): string {
+  const [y, m, d] = iso.split("-").map(Number);
+  return `${y}年${m}月${d}日`;
+}

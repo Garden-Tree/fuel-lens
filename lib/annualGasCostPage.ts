@@ -8,6 +8,7 @@ import { parseDraftNumber } from "./recordDraft";
 import type { FaqEntry } from "./calcPage";
 import { EXAMPLE_PRICE, NATIONAL_PRICE_SURVEY_LABEL, computeGasCost, formatPrice } from "./gasCostPage";
 import { jsonLdString } from "./jsonLd";
+import { formatInt } from "./format";
 
 export const ANNUAL_GAS_COST_PATH = "/annual-gas-cost";
 /** ページの title（「ガソリン代 月いくら」「通勤 ガソリン代 月」の検索に合わせて問いを先頭に置く） */
@@ -78,7 +79,6 @@ function parseDays(raw: string): { value: number | null; error?: string } {
   return { value: n };
 }
 
-const formatInt = (value: number) => value.toLocaleString("ja-JP", { maximumFractionDigits: 0 });
 const formatKm = (value: number) => value.toLocaleString("ja-JP", { maximumFractionDigits: 1 });
 
 /** 入力中の文字列から計算結果を作る。未入力の欄はエラーにしない（結果が出ないだけ） */

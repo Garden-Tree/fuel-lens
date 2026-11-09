@@ -3,7 +3,7 @@
 import { useId, type ReactNode } from "react";
 import { ChevronDown, StickyNote } from "lucide-react";
 import RecordBadges from "@/components/RecordBadges";
-import { efficiencyNullReason } from "@/lib/format";
+import { efficiencyNullReason, formatYenSymbol } from "@/lib/format";
 import { formatPricePerUnit } from "@/lib/calculations";
 import { isFuelType } from "@/lib/fillChain";
 import {
@@ -11,7 +11,6 @@ import {
   formatDistance,
   formatEfficiency,
   formatLiters,
-  formatYen,
   recordElementId,
 } from "@/lib/history/recordList";
 import { FUEL_TYPE_LABELS, type DistanceMode, type FuelRecord } from "@/lib/types";
@@ -54,7 +53,7 @@ export default function RecordRow({ record, distanceMode, showMonth, expanded, o
   const liters = formatLiters(record.fuel_amount);
   const distance = formatDistance(record.total_distance);
   const efficiency = formatEfficiency(record.fuel_efficiency);
-  const cost = formatYen(record.total_cost);
+  const cost = formatYenSymbol(record.total_cost);
   const price = formatPricePerUnit(record.price_per_unit);
   const distanceLabel = distanceMode === "odometer" ? "区間" : "走行距離";
 

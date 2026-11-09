@@ -6,6 +6,7 @@
 import { parseDraftNumber } from "./recordDraft";
 import type { FaqEntry } from "./calcPage";
 import { jsonLdString } from "./jsonLd";
+import { formatInt } from "./format";
 
 export const FUEL_CONVERT_PATH = "/fuel-convert";
 /** ナビ・フッター用の短い名前 */
@@ -80,7 +81,6 @@ export function convertFuelEconomy(value: number, from: FuelUnit, to: FuelUnit):
 
 const format2 = (value: number) => value.toLocaleString("ja-JP", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const format1 = (value: number) => value.toLocaleString("ja-JP", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
-const formatInt = (value: number) => value.toLocaleString("ja-JP", { maximumFractionDigits: 0 });
 
 export type FuelConvertInput = {
   value: string;

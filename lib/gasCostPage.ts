@@ -7,6 +7,7 @@ import { parseDraftNumber } from "./recordDraft";
 import type { FaqEntry } from "./calcPage";
 import { NATIONAL_GAS_PRICE } from "./nationalGasPrice";
 import { jsonLdString } from "./jsonLd";
+import { formatInt, formatJaDate } from "./format";
 
 export const GAS_COST_PATH = "/gas-cost";
 /** ページ内の計算機への移動先（距離別の目安表の各行からリンクする） */
@@ -80,8 +81,6 @@ function parsePeople(raw: string): { value: number; error?: string } {
   return { value: n };
 }
 
-const formatInt = (value: number) => value.toLocaleString("ja-JP", { maximumFractionDigits: 0 });
-
 /** 入力中の文字列から計算結果を作る。未入力の欄はエラーにしない（結果が出ないだけ） */
 export function computeGasCost(input: GasCostInput): GasCostResult {
   const errors: GasCostResult["errors"] = {};
@@ -137,12 +136,6 @@ export const EXAMPLE_HIGH_OCTANE_PRICE: number = NATIONAL_GAS_PRICE.highOctane;
 /** 単価の表示（小数第 1 位まで。181.0 も「181.0」と出す） */
 export function formatPrice(price: number): string {
   return price.toFixed(1);
-}
-
-/** "2026-10-26" → "2026年10月26日" */
-export function formatJaDate(iso: string): string {
-  const [y, m, d] = iso.split("-").map(Number);
-  return `${y}年${m}月${d}日`;
 }
 
 /** 全国平均の調査日（表示用） */

@@ -10,6 +10,7 @@ import type { ToolOgImageContent } from "./og/renderToolOgImage";
 import { CAR_TYPE_EFFICIENCIES, GAS_COST_CALCULATOR_ID, GAS_COST_PATH, exampleCost, formatPrice } from "./gasCostPage";
 import { NATIONAL_GAS_PRICE } from "./nationalGasPrice";
 import { jsonLdString } from "./jsonLd";
+import { formatInt, formatJaDate } from "./format";
 
 export const ROUTE_GAS_COST_PATH = "/route-gas-cost";
 export const SITE_ORIGIN = "https://fuel-lens.gadelog.com";
@@ -21,12 +22,6 @@ export const ROUTE_PRICE: number = NATIONAL_GAS_PRICE.regular;
 /** 単価の表示（例: 全国平均 170.1円/L（2026年10月26日調査）） */
 export function routePriceLabel(): string {
   return `全国平均 ${formatPrice(ROUTE_PRICE)}円/L（${formatJaDate(NATIONAL_GAS_PRICE.surveyDate)}調査）`;
-}
-
-/** YYYY-MM-DD を「2026年10月26日」にする */
-export function formatJaDate(iso: string): string {
-  const [y, m, d] = iso.split("-").map(Number);
-  return `${y}年${m}月${d}日`;
 }
 
 /** 距離・高速代の出典（ページ下部に出す） */
@@ -177,8 +172,8 @@ export function reverseRouteName(route: Pick<RouteEntry, "name">): string {
   return `${b}→${a}`;
 }
 
-/** 金額（円、整数）の 3 桁区切り */
-export const yen = (value: number) => value.toLocaleString("ja-JP", { maximumFractionDigits: 0 });
+/** 金額（円、整数）の 3 桁区切り。lib/format.ts の formatInt（ページと app/route-gas-cost で呼び出しが多いので別名で出す） */
+export const yen = formatInt;
 
 /** ガソリン代（円、整数）。exampleCost（= computeGasCost）の表示文字列から戻すので丸めは計算機と同じ */
 export function gasCostYen(km: number, efficiency: number, roundTrip: boolean, price: number = ROUTE_PRICE): number {

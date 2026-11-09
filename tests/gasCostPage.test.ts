@@ -12,7 +12,6 @@ import {
   buildGasCostJsonLd,
   commuteExample,
   computeGasCost,
-  formatJaDate,
   formatPrice,
   formulaExample,
   quickAnswer,
@@ -23,6 +22,7 @@ import {
   type GasCostInput,
 } from "@/lib/gasCostPage";
 import { NATIONAL_GAS_PRICE } from "@/lib/nationalGasPrice";
+import { formatJaDate } from "@/lib/format";
 
 const base: GasCostInput = { distance: "300", efficiency: "15", price: "170", people: "", roundTrip: false };
 

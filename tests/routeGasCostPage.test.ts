@@ -11,7 +11,6 @@ import {
   ROUTE_PRICE,
   buildRouteGasCostJsonLd,
   displayKm,
-  formatJaDate,
   reverseRouteName,
   routeCostTable,
   routeGasCostLink,
@@ -22,6 +21,7 @@ import {
   standardTotal,
   type RouteEntry,
 } from "@/lib/routeGasCostPage";
+import { formatJaDate } from "@/lib/format";
 
 describe("区間別の表", () => {
   it("距離は出典の値を 5 km 単位に丸める", () => {

@@ -5,6 +5,7 @@
 import { normalizeDateString } from "../dates";
 import { isFuelType } from "../fillChain";
 import { FUEL_TYPE_LABELS, type FuelRecord } from "../types";
+import { formatYenSymbol } from "../format";
 
 /** ホームに出す最近の記録の件数 */
 export const RECENT_RECORD_COUNT = 3;
@@ -31,11 +32,6 @@ export function stationLabel(station: string | null | undefined): string {
   return s ? s : "店舗名なし";
 }
 
-/** 金額の表示（例: 「¥4,920」）。数値でなければ null */
-export function formatYen(value: number | null | undefined): string | null {
-  return typeof value === "number" && Number.isFinite(value) ? `¥${Math.round(value).toLocaleString("ja-JP")}` : null;
-}
-
 export type RecentRow = {
   id: string;
   title: string;
@@ -59,7 +55,7 @@ export function recentRowOf(record: FuelRecord): RecentRow {
     title: stationLabel(record.gas_station),
     dateLabel: formatMonthDay(record.date),
     fuelLabel: isFuelType(record.fuel_type) ? FUEL_TYPE_LABELS[record.fuel_type] : null,
-    costLabel: formatYen(record.total_cost),
+    costLabel: formatYenSymbol(record.total_cost),
     efficiency: typeof eff === "number" && Number.isFinite(eff) && eff > 0 ? eff : null,
     partial: record.is_full === false,
   };

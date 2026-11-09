@@ -8,6 +8,7 @@ import type { FaqEntry } from "./calcPage";
 import type { ToolOgImageContent } from "./og/renderToolOgImage";
 import { EXAMPLE_PRICE, MAX_PEOPLE, computeGasCost, formatPrice } from "./gasCostPage";
 import { jsonLdString } from "./jsonLd";
+import { formatInt } from "./format";
 
 export const WARIKAN_PATH = "/warikan";
 export const WARIKAN_PAGE_TITLE = "ガソリン代の割り勘計算｜距離・燃費・人数から1人いくらか計算 | FuelLens";
@@ -185,7 +186,8 @@ export function computeWarikan(input: WarikanInput): WarikanResult {
   };
 }
 
-export const formatYen = (value: number) => value.toLocaleString("ja-JP", { maximumFractionDigits: 0 });
+/** 金額（円、整数）の 3 桁区切り。lib/format.ts の formatInt の別名 */
+export const formatYen = formatInt;
 
 // ---- 共有用のクエリ ----
 

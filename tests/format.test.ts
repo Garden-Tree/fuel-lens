@@ -3,9 +3,12 @@ import { describe, expect, it } from "vitest";
 import {
   efficiencyNullReason,
   formatDateLabel,
+  formatInt,
+  formatJaDate,
   formatKm,
   formatOdometer,
   formatPriceDiff,
+  formatYenSymbol,
 } from "@/lib/format";
 
 describe("efficiencyNullReason", () => {
@@ -77,3 +80,35 @@ describe("formatPriceDiff", () => {
   });
 });
 
+
+describe("formatInt", () => {
+  it("3 桁区切りで小数を出さない（四捨五入）", () => {
+    expect(formatInt(0)).toBe("0");
+    expect(formatInt(1234)).toBe("1,234");
+    expect(formatInt(12345.4)).toBe("12,345");
+    expect(formatInt(12345.6)).toBe("12,346");
+    expect(formatInt(1234567)).toBe("1,234,567");
+  });
+});
+
+describe("formatYenSymbol", () => {
+  it("¥ を付けて整数に丸める", () => {
+    expect(formatYenSymbol(4920)).toBe("¥4,920");
+    expect(formatYenSymbol(1117.5)).toBe("¥1,118");
+    expect(formatYenSymbol(0)).toBe("¥0");
+  });
+
+  it("数値でない・非有限値は null", () => {
+    expect(formatYenSymbol(null)).toBeNull();
+    expect(formatYenSymbol(undefined)).toBeNull();
+    expect(formatYenSymbol(Number.NaN)).toBeNull();
+    expect(formatYenSymbol(Number.POSITIVE_INFINITY)).toBeNull();
+  });
+});
+
+describe("formatJaDate", () => {
+  it("ISO 日付を年月日にする（ゼロ埋めしない）", () => {
+    expect(formatJaDate("2026-10-26")).toBe("2026年10月26日");
+    expect(formatJaDate("2026-01-05")).toBe("2026年1月5日");
+  });
+});
