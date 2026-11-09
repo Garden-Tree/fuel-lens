@@ -118,14 +118,19 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
-  // Escape で確認ダイアログをキャンセル
+  // Escape で確認ダイアログをキャンセル。
+  // 下にある Modal も window で Escape を聞いているので、キャプチャ段階で先に受けて伝播を止める
+  // （止めないと 1 回の Escape で確認と下の Modal の両方が閉じる）
   useEffect(() => {
     if (!confirmState) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') closeConfirm(false);
+      if (e.key !== 'Escape') return;
+      e.stopImmediatePropagation();
+      e.stopPropagation();
+      closeConfirm(false);
     };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
   }, [confirmState, closeConfirm]);
 
   // アンマウント時にタイマーを掃除
