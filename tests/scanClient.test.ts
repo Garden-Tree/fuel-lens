@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // node 環境ではブラウザ向けの圧縮ライブラリを読み込まない（requestAnalyze には不要）
@@ -6,12 +8,14 @@ vi.mock("browser-image-compression", () => ({ default: vi.fn() }));
 import {
   ANALYZE_NETWORK_ERROR_MESSAGE,
   ANALYZE_TIMEOUT_MESSAGE,
+  ANALYZE_TIMEOUT_MS,
   IMAGE_COMPRESSION_OPTIONS,
   PAIR_IMAGE_COMPRESSION_OPTIONS,
   buildAnalyzeRequestBody,
   requestAnalyze,
 } from "@/lib/scan/analyzeClient";
 import { MAX_PAIR_IMAGE_BYTES, MAX_PAIR_TOTAL_BASE64_LENGTH } from "@/lib/analyze";
+import { ANALYZE_TOTAL_BUDGET_MS } from "@/lib/server/analyze/handler";
 
 const DATA_URL = "data:image/jpeg;base64,AAAA";
 
@@ -180,5 +184,15 @@ describe("圧縮設定", () => {
     // 2 枚を Base64（4/3 倍）にしても合計の上限より小さい
     expect(((perImage * 1024 * 1024 * 4) / 3) * 2).toBeLessThan(MAX_PAIR_TOTAL_BASE64_LENGTH);
     expect(PAIR_IMAGE_COMPRESSION_OPTIONS.fileType).toBe("image/jpeg");
+  });
+});
+
+describe("ANALYZE_TIMEOUT_MS", () => {
+  it("サーバーの時間予算より長く、関数の上限（route.ts の maxDuration）以内", () => {
+    expect(ANALYZE_TIMEOUT_MS).toBeGreaterThan(ANALYZE_TOTAL_BUDGET_MS);
+    const route = readFileSync(join(process.cwd(), "app/api/analyze/route.ts"), "utf8");
+    const maxDuration = Number(/export const maxDuration = (\d+)/.exec(route)?.[1]);
+    expect(maxDuration).toBeGreaterThan(0);
+    expect(ANALYZE_TIMEOUT_MS).toBeLessThanOrEqual(maxDuration * 1000);
   });
 });
