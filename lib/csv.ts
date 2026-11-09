@@ -7,6 +7,7 @@
  * - Excel での文字化けを防ぐため、先頭に UTF-8 の BOM を付ける。
  */
 
+import { localDateString } from "./dates";
 import { isFuelType } from "./fillChain";
 import { FUEL_TYPE_LABELS, type FuelRecord, type Vehicle } from "./types";
 
@@ -133,6 +134,14 @@ export function buildRecordsCsv(
 /** ファイル名に使えない文字を `_` に置き換える（英数字・漢字・かな・長音記号は残す） */
 export function toSafeFilenamePart(value: string): string {
   return value.replace(/[^a-zA-Z0-9\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}ー]/gu, "_");
+}
+
+/**
+ * 履歴画面の CSV のファイル名 `fuellens_<車両名>_YYYY-MM-DD.csv`。日付はローカル暦
+ * （toISOString は UTC なので、日本時間の 0〜9 時に出すと前日の日付になる）
+ */
+export function historyCsvFilename(vehicleName: string, now: Date = new Date()): string {
+  return `fuellens_${toSafeFilenamePart(vehicleName)}_${localDateString(now)}.csv`;
 }
 
 /** テキストをファイルとしてダウンロードさせる（ブラウザ専用） */

@@ -126,7 +126,10 @@ export function distanceModeOf(vehicle: Pick<Vehicle, "distance_mode"> | null | 
 // 並び順
 // ------------------------------------------------------------------
 
-type ChainSortable = Pick<FuelRecord, "id" | "date" | "odometer" | "created_at">;
+type ChainSortable = Pick<FuelRecord, "id" | "date"> & Partial<Pick<FuelRecord, "odometer" | "created_at">>;
+
+/** 同じ日付の記録の並びを決めるのに要る列（オドメーター・created_at は無くてもよい。無ければ後ろ） */
+export type ChainTiebreakable = Pick<FuelRecord, "id"> & Partial<Pick<FuelRecord, "odometer" | "created_at">>;
 
 function finiteOrNull(v: unknown): number | null {
   return typeof v === "number" && Number.isFinite(v) ? v : null;
@@ -157,6 +160,14 @@ function compareString(a: string, b: string): number {
 export function compareForChain(a: ChainSortable, b: ChainSortable): number {
   const byDate = compareString(typeof a.date === "string" ? a.date : "", typeof b.date === "string" ? b.date : "");
   if (byDate !== 0) return byDate;
+  return compareChainTiebreak(a, b);
+}
+
+/**
+ * 同じ日付の記録どうしの比較（compareForChain の日付より後ろの段）: オドメーター昇順 → created_at 昇順 → id 昇順。
+ * 一覧・統計の日付順（sortRecordsByDateDesc / sortByDateAsc）も同日はこれで並べ、連鎖計算と順序を揃える
+ */
+export function compareChainTiebreak(a: ChainTiebreakable, b: ChainTiebreakable): number {
   const byOdo = compareNullableNumber(finiteOrNull(a.odometer), finiteOrNull(b.odometer));
   if (byOdo !== 0) return byOdo;
   const byCreated = compareNullableNumber(timestampOrNull(a.created_at), timestampOrNull(b.created_at));

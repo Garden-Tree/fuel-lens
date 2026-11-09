@@ -7,8 +7,12 @@ import { TRIAL_REMAINING_HEADER, parseTrialRemaining } from "@/lib/trial";
  * 失敗はすべて日本語メッセージの Error で投げる（英語の生エラーは console にだけ出す）。
  */
 
-/** /api/analyze 呼び出しのクライアント側タイムアウト（サーバー側は Gemini 30秒 + 関数全体 60秒） */
-export const ANALYZE_TIMEOUT_MS = 45_000;
+/**
+ * /api/analyze 呼び出しのクライアント側タイムアウト。
+ * サーバーは時間予算 ANALYZE_TOTAL_BUDGET_MS（55 秒、lib/server/analyze/handler.ts）の間は成功しうるので、
+ * それより短く切らない。関数の上限 maxDuration（60 秒、app/api/analyze/route.ts）に合わせる
+ */
+export const ANALYZE_TIMEOUT_MS = 60_000;
 
 export const ANALYZE_TIMEOUT_MESSAGE = "解析がタイムアウトしました。通信環境を確認して、もう一度お試しください。";
 export const ANALYZE_NETWORK_ERROR_MESSAGE = "サーバーに接続できませんでした。通信環境を確認して、もう一度お試しください。";

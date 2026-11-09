@@ -181,6 +181,8 @@ describe("toNonNegativeNumber", () => {
     expect(toNonNegativeNumber("45.6L")).toBe(45.6);
     expect(toNonNegativeNumber(" 6,000 円")).toBe(6000);
     expect(toNonNegativeNumber("150")).toBe(150);
+    expect(toNonNegativeNumber("1,234.5")).toBe(1234.5);
+    expect(toNonNegativeNumber(".5")).toBe(0.5);
   });
 
   it("returns null for negative, non-finite and non-numeric input", () => {
@@ -189,6 +191,12 @@ describe("toNonNegativeNumber", () => {
     expect(toNonNegativeNumber(NaN)).toBeNull();
     expect(toNonNegativeNumber(Infinity)).toBeNull();
     expect(toNonNegativeNumber("12abc34")).toBeNull();
+    // 16 進・指数・小数のカンマ・桁区切りの位置が不正
+    expect(toNonNegativeNumber("0x10")).toBeNull();
+    expect(toNonNegativeNumber("1e3")).toBeNull();
+    expect(toNonNegativeNumber("45,6")).toBeNull();
+    expect(toNonNegativeNumber("1,23,456")).toBeNull();
+    expect(toNonNegativeNumber("1.2.3")).toBeNull();
     expect(toNonNegativeNumber("-")).toBeNull();
     expect(toNonNegativeNumber("")).toBeNull();
     expect(toNonNegativeNumber("   ")).toBeNull();

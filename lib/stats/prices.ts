@@ -112,7 +112,7 @@ function averagePrice(records: ReadonlyArray<FuelRecord>): number | null {
 
 export type PricedRecord = { record: FuelRecord; date: string; price: number };
 
-/** 単価のある・日付の有効な記録を日付の昇順（同日は id 順。sortByDateAsc と同じ）で返す */
+/** 単価のある・日付の有効な記録を日付の昇順（同日は連鎖計算の順。sortByDateAsc と同じ）で返す */
 export function pricedRecordsAsc(records: ReadonlyArray<FuelRecord>): PricedRecord[] {
   const out: PricedRecord[] = [];
   for (const record of sortByDateAsc(records)) {

@@ -8,6 +8,7 @@ import {
   escapeCsvField,
   formatCsvNumber,
   formatRecordExtraCsvFields,
+  historyCsvFilename,
   toSafeFilenamePart,
 } from "@/lib/csv";
 import { parseCsvRows } from "@/lib/importers/csvParse";
@@ -217,5 +218,12 @@ describe("toSafeFilenamePart", () => {
   it("keeps Japanese and alphanumerics and replaces the rest", () => {
     expect(toSafeFilenamePart("マイカー 1/2")).toBe("マイカー_1_2");
     expect(toSafeFilenamePart("軽トラ")).toBe("軽トラ");
+  });
+});
+
+describe("historyCsvFilename", () => {
+  it("日付はローカル暦（日本時間の朝 0〜9 時でも前日の UTC 日付にしない）", () => {
+    const earlyMorning = new Date(2026, 10, 9, 0, 30); // ローカルの 2026-11-09 00:30
+    expect(historyCsvFilename("マイカー 1/2", earlyMorning)).toBe("fuellens_マイカー_1_2_2026-11-09.csv");
   });
 });

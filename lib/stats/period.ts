@@ -5,6 +5,7 @@
 
 import type { FuelRecord } from "../types";
 import { localDateString, normalizeDateString, subtractMonthsClamped } from "../dates";
+import { compareChainTiebreak, type ChainTiebreakable } from "../fillChain";
 
 /** 期間フィルタの種別（全期間 / 1年 / 6ヶ月 / 3ヶ月） */
 export type Period = "all" | "1y" | "6m" | "3m";
@@ -71,13 +72,13 @@ export function filterByPeriod<T extends Pick<FuelRecord, "date">>(
 
 /**
  * 日付の昇順に並び替える。日付不明の記録は末尾に置く。
- * 同一日付は id の昇順で安定化する。
+ * 同一日付は連鎖計算と同じ順（lib/fillChain.ts の compareChainTiebreak: オドメーター → created_at → id）にする。
  */
-export function sortByDateAsc<T extends Pick<FuelRecord, "date" | "id">>(records: ReadonlyArray<T>): T[] {
+export function sortByDateAsc<T extends Pick<FuelRecord, "date"> & ChainTiebreakable>(records: ReadonlyArray<T>): T[] {
   return [...records].sort((a, b) => {
     const da = normalizeDateString(a.date);
     const db = normalizeDateString(b.date);
-    if (da === db) return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+    if (da === db) return compareChainTiebreak(a, b);
     if (da === null) return 1;
     if (db === null) return -1;
     return da < db ? -1 : 1;

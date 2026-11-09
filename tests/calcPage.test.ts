@@ -47,6 +47,33 @@ describe("computeCalc", () => {
     expect(r.efficiency).toBeNull();
   });
 
+  it("上限を超える入力・桁外れの結果は ∞ や 1e+300 を出さずに日本語のエラーにする", () => {
+    const huge = "9".repeat(301);
+    const r = computeCalc({ distance: huge, amount: huge, cost: huge });
+    expect(r.errors).toEqual({
+      distance: "走行距離は 100,000 以下で入力してください",
+      amount: "給油量は 1,000 以下で入力してください",
+      cost: "支払総額は 10,000,000 以下で入力してください",
+    });
+    expect(r).toMatchObject({ efficiency: null, pricePerUnit: null, costPerKm: null });
+
+    // 給油量が極端に少ない（燃費が 1,000 km/L 超・∞）
+    for (const amount of ["0.00001", `0.${"0".repeat(320)}1`]) {
+      const tiny = computeCalc({ distance: "400", amount, cost: "4000" });
+      expect(tiny.efficiency).toBeNull();
+      expect(tiny.pricePerUnit).toBeNull();
+      expect(tiny.errors.amount).toBeDefined();
+      expect(JSON.stringify(tiny)).not.toMatch(/Infinity|∞|e\+/);
+      expect(calcRecordHref({ distance: "400", amount, cost: "4000" })).toBeNull();
+    }
+
+    // 上限ちょうどは計算する
+    expect(computeCalc({ distance: "100000", amount: "1000", cost: "10000000" })).toMatchObject({
+      errors: {},
+      efficiency: "100.00",
+    });
+  });
+
   it("オドメーターらしい距離には注意を出す", () => {
     expect(computeCalc({ distance: "45000", amount: "40", cost: "" }).warning).toContain("オドメーター");
   });

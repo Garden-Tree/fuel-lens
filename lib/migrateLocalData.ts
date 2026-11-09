@@ -258,11 +258,20 @@ export function clearMigrationState(userId: string): void {
   }
 }
 
-/** 退避キーの内容を元キーへマージして戻す（失敗時の復元）。 */
-function mergeBack(originalKey: string, pendingKey: string) {
-  const pendingRaw = localStorage.getItem(pendingKey);
-  if (!pendingRaw) return;
-  const pending = parseArray(pendingRaw);
+/**
+ * 退避キーの内容を元キーへマージして戻す（失敗時の復元）。
+ * inMemory を渡すと退避キーを読み直さずにそれを戻す（退避キーへの進捗の書き込みが失敗して、
+ * 挿入済みの分が退避キーに残っている場合に、それを二重に戻さないため）。
+ */
+function mergeBack(originalKey: string, pendingKey: string, inMemory?: readonly unknown[]) {
+  let pending: unknown[];
+  if (inMemory) {
+    pending = [...inMemory];
+  } else {
+    const pendingRaw = localStorage.getItem(pendingKey);
+    if (!pendingRaw) return;
+    pending = parseArray(pendingRaw);
+  }
   if (pending.length === 0) {
     // 解析不能な残骸は捨てる
     localStorage.removeItem(pendingKey);
@@ -277,6 +286,13 @@ function mergeBack(originalKey: string, pendingKey: string) {
   } catch (e) {
     // 書き戻せなかった場合は退避キーを残し、次回に再試行できるようにする
     console.error("ローカルデータの復元に失敗しました:", e);
+    if (inMemory) {
+      try {
+        localStorage.setItem(pendingKey, JSON.stringify(pending));
+      } catch {
+        // ベストエフォート
+      }
+    }
     return;
   }
   localStorage.removeItem(pendingKey);
@@ -288,10 +304,20 @@ async function runMigration(supabase: SupabaseClient, userId: string): Promise<M
 
   // --- 1. ローカルキーを「移行中」キーへ移動 ---
   // ここはクロスタブロックの中なので、移行中キーに残っているデータは前回クラッシュ分と断定でき、取り込んでよい。
-  const pendingRecordsRaw = localStorage.getItem(recKey);
-  const pendingVehiclesRaw = localStorage.getItem(vehKey);
-  const freshRecordsRaw = localStorage.getItem(LOCAL_RECORDS_KEY);
-  const freshVehiclesRaw = localStorage.getItem(LOCAL_VEHICLES_KEY);
+  // ストレージが使えない（ブロック・プライベートモード）なら、移行するローカルデータは無いものとして扱う
+  let pendingRecordsRaw: string | null;
+  let pendingVehiclesRaw: string | null;
+  let freshRecordsRaw: string | null;
+  let freshVehiclesRaw: string | null;
+  try {
+    pendingRecordsRaw = localStorage.getItem(recKey);
+    pendingVehiclesRaw = localStorage.getItem(vehKey);
+    freshRecordsRaw = localStorage.getItem(LOCAL_RECORDS_KEY);
+    freshVehiclesRaw = localStorage.getItem(LOCAL_VEHICLES_KEY);
+  } catch (e) {
+    console.error("ローカルデータの読み込みに失敗しました:", e);
+    return NOOP_RESULT;
+  }
 
   if (!pendingRecordsRaw && !pendingVehiclesRaw && !freshRecordsRaw && !freshVehiclesRaw) {
     return NOOP_RESULT;
@@ -318,9 +344,12 @@ async function runMigration(supabase: SupabaseClient, userId: string): Promise<M
   localStorage.removeItem(LOCAL_RECORDS_KEY);
   localStorage.removeItem(LOCAL_VEHICLES_KEY);
 
+  // まだクラウドへ入れていない記録（チャンクの挿入が成功するたびに縮める）。
+  // 失敗時はこれを戻し、退避キーは読み直さない（進捗の書き込みが失敗していると挿入済みの分が残っているため）
+  let remainingRecords: LocalRecordRaw[] = localRecords;
   const restore = () => {
     try {
-      mergeBack(LOCAL_RECORDS_KEY, recKey);
+      mergeBack(LOCAL_RECORDS_KEY, recKey, remainingRecords);
       mergeBack(LOCAL_VEHICLES_KEY, vehKey);
     } catch (e) {
       console.error("ローカルデータの復元に失敗しました:", e);
@@ -425,8 +454,8 @@ async function runMigration(supabase: SupabaseClient, userId: string): Promise<M
       migratedRecords += chunk.length;
       // 挿入済みチャンクを退避データから取り除き、途中失敗時の再試行で二重登録しない
       // （payload と localRecords は同じ配列から 1:1 で作られているので添字が一致する）
-      const remaining = localRecords.slice(i + CHUNK);
-      if (remaining.length > 0) localStorage.setItem(recKey, JSON.stringify(remaining));
+      remainingRecords = localRecords.slice(i + CHUNK);
+      if (remainingRecords.length > 0) localStorage.setItem(recKey, JSON.stringify(remainingRecords));
       else localStorage.removeItem(recKey);
     }
 

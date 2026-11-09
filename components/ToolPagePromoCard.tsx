@@ -1,12 +1,15 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { trackEvent, type CtaPage } from "@/lib/analytics/events";
 import { fuelDiscountSavings, savingsText, type ToolPagePromo } from "@/lib/promo/toolPage";
 
 /**
  * 公開ツールページの計算結果の下に出す提携先の紹介（PR）。広告であることを「PR」と開示文で明示する。
  * リンク（href）が無ければ何も出さない。表示とクリックを GA4 に送る（promo_impression / promo_click）。
+ * promo_impression は、カードが半分以上見えたときに、マウント中は提携先ごとに 1 回だけ送る
+ * （結果の出し直しや提携先の切り替えで何度も送らない。画面の下の方で見られていないカードは数えない）。
+ * IntersectionObserver が無い環境では表示したときに送る。
  */
 export default function ToolPagePromoCard({
   promo,
@@ -21,14 +24,38 @@ export default function ToolPagePromoCard({
   const href = promo?.href ?? null;
   const promoId = promo?.id ?? null;
 
+  const cardRef = useRef<HTMLElement>(null);
+  const sentIds = useRef(new Set<string>());
+
   useEffect(() => {
-    if (href && promoId) trackEvent("promo_impression", { promo_id: promoId, page });
+    if (!href || !promoId || sentIds.current.has(promoId)) return;
+    const send = () => {
+      if (sentIds.current.has(promoId)) return;
+      sentIds.current.add(promoId);
+      trackEvent("promo_impression", { promo_id: promoId, page });
+    };
+    const el = cardRef.current;
+    if (!el || typeof IntersectionObserver === "undefined") {
+      send();
+      return;
+    }
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((e) => e.isIntersecting && e.intersectionRatio >= 0.5)) {
+          send();
+          observer.disconnect();
+        }
+      },
+      { threshold: 0.5 }
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
   }, [href, promoId, page]);
 
   if (!promo || !href) return null;
   const savings = savingsText(fuelDiscountSavings(liters, promo));
   return (
-    <aside aria-label="PR" className="mt-3 rounded-2xl border border-line bg-ground px-4 py-3">
+    <aside ref={cardRef} aria-label="PR" className="mt-3 rounded-2xl border border-line bg-ground px-4 py-3">
       <p className="text-sm leading-6 text-ink">
         <span className="mr-2 inline-flex rounded-md border border-line bg-surface-2 px-1.5 py-0.5 align-middle text-xs font-bold text-sub">
           PR

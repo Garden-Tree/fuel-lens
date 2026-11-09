@@ -13,7 +13,8 @@ import {
  * - 写真は選んだ順に 1 枚ずつ「圧縮 → 解析」する。確認中の 1 枚（current）の次の 1 枚までを先に読み取っておく（先読みは 1 枚だけ）
  * - 解析リクエストは RequestPacer でペース配分し（直近 62 秒に 5 回まで）、429 は Retry-After だけ待って自動で再試行する。
  *   待っている間は 1 秒ごとに残り時間（waitMs）を知らせる
- * - 401 はセッション切れなので、残りを中止して終える（reason: "unauthorized"）
+ * - 401 はセッション切れなので、残りを中止して終える（reason: "unauthorized"）。
+ *   お試しの IP ごとの 1 日の上限（429 code: TRIAL_IP_LIMITED）も待っても解けないので、再試行せず同じく中止する
  * - それ以外の失敗（読み取れない・タイムアウト・通信エラー）はその写真を "failed" にして、手動入力かスキップを選べるようにする
  * - 確認中の写真の保存・スキップで次へ進む。中止（abort）は進行中のリクエストと待ちを止める
  */
@@ -51,6 +52,11 @@ export type BatchState = {
   phase: BatchPhase;
 };
 
+/** お試しの IP ごとの 1 日の上限（/api/analyze の 429 code: TRIAL_IP_LIMITED）か。本文は信頼しないので型を確かめる */
+function isTrialIpLimited(body: unknown): boolean {
+  return typeof body === "object" && body !== null && (body as Record<string, unknown>).code === "TRIAL_IP_LIMITED";
+}
+
 /** 終わったときの結果 */
 export type BatchEnd = {
   reason: "finished" | "aborted" | "unauthorized";
@@ -59,7 +65,7 @@ export type BatchEnd = {
   skipped: number;
   /** 中止で読み取り・確認をしなかった枚数（確認中だった 1 枚を含む） */
   cancelled: number;
-  /** unauthorized のときの案内（日本語） */
+  /** unauthorized（401・お試しの 1 日の上限）のときの案内（日本語） */
   message: string | null;
 };
 
@@ -252,6 +258,14 @@ export function createBatchController(
         }
         if (signal.aborted) return;
 
+        if (res.status === 429 && isTrialIpLimited(res.body)) {
+          // お試しの 1 日の上限。Retry-After は最大 24 時間なので待たずに残りを中止する
+          stop("aborted", {
+            reason: "unauthorized",
+            message: analyzeErrorMessage(429, res.body, { isSignedIn: deps.isSignedIn, retryAfter: res.retryAfter }),
+          });
+          return;
+        }
         if (res.status === 429) {
           rateLimited += 1;
           if (rateLimited > MAX_RATE_LIMIT_RETRIES) {

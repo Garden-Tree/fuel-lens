@@ -150,6 +150,17 @@ describe("sortRecordsByDateDesc", () => {
     expect(sortRecordsByDateDesc(list).map(x => x.id)).toEqual(["b", "a", "x3", "x2", "x1"]);
   });
 
+  it("同じ日付は連鎖計算の順（オドメーター → created_at）の逆に並べ、ランダムな id に左右されない", () => {
+    const b = { id: "bbbbbbbb-0000-4000-8000-000000000000", date: "2026-10-01", odometer: 1300, created_at: "2026-10-01T01:00:00Z" };
+    const c = { id: "00000000-0000-4000-8000-000000000000", date: "2026-10-01", odometer: 1400, created_at: "2026-10-01T05:00:00Z" };
+    expect(sortRecordsByDateDesc([b, c]).map(x => x.id)).toEqual([c.id, b.id]);
+    expect(sortRecordsByDateDesc([c, b]).map(x => x.id)).toEqual([c.id, b.id]);
+    // オドメーターが無ければ created_at で決める
+    const b2 = { ...b, odometer: null };
+    const c2 = { ...c, odometer: null };
+    expect(sortRecordsByDateDesc([b2, c2]).map(x => x.id)).toEqual([c.id, b.id]);
+  });
+
   it("does not mutate the input", () => {
     const list = [r("a", "2026-01-01"), r("b", "2026-02-01")];
     sortRecordsByDateDesc(list);

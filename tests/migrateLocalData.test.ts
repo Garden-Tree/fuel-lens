@@ -149,6 +149,19 @@ describe("migrateLocalData — guards", () => {
     expect(queries).toHaveLength(0);
   });
 
+  it("ストレージの読み込みが失敗する（ブロック）なら、移行するデータは無いものとして no-op で終える", async () => {
+    // ロックのリース（fuel_lens_migration_lock_*）以外の読み込みを失敗させる
+    const getItem = localStorageStub.getItem;
+    localStorageStub.getItem = (k: string) => {
+      if (k.startsWith("fuel_lens_migration_lock_")) return getItem(k);
+      throw new DOMException("blocked", "SecurityError");
+    };
+    const { client, queries } = makeSupabase(() => ({ data: [] }));
+    const r = await migrateLocalData(client, nextUser());
+    expect(r).toEqual({ migratedVehicles: 0, migratedRecords: 0, didWrite: false });
+    expect(queries).toHaveLength(0);
+  });
+
   it("cleans up unparsable local data without calling supabase", async () => {
     localStorageStub.setItem(LOCAL_RECORDS_KEY, "{not json");
     localStorageStub.setItem(LOCAL_VEHICLES_KEY, '{"not":"an array"}');
@@ -320,6 +333,35 @@ describe("migrateLocalData — failure / retry", () => {
     expect(queries.filter((q) => q.table === "vehicles" && op(q, "insert"))).toHaveLength(0);
     expect(retry.insertedRecords[0]).toMatchObject({ vehicle_id: UUID_BIKE });
     expect(localStorageStub.store.size).toBe(0);
+  });
+});
+
+describe("migrateLocalData — progress write failure", () => {
+  it("挿入済みチャンクの進捗を書けずに失敗しても、挿入済みの記録をローカルへ戻さない（再試行で二重登録しない）", async () => {
+    // 150 件 = 100 件 + 50 件の 2 チャンク
+    const records = Array.from({ length: 150 }, (_, i) => ({ id: `r${i}`, date: "2026-09-01", fuel_amount: i + 1 }));
+    localStorageStub.setItem(LOCAL_RECORDS_KEY, JSON.stringify(records));
+
+    const userId = nextUser();
+    const recKey = `${LOCAL_RECORDS_KEY}_migrating_${userId}`;
+    // 退避（全件）の書き込みは通し、1 チャンク目の後の進捗（残り 50 件）の書き込みで容量超過にする
+    const setItem = localStorageStub.setItem;
+    localStorageStub.setItem = (k: string, v: string) => {
+      if (k === recKey && (JSON.parse(v) as unknown[]).length < records.length) {
+        throw new DOMException("quota", "QuotaExceededError");
+      }
+      setItem(k, v);
+    };
+
+    const base = cloudEmptyHandler();
+    const { client } = makeSupabase(base.handler);
+    await expect(migrateLocalData(client, userId)).rejects.toBeInstanceOf(DOMException);
+
+    expect(base.insertedRecords).toHaveLength(100);
+    // ローカルへ戻るのは未挿入の 50 件だけ
+    const restored = JSON.parse(localStorageStub.getItem(LOCAL_RECORDS_KEY)!) as Array<{ id: string }>;
+    expect(restored.map((r) => r.id)).toEqual(records.slice(100).map((r) => r.id));
+    expect(localStorageStub.getItem(recKey)).toBeNull();
   });
 });
 

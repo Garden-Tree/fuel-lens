@@ -14,7 +14,7 @@
 ## リクエスト
 
 本文は JSON（画像は Base64 文字列）で、次の **2 つの形のどちらか** です（`lib/analyze.ts` の `parseAnalyzeImages`）。
-クライアントの組み立ては `lib/scan/analyzeClient.ts` の `buildAnalyzeRequestBody`。クライアント側のタイムアウトは 45 秒です。
+クライアントの組み立ては `lib/scan/analyzeClient.ts` の `buildAnalyzeRequestBody`。クライアント側のタイムアウトは 60 秒です（サーバーの時間予算 `ANALYZE_TOTAL_BUDGET_MS` = 55 秒より長く、関数の上限 `maxDuration` = 60 秒に合わせる）。
 
 ### 1 枚（従来の形。変更なし）
 

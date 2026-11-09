@@ -18,8 +18,15 @@ export { sanitizeVehicleSettings } from "./data/columns";
 
 const DEFAULT_VEHICLE = LOCAL_DEFAULT_VEHICLE;
 
+/** 保存した選択中の車両 ID。ストレージが使えない（ブロック・プライベートモード）なら null */
 function readSelectedId(key: string): string | null {
-  return typeof window !== "undefined" ? localStorage.getItem(key) : null;
+  if (typeof window === "undefined") return null;
+  try {
+    return localStorage.getItem(key);
+  } catch (e) {
+    console.error("選択車両の読み込み失敗:", e);
+    return null;
+  }
 }
 
 function persistSelectedId(key: string, id: string): void {
@@ -204,7 +211,11 @@ export function useVehicles() {
 
   useEffect(() => {
     const currentFetchId = ++fetchCounter.current;
-    loadVehicles(currentFetchId);
+    // 想定外の例外でも loading を立てたままにしない（読み込み中の表示のまま止まるのを防ぐ）
+    loadVehicles(currentFetchId).catch((e) => {
+      console.error("車両一覧の読み込みに失敗:", e);
+      if (currentFetchId === fetchCounter.current) setLoading(false);
+    });
   }, [loadVehicles]);
 
   const refreshVehicles = useCallback(() => {

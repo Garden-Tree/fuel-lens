@@ -109,13 +109,13 @@ export function recordToDraft(record?: Partial<FuelRecord> | null, context?: Rec
   };
 }
 
-/** 全角数字・全角ピリオド・全角マイナスを半角に正規化し、桁区切りカンマと空白を取り除く */
+/** 全角数字・全角ピリオド・全角マイナスを半角に正規化し、桁区切りカンマ（全角の「，」も）と空白（\s は全角空白も含む）を取り除く */
 export function normalizeNumericInput(value: string): string {
   return value
     .replace(/[０-９]/g, (ch) => String.fromCharCode(ch.charCodeAt(0) - 0xfee0))
     .replace(/[．。]/g, ".")
     .replace(/[－ー−]/g, "-")
-    .replace(/[,\s]/g, "");
+    .replace(/[,，\s]/g, "");
 }
 
 export type ParsedNumber = { value: number | null; error?: string };

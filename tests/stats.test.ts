@@ -699,6 +699,40 @@ describe("summarizeStations", () => {
   });
 });
 
+describe("同じ日付の記録の並び（連鎖計算の順に揃える）", () => {
+  // 同じ日に B（部分給油・180円/L・01:00 作成・id は大きい）→ C（満タン・150円/L・05:00 作成・id は小さい）
+  const sameDay = () => [
+    rec({
+      id: "bbbbbbbb-0000-4000-8000-000000000000",
+      date: "2026-10-01",
+      odometer: 1300,
+      is_full: false,
+      price_per_unit: 180,
+      created_at: "2026-10-01T01:00:00Z",
+    }),
+    rec({
+      id: "00000000-0000-4000-8000-000000000000",
+      date: "2026-10-01",
+      odometer: 1400,
+      is_full: true,
+      price_per_unit: 150,
+      created_at: "2026-10-01T05:00:00Z",
+    }),
+  ];
+
+  it("sortByDateAsc は id ではなくオドメーター → created_at の順に並べる", () => {
+    expect(sortByDateAsc(sameDay()).map((r) => r.price_per_unit)).toEqual([180, 150]);
+    expect(sortByDateAsc(sameDay().reverse()).map((r) => r.price_per_unit)).toEqual([180, 150]);
+  });
+
+  it("priceDelta の最新は後から給油した C（前回比 −30）", () => {
+    const d = priceDelta(sameDay());
+    expect(d.latest?.price).toBe(150);
+    expect(d.previous?.price).toBe(180);
+    expect(d.diffFromPrevious).toBe(-30);
+  });
+});
+
 describe("priceDelta", () => {
   it("returns nulls when there is no price", () => {
     expect(priceDelta([rec({ total_cost: 1000 })])).toEqual({

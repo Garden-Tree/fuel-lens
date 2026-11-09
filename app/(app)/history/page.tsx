@@ -32,7 +32,7 @@ import {
   escapeCsvField,
   formatCsvNumber,
   formatRecordExtraCsvFields,
-  toSafeFilenamePart,
+  historyCsvFilename,
 } from "@/lib/csv";
 import HistoryToolbar, { HistoryToolbarSkeleton } from "./_components/HistoryToolbar";
 import RecordRow, { RecordColumnsHeader } from "./_components/RecordRow";
@@ -305,7 +305,7 @@ export default function HistoryPage() {
     ]);
 
     const currentVehicleName = vehicles.find(v => v.id === selectedVehicleId)?.name || "vehicle";
-    const filename = `fuellens_${toSafeFilenamePart(currentVehicleName)}_${new Date().toISOString().slice(0, 10)}.csv`;
+    const filename = historyCsvFilename(currentVehicleName);
     downloadTextFile(filename, buildCsv(headers, rows), "text/csv;charset=utf-8;");
   };
 

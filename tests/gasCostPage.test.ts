@@ -54,6 +54,12 @@ describe("computeGasCost", () => {
     expect(r.costPerKm).toBe("11.3");
   });
 
+  it("全角カンマ入りの距離（１，０００）も読める", () => {
+    const r = computeGasCost({ distance: "１，０００", efficiency: "10", price: "170", people: "", roundTrip: false });
+    expect(r.errors).toEqual({});
+    expect(r.cost).toBe("17,000");
+  });
+
   it("丸める前の値で計算し、表示のときだけ丸める", () => {
     // 10 / 3 = 3.333… L × 155 = 516.67 → 517 円（表示の 3.33 L で掛けた 516.15 → 516 にはしない）
     const r = computeGasCost({ distance: "10", efficiency: "3", price: "155", people: "", roundTrip: false });

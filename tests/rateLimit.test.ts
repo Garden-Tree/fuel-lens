@@ -76,12 +76,29 @@ describe("createRateLimiter", () => {
     expect([...store.keys()]).toEqual(["new"]);
   });
 
-  it("clears everything when the key cap is exceeded", () => {
+  it("キー数の上限を超える新しいキーでは、最も古いキーだけを消す（他のキーの回数は残る）", () => {
     const { limiter, store } = makeLimiter({ maxKeys: 3 });
-    for (const k of ["a", "b", "c", "d"]) limiter.consume(k);
-    expect(store.size).toBe(4); // 追加後に超過（クリアは次回の consume 冒頭）
-    limiter.consume("e");
-    expect([...store.keys()]).toEqual(["e"]);
+    for (const k of ["a", "b", "c"]) limiter.consume(k);
+    // b を上限まで使い切る
+    for (let i = 0; i < 4; i++) limiter.consume("b");
+    expect(limiter.consume("b").allowed).toBe(false);
+
+    limiter.consume("d");
+    expect([...store.keys()]).toEqual(["b", "c", "d"]);
+    expect(store.size).toBe(3);
+    // b の回数は消えていない（新しいキーを送っても制限を外せない）
+    expect(limiter.consume("b").allowed).toBe(false);
+  });
+
+  it("上限に達していても、期限切れのキーがあればそれを先に消す", () => {
+    const { limiter, store, advance } = makeLimiter({ maxKeys: 3 });
+    limiter.consume("old");
+    advance(30_000);
+    limiter.consume("b");
+    limiter.consume("c");
+    advance(31_000); // old だけ期限切れ
+    limiter.consume("d");
+    expect([...store.keys()]).toEqual(["b", "c", "d"]);
   });
 });
 

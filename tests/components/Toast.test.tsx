@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, fireEvent, screen } from "@testing-library/react";
+import Modal from "@/components/Modal";
 import { useToast, type ConfirmOptions, type ToastOptions } from "@/components/Toast";
 import { renderWithProviders } from "../setup/render";
 
@@ -116,6 +117,34 @@ describe("Toast: confirm()", () => {
 
     fireEvent.keyDown(window, { key: "Escape" });
     await vi.waitFor(() => expect(onResult).toHaveBeenCalledWith(false));
+  });
+
+  it("Modal の上で開いた確認を Escape で閉じても、下の Modal は閉じない", async () => {
+    const onResult = vi.fn();
+    const onClose = vi.fn();
+    function InModal() {
+      const { confirm } = useToast();
+      return (
+        <Modal open onClose={onClose} title="一括確認">
+          <Modal.Body>
+            <button type="button" onClick={async () => onResult(await confirm("残りを中止しますか？"))}>
+              残りを中止
+            </button>
+          </Modal.Body>
+        </Modal>
+      );
+    }
+    renderWithProviders(<InModal />);
+    fireEvent.click(screen.getByRole("button", { name: "残りを中止" }));
+    await screen.findByText("残りを中止しますか？");
+
+    fireEvent.keyDown(document.activeElement ?? document.body, { key: "Escape" });
+    await vi.waitFor(() => expect(onResult).toHaveBeenCalledWith(false));
+    expect(onClose).not.toHaveBeenCalled();
+
+    // 確認が閉じたあとの Escape は従来どおり Modal を閉じる
+    fireEvent.keyDown(document.body, { key: "Escape" });
+    expect(onClose).toHaveBeenCalledTimes(1);
   });
 
   it("title / ラベル / danger の指定が反映される（danger はキャンセルに初期フォーカス）", async () => {
