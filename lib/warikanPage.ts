@@ -135,7 +135,7 @@ export function computeWarikan(input: WarikanInput): WarikanResult {
   });
   if (people.error) errors.people = people.error;
 
-  const fuelCostText =
+  const fuelCost =
     distance != null && efficiency != null && price != null
       ? computeGasCost({
           distance: String(distance),
@@ -143,9 +143,8 @@ export function computeWarikan(input: WarikanInput): WarikanResult {
           price: String(price),
           people: "",
           roundTrip: input.trip === "round",
-        }).cost
+        }).costYen
       : null;
-  const fuelCost = fuelCostText != null ? Number(fuelCostText.replace(/,/g, "")) : null;
   const total = fuelCost != null && !toll.error ? fuelCost + toll.value : null;
   const payers = people.value != null ? (input.driver === "exclude" ? people.value - 1 : people.value) : null;
   const perPerson = total != null && payers != null ? perPersonAmount(total, payers, input.rounding) : null;

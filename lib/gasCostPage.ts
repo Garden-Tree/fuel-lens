@@ -46,6 +46,8 @@ export type GasCostResult = {
   fuel: string | null;
   /** ガソリン代 (円) の表示文字列（1 円未満を四捨五入、3 桁区切り） */
   cost: string | null;
+  /** ガソリン代 (円、整数)。cost と同じ値の数値（表示文字列から戻さずに計算へ使う） */
+  costYen: number | null;
   /** 割り勘の人数（2 人以上のときだけ。1 人なら null） */
   people: number | null;
   /** 1 人あたりのガソリン代 (円)。2 人以上のときだけ */
@@ -100,6 +102,7 @@ export function computeGasCost(input: GasCostInput): GasCostResult {
     totalDistance: totalKm != null ? totalKm.toLocaleString("ja-JP", { maximumFractionDigits: 1 }) : null,
     fuel: fuelL != null ? fuelL.toLocaleString("ja-JP", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : null,
     cost: costYen != null ? formatInt(costYen) : null,
+    costYen,
     people,
     perPerson: perPersonYen != null ? formatInt(perPersonYen) : null,
     costPerKm: costPerKm != null ? costPerKm.toFixed(1) : null,
@@ -146,17 +149,29 @@ export const CAR_TYPE_EFFICIENCY_NOTE =
 /** 距離別の目安表の行（距離 km）。検索されやすい距離を並べる */
 export const DISTANCE_TABLE_DISTANCES = [10, 14, 20, 30, 50, 100, 150, 180, 200, 300, 500, 1000] as const;
 
+function exampleResult(distanceKm: number, efficiencyKmPerL: number, roundTrip: boolean, price: number): GasCostResult {
+  return computeGasCost({
+    distance: String(distanceKm),
+    efficiency: String(efficiencyKmPerL),
+    price: String(price),
+    people: "",
+    roundTrip,
+  });
+}
+
 /** 例の単価でのガソリン代（表示用の文字列）。電卓と同じ computeGasCost で求めるので丸めも一致する */
 export function exampleCost(distanceKm: number, efficiencyKmPerL: number, roundTrip = false, price: number = EXAMPLE_PRICE): string {
-  return (
-    computeGasCost({
-      distance: String(distanceKm),
-      efficiency: String(efficiencyKmPerL),
-      price: String(price),
-      people: "",
-      roundTrip,
-    }).cost ?? ""
-  );
+  return exampleResult(distanceKm, efficiencyKmPerL, roundTrip, price).cost ?? "";
+}
+
+/** exampleCost の数値版（円、整数）。出せなければ null */
+export function exampleCostYen(
+  distanceKm: number,
+  efficiencyKmPerL: number,
+  roundTrip = false,
+  price: number = EXAMPLE_PRICE
+): number | null {
+  return exampleResult(distanceKm, efficiencyKmPerL, roundTrip, price).costYen;
 }
 
 /** 距離別の目安表: 行ごとに距離と、車種ごと（CAR_TYPE_EFFICIENCIES の順）のガソリン代（円）の表示文字列 */
