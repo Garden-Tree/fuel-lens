@@ -5,6 +5,7 @@
  */
 
 import { parseDraftNumber } from "./recordDraft";
+import { parseIntInRange, parsePositiveField } from "./numericField";
 import type { FaqEntry } from "./calcPage";
 import { EXAMPLE_PRICE, NATIONAL_PRICE_SURVEY_LABEL, computeGasCost, formatPrice } from "./gasCostPage";
 import { jsonLdString } from "./jsonLd";
@@ -60,25 +61,6 @@ export type AnnualGasCostResult = {
 
 const LABELS = { distance: "走行距離", oneWay: "片道の距離", days: "出勤日数" } as const;
 
-function parsePositive(field: "distance" | "oneWay", raw: string): { value: number | null; error?: string } {
-  const parsed = parseDraftNumber(raw);
-  if (parsed.error) return { value: null, error: `${LABELS[field]}は数値で入力してください` };
-  if (parsed.value === null) return { value: null };
-  if (parsed.value <= 0) return { value: null, error: `${LABELS[field]}は 0 より大きい数値で入力してください` };
-  return { value: parsed.value };
-}
-
-/** 出勤日数は 1〜31 の整数。空なら未入力（結果が出ないだけ） */
-function parseDays(raw: string): { value: number | null; error?: string } {
-  const parsed = parseDraftNumber(raw);
-  if (!parsed.error && parsed.value === null) return { value: null };
-  const n = parsed.value;
-  if (parsed.error || n === null || !Number.isInteger(n) || n < 1 || n > MAX_COMMUTE_DAYS) {
-    return { value: null, error: `${LABELS.days}は 1〜${MAX_COMMUTE_DAYS} の整数で入力してください` };
-  }
-  return { value: n };
-}
-
 const formatKm = (value: number) => value.toLocaleString("ja-JP", { maximumFractionDigits: 1 });
 
 /** 入力中の文字列から計算結果を作る。未入力の欄はエラーにしない（結果が出ないだけ） */
@@ -92,12 +74,13 @@ export function computeAnnualGasCost(input: AnnualGasCostInput): AnnualGasCostRe
 
   let monthlyKm: number | null = null;
   if (input.mode === "distance") {
-    const { value, error } = parsePositive("distance", input.distance);
+    const { value, error } = parsePositiveField(LABELS.distance, input.distance);
     if (error) errors.distance = error;
     if (value != null) monthlyKm = input.period === "year" ? value / 12 : value;
   } else {
-    const oneWay = parsePositive("oneWay", input.oneWay);
-    const days = parseDays(input.days);
+    const oneWay = parsePositiveField(LABELS.oneWay, input.oneWay);
+    // 出勤日数は 1〜MAX_COMMUTE_DAYS の整数。空なら未入力（結果が出ないだけ）
+    const days = parseIntInRange(LABELS.days, input.days, 1, MAX_COMMUTE_DAYS);
     if (oneWay.error) errors.oneWay = oneWay.error;
     if (days.error) errors.days = days.error;
     if (oneWay.value != null && days.value != null) monthlyKm = oneWay.value * 2 * days.value;

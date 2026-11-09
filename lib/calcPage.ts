@@ -4,7 +4,7 @@
  */
 
 import { calculateFuelMetrics, formatPricePerUnit } from "./calculations";
-import { parseDraftNumber } from "./recordDraft";
+import { parsePositiveField } from "./numericField";
 import { PLAUSIBILITY_LIMITS } from "./analyze";
 import { buildManualPrefillHref } from "./manualPrefill";
 import { CAR_TYPE_EFFICIENCIES } from "./gasCostPage";
@@ -57,26 +57,16 @@ export const CALC_LIMITS = {
   pricePerUnit: 10_000,
 } as const;
 
-/** 必須の欄（走行距離・給油量）は 0 より大きいこと。支払総額は任意で 0 以上。どれも CALC_LIMITS 以下 */
-function parseField(field: CalcField, raw: string): { value: number | null; error?: string } {
-  const parsed = parseDraftNumber(raw);
-  if (parsed.error) return { value: null, error: `${LABELS[field]}は数値で入力してください` };
-  if (parsed.value === null) return { value: null };
-  if (field !== "cost" && parsed.value <= 0) {
-    return { value: null, error: `${LABELS[field]}は 0 より大きい数値で入力してください` };
-  }
-  if (parsed.value > CALC_LIMITS[field]) {
-    return { value: null, error: `${LABELS[field]}は ${CALC_LIMITS[field].toLocaleString("ja-JP")} 以下で入力してください` };
-  }
-  return { value: parsed.value };
-}
-
 /** 3 つの欄をまとめて読む（computeCalc と calcRecordHref で共有） */
 function parseCalcInput(input: CalcInput): { values: Record<CalcField, number | null>; errors: CalcResult["errors"] } {
   const errors: CalcResult["errors"] = {};
   const values = {} as Record<CalcField, number | null>;
   for (const field of ["distance", "amount", "cost"] as const) {
-    const { value, error } = parseField(field, input[field]);
+    // 必須の欄（走行距離・給油量）は 0 より大きいこと。支払総額は任意で 0 以上。どれも CALC_LIMITS 以下
+    const { value, error } = parsePositiveField(LABELS[field], input[field], {
+      allowZero: field === "cost",
+      max: CALC_LIMITS[field],
+    });
     values[field] = value;
     if (error) errors[field] = error;
   }

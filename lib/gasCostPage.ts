@@ -3,7 +3,7 @@
  * 計算は丸める前の値で行い、丸めるのは表示用の文字列にするときだけ。
  */
 
-import { parseDraftNumber } from "./recordDraft";
+import { parseIntInRange, parsePositiveField } from "./numericField";
 import type { FaqEntry } from "./calcPage";
 import { NATIONAL_GAS_PRICE } from "./nationalGasPrice";
 import { jsonLdString } from "./jsonLd";
@@ -61,38 +61,19 @@ const LABELS: Record<GasCostField, string> = {
   people: "人数",
 };
 
-/** 必須の欄（距離・燃費・単価）は 0 より大きいこと */
-function parsePositive(field: Exclude<GasCostField, "people">, raw: string): { value: number | null; error?: string } {
-  const parsed = parseDraftNumber(raw);
-  if (parsed.error) return { value: null, error: `${LABELS[field]}は数値で入力してください` };
-  if (parsed.value === null) return { value: null };
-  if (parsed.value <= 0) return { value: null, error: `${LABELS[field]}は 0 より大きい数値で入力してください` };
-  return { value: parsed.value };
-}
-
-/** 人数は 1〜99 の整数。空なら 1 人 */
-function parsePeople(raw: string): { value: number; error?: string } {
-  const parsed = parseDraftNumber(raw);
-  if (!parsed.error && parsed.value === null) return { value: 1 };
-  const n = parsed.value;
-  if (parsed.error || n === null || !Number.isInteger(n) || n < 1 || n > MAX_PEOPLE) {
-    return { value: 1, error: `${LABELS.people}は 1〜${MAX_PEOPLE} の整数で入力してください` };
-  }
-  return { value: n };
-}
-
 /** 入力中の文字列から計算結果を作る。未入力の欄はエラーにしない（結果が出ないだけ） */
 export function computeGasCost(input: GasCostInput): GasCostResult {
   const errors: GasCostResult["errors"] = {};
   const read = (field: Exclude<GasCostField, "people">) => {
-    const { value, error } = parsePositive(field, input[field]);
+    const { value, error } = parsePositiveField(LABELS[field], input[field]);
     if (error) errors[field] = error;
     return value;
   };
   const distance = read("distance");
   const efficiency = read("efficiency");
   const price = read("price");
-  const peopleParsed = parsePeople(input.people);
+  // 人数は 1〜MAX_PEOPLE の整数。空なら 1 人
+  const peopleParsed = parseIntInRange(LABELS.people, input.people, 1, MAX_PEOPLE, { empty: 1 });
   if (peopleParsed.error) errors.people = peopleParsed.error;
 
   const totalKm = distance != null ? (input.roundTrip ? distance * 2 : distance) : null;

@@ -4,6 +4,7 @@
  */
 
 import { parseDraftNumber } from "./recordDraft";
+import { parseIntInRange, parsePositiveField } from "./numericField";
 import type { FaqEntry } from "./calcPage";
 import type { ToolOgImageContent } from "./og/renderToolOgImage";
 import { EXAMPLE_PRICE, MAX_PEOPLE, computeGasCost, formatPrice } from "./gasCostPage";
@@ -106,38 +107,6 @@ const LABELS: Record<WarikanField, string> = {
   people: "人数",
 };
 
-function parsePositive(field: "distance" | "efficiency" | "price", raw: string): { value: number | null; error?: string } {
-  const parsed = parseDraftNumber(raw);
-  if (parsed.error) return { value: null, error: `${LABELS[field]}は数値で入力してください` };
-  if (parsed.value === null) return { value: null };
-  if (parsed.value <= 0) return { value: null, error: `${LABELS[field]}は 0 より大きい数値で入力してください` };
-  if (parsed.value > WARIKAN_LIMITS[field]) {
-    return { value: null, error: `${LABELS[field]}は ${WARIKAN_LIMITS[field].toLocaleString("ja-JP")} 以下で入力してください` };
-  }
-  return { value: parsed.value };
-}
-
-function parseToll(raw: string): { value: number; error?: string } {
-  const parsed = parseDraftNumber(raw);
-  if (!parsed.error && parsed.value === null) return { value: 0 };
-  const n = parsed.value;
-  if (parsed.error || n === null || !Number.isInteger(n) || n > WARIKAN_LIMITS.toll) {
-    return { value: 0, error: `${LABELS.toll}は 0〜${WARIKAN_LIMITS.toll.toLocaleString("ja-JP")} の整数（円）で入力してください` };
-  }
-  return { value: n };
-}
-
-/** 人数は 2〜99 の整数。空なら null（結果が出ないだけ） */
-function parsePeople(raw: string): { value: number | null; error?: string } {
-  const parsed = parseDraftNumber(raw);
-  if (!parsed.error && parsed.value === null) return { value: null };
-  const n = parsed.value;
-  if (parsed.error || n === null || !Number.isInteger(n) || n < 2 || n > MAX_PEOPLE) {
-    return { value: null, error: `${LABELS.people}は運転手を含めて 2〜${MAX_PEOPLE} の整数で入力してください` };
-  }
-  return { value: n };
-}
-
 /** 1 人あたり: 合計 ÷ 払う人数を、選んだ単位で切り上げる（集めた額が合計を下回らないように） */
 export function perPersonAmount(total: number, payers: number, unit: RoundingUnit): number {
   return Math.ceil(total / payers / unit) * unit;
@@ -147,16 +116,23 @@ export function perPersonAmount(total: number, payers: number, unit: RoundingUni
 export function computeWarikan(input: WarikanInput): WarikanResult {
   const errors: WarikanResult["errors"] = {};
   const read = (field: "distance" | "efficiency" | "price") => {
-    const { value, error } = parsePositive(field, input[field]);
+    const { value, error } = parsePositiveField(LABELS[field], input[field], { max: WARIKAN_LIMITS[field] });
     if (error) errors[field] = error;
     return value;
   };
   const distance = read("distance");
   const efficiency = read("efficiency");
   const price = read("price");
-  const toll = parseToll(input.toll);
+  // 高速代などは 0〜上限の整数（円）。空なら 0 円
+  const toll = parseIntInRange(LABELS.toll, input.toll, 0, WARIKAN_LIMITS.toll, {
+    empty: 0,
+    message: `${LABELS.toll}は 0〜${WARIKAN_LIMITS.toll.toLocaleString("ja-JP")} の整数（円）で入力してください`,
+  });
   if (toll.error) errors.toll = toll.error;
-  const people = parsePeople(input.people);
+  // 人数は 2〜MAX_PEOPLE の整数。空なら null（結果が出ないだけ）
+  const people = parseIntInRange(LABELS.people, input.people, 2, MAX_PEOPLE, {
+    message: `${LABELS.people}は運転手を含めて 2〜${MAX_PEOPLE} の整数で入力してください`,
+  });
   if (people.error) errors.people = people.error;
 
   const fuelCostText =
