@@ -381,16 +381,28 @@ export function parseAnalyzeImages(body: Record<string, unknown>): ParsedAnalyze
 // AI 応答の検証
 // ---------------------------------------------------------------------------
 
+/** 桁区切りカンマ（3 桁ごと）の付いた 10 進数。"12,345" / "1,234.5" */
+const THOUSANDS_SEPARATED_RE = /^[+-]?\d{1,3}(,\d{3})+(\.\d+)?$/;
+/** 10 進数（指数・16 進などは含めない）。"150" / "45.6" / ".5" */
+const DECIMAL_RE = /^[+-]?(\d+(\.\d*)?|\.\d+)$/;
+
 /** 有限かつ 0 以上の数値に正規化する。数値文字列も許容。それ以外は null */
 export function toNonNegativeNumber(value: unknown): number | null {
   let n: number;
   if (typeof value === "number") {
     n = value;
   } else if (typeof value === "string" && value.trim() !== "") {
-    // "12,345" や "45.6L" のような軽微な混入は取り除く
-    const cleaned = value.replace(/[,\s]/g, "").replace(/[^\d.+-]+$/g, "");
+    // "45.6L" や " 6,000 円" のような空白・末尾の単位の混入は取り除く
+    let cleaned = value.replace(/\s/g, "").replace(/[^\d.+-]+$/g, "");
     // "不明" / "N/A" / "円" のように数字を含まない文字列は空になる。Number("") は 0 なので明示的に弾く
     if (cleaned === "") return null;
+    // カンマは 3 桁ごとの桁区切りだけ取り除く（"45,6" のような小数のカンマを 456 と読まない）
+    if (cleaned.includes(",")) {
+      if (!THOUSANDS_SEPARATED_RE.test(cleaned)) return null;
+      cleaned = cleaned.replace(/,/g, "");
+    }
+    // Number は "0x10" や "1e3" も数値にするので、10 進数の形だけを受け付ける
+    if (!DECIMAL_RE.test(cleaned)) return null;
     n = Number(cleaned);
   } else {
     return null;
