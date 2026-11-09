@@ -110,6 +110,11 @@ describe("parseDraftNumber", () => {
     expect(parseDraftNumber("１,２３４")).toEqual({ value: 1234 });
   });
 
+  it("全角カンマ（，）と全角空白も桁区切りとして取り除く", () => {
+    expect(parseDraftNumber("１，０００")).toEqual({ value: 1000 });
+    expect(parseDraftNumber("１　０００")).toEqual({ value: 1000 });
+  });
+
   it("rejects non-numeric input", () => {
     for (const raw of ["abc", "1e3", "1.2.3", "-", ".", "-."]) {
       const r = parseDraftNumber(raw);
