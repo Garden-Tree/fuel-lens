@@ -5,6 +5,7 @@ import { isUuid } from "./recordFilters";
 import { PERMISSION_DENIED_MESSAGE, isPermissionDeniedError } from "./supabase/errors";
 import { isFuelType, sanitizeMemo, sanitizeOdometer, sanitizeRecordSource } from "./fillChain";
 import { CrossTabLockError, withCrossTabLock } from "./crossTabLock";
+import { singleFlight } from "./singleFlight";
 import {
   DEFAULT_VEHICLE_NAME,
   LOCAL_DEFAULT_VEHICLE_ID,
@@ -216,16 +217,8 @@ export function migrationErrorMessage(e: unknown): string {
 export function migrateLocalData(supabase: SupabaseClient, userId: string): Promise<MigrationResult> {
   if (typeof window === "undefined" || !userId) return Promise.resolve(NOOP_RESULT);
 
-  const existing = migrationInflight.get(userId);
-  if (existing) return existing;
-
-  const run = withCrossTabLock(userId, () => runMigration(supabase, userId));
-  migrationInflight.set(userId, run);
-  // in-flight の解除は run に直接ぶら下げる（settle 直後の最初のマイクロタスクで解除される）
-  run.finally(() => {
-    if (migrationInflight.get(userId) === run) migrationInflight.delete(userId);
-  }).catch(() => {});
-  return run;
+  // in-flight の解除は singleFlight が run に直接ぶら下げる（settle 直後の最初のマイクロタスクで解除される）
+  return singleFlight(migrationInflight, userId, () => withCrossTabLock(userId, () => runMigration(supabase, userId)));
 }
 
 /**
