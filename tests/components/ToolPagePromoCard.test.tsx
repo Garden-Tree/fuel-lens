@@ -1,5 +1,5 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import ToolPagePromoCard from "@/components/ToolPagePromoCard";
 import AppQrHandoff from "@/components/AppQrHandoff";
 import { TOOL_PAGE_PROMOS } from "@/lib/promo/toolPage";
@@ -42,6 +42,81 @@ describe("ToolPagePromoCard", () => {
     render(<ToolPagePromoCard promo={withLink} page="/gas-cost" liters={null} />);
     expect(screen.getByText("PR")).toBeInTheDocument();
     expect(screen.queryByText(/この計算の給油量なら/)).not.toBeInTheDocument();
+  });
+});
+
+describe("ToolPagePromoCard（promo_impression の送り方）", () => {
+  type Callback = (entries: Array<Pick<IntersectionObserverEntry, "isIntersecting" | "intersectionRatio">>) => void;
+  let observers: Array<{ callback: Callback; observed: Element[]; disconnected: boolean }>;
+
+  beforeEach(() => {
+    observers = [];
+    class IntersectionObserverMock {
+      private entry: { callback: Callback; observed: Element[]; disconnected: boolean };
+      constructor(callback: Callback) {
+        this.entry = { callback, observed: [], disconnected: false };
+        observers.push(this.entry);
+      }
+      observe(el: Element) {
+        this.entry.observed.push(el);
+      }
+      unobserve() {}
+      disconnect() {
+        this.entry.disconnected = true;
+      }
+    }
+    vi.stubGlobal("IntersectionObserver", IntersectionObserverMock);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    delete window.gtag;
+  });
+
+  /** 生きている観測者に交差を知らせる */
+  const intersect = (ratio: number) =>
+    act(() => {
+      for (const o of observers.filter((x) => !x.disconnected)) {
+        o.callback([{ isIntersecting: ratio > 0, intersectionRatio: ratio }]);
+      }
+    });
+  const impressions = (gtag: ReturnType<typeof vi.fn>) =>
+    gtag.mock.calls.filter((c) => c[1] === "promo_impression");
+
+  it("半分以上見えるまでは送らず、見えたら 1 回だけ送る", () => {
+    const gtag = vi.fn();
+    window.gtag = gtag;
+    render(<ToolPagePromoCard promo={withLink} page="/expense" liters={null} />);
+    expect(impressions(gtag)).toHaveLength(0);
+    intersect(0.2);
+    expect(impressions(gtag)).toHaveLength(0);
+    intersect(0.6);
+    intersect(1);
+    expect(impressions(gtag)).toEqual([["event", "promo_impression", { promo_id: "idemitsu-denki", page: "/expense" }]]);
+  });
+
+  it("結果が無効 → 有効と切り替わっても、同じ提携先はマウント中に 1 回だけ送る", () => {
+    const gtag = vi.fn();
+    window.gtag = gtag;
+    const { rerender } = render(<ToolPagePromoCard promo={withLink} page="/gas-cost" liters={20} />);
+    intersect(1);
+    rerender(<ToolPagePromoCard promo={null} page="/gas-cost" liters={null} />);
+    rerender(<ToolPagePromoCard promo={withLink} page="/gas-cost" liters={30} />);
+    intersect(1);
+    expect(impressions(gtag)).toHaveLength(1);
+  });
+
+  it("別の提携先に切り替わったら、その提携先の分を見えたときに 1 回送る", () => {
+    const gtag = vi.fn();
+    window.gtag = gtag;
+    const enkiro = TOOL_PAGE_PROMOS.find((p) => p.id === "enkiro")!;
+    const { rerender } = render(<ToolPagePromoCard promo={withLink} page="/annual-gas-cost" liters={20} />);
+    intersect(1);
+    rerender(<ToolPagePromoCard promo={enkiro} page="/annual-gas-cost" liters={20} />);
+    intersect(1);
+    rerender(<ToolPagePromoCard promo={withLink} page="/annual-gas-cost" liters={20} />);
+    intersect(1);
+    expect(impressions(gtag).map((c) => (c[2] as { promo_id: string }).promo_id)).toEqual(["idemitsu-denki", "enkiro"]);
   });
 });
 
