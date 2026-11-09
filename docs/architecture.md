@@ -161,7 +161,7 @@ useVehicles / useFuelRecords
 | `initialAuth.ts` / `initialAuthContext.tsx` | サーバーの初期認証状態（`InitialAuth`）と、Clerk の読み込み前の判定 `resolveAuth`、キャッシュの先行表示 `createCachePreview`（持ち主を読むたびに確認）。`InitialAuthProvider` / `useInitialAuth` / `useResolvedAuth`（画面の「未ログイン」表示用）。上の「最初の描画」 |
 | `useDataStores.ts` | ログイン状態に応じたストア（クラウドは userId・getToken ごとにメモ化）。Clerk の読み込み前はサーバーの初期認証状態で補い（`isLoaded` / `authLoaded` / `cachePreview`）、保存先を決められない間は `stores: null`。フックのアンマウント・ユーザー切り替え後に届いた応答ではキャッシュを書かない。ストアのほかに、クラウドは `deleteAccountData()`（アカウント削除の 1 段目）、ローカルは `clearAll()`（この端末のデータの削除。`clearLocalData`）を持つ（[アカウント削除](#アカウント削除)） |
 | `accountDeletion.ts` | `deleteOwnData(supabase, userId)`: 利用者自身の JWT（RLS）で記録 → 車両 → `users` 行の順に削除し、記録・車両が 0 件になったことを確かめる（残っていれば `DataError`（`DELETE_INCOMPLETE_CODE`））。冪等 |
-| `columns.ts` / `scope.ts` | `pickRecordColumns`（保存する列のホワイトリストと検証）、`sanitizeVehicleSettings`、`applyRecordPatch` / `applyVehiclePatch`、`recordScopeOf` / `matchesRecordScope`（`matchesSelectedVehicle` と同じ判定） |
+| `columns.ts` / `scope.ts` | `pickRecordColumns`（保存する列のホワイトリストと検証）、`sanitizeVehicleSettings`、`applyRecordPatch` / `applyVehiclePatch`、`recordScopeOf` / `matchesRecordScope`（判定は `lib/recordFilters.ts` の `matchesVehicleScope`。`matchesSelectedVehicle` と同じ実装） |
 
 クラウドのクエリ（`cloudStore.ts`）:
 

@@ -11,6 +11,7 @@ import {
   LOCAL_DEFAULT_VEHICLE_ID,
   LOCAL_RECORDS_KEY,
   LOCAL_VEHICLES_KEY,
+  parseArray,
 } from "./data/localStore";
 import {
   ensureDefaultVehicleUnlocked,
@@ -76,16 +77,6 @@ type LocalRecordRaw = Record<string, unknown>;
 // ------------------------------------------------------------------
 // 小さなユーティリティ
 // ------------------------------------------------------------------
-
-function parseArray(raw: string | null): unknown[] {
-  if (!raw) return [];
-  try {
-    const parsed: unknown = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
-  }
-}
 
 function isObjectRecord(v: unknown): v is LocalRecordRaw {
   return !!v && typeof v === "object" && !Array.isArray(v);
