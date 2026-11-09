@@ -61,6 +61,9 @@ FuelLens の画面は「計器盤のようなダーク UI ＋ グループリス
 | `Menu` / `MenuItem` | チップから開くドロップダウン（キーボード操作・外側クリックで閉じる。下に入りきらない・スマホの下部タブバーに重なるときは上に開く。重なり順は `z-[45]` でタブバー（z-40）より上・モーダル（z-50）より下）。`Menu`: `label` / `trigger` / `triggerAriaLabel` / `align`（`start` / `end`）/ `disabled`。`MenuItem`: `onSelect` / `checked`（単一選択。`menuitemradio`）/ `icon` / `separated`（上に区切り線）/ `disabled` |
 | `Num` | 数値の span（`num`） |
 | `BrandMark` | ロゴ（給油機アイコン）とワードマーク。`showWordmark` |
+| `CalculatorField` | 公開の計算ツールの数値入力（ラベル・入力欄・右端の単位・補足・エラー）。`id`（補足は `${id}-hint`、エラーは `${id}-error`。`aria-describedby` はある方だけつなぐ）/ `label` / `unit` / `value` / `onChange`（文字列）/ `placeholder` / `hint` / `error`（あれば `aria-invalid` と赤枠）/ `inputMode`（`decimal` 既定・`numeric`）/ `unitSpace`（単位の幅に合わせた右余白。`sm` / `md` 既定 / `lg`） |
+| `ResultItem` | 計算結果の 1 項目（`<dl>` の中の dt + dd。狭い画面は横並び、sm 以上は縦積み）。`label` / `unit` / `value`（整形済みの文字列。`null` なら薄い「--」）/ `tone`（値の色クラス）/ `large` |
+| `ResetButton` | 計算機の「リセット」ボタン（高さ 44px、アイコン付き）。`onClick` / `disabled`（入力が空のとき） |
 
 モーダルは `components/Modal.tsx`、通知と確認は `useToast()`（`components/Toast.tsx`）を使います（`alert` / `confirm` は使わない）。
 
@@ -69,6 +72,7 @@ FuelLens の画面は「計器盤のようなダーク UI ＋ グループリス
 - **`GroupedList` は `overflow-hidden`** なので、行の中でメニュー（`Menu`）やポップオーバーを開くと切れます。そういう行を並べる一覧は、同じ見た目の自前の `<ul className="rounded-2xl bg-surface divide-y divide-line">` にします（履歴の一覧がこれ）。
 - **面の中の `SegmentedControl`**: 既定の背景は `bg-surface` なので、`bg-surface` のグループリストの中に置くと溶け込みます。その場合は `className="bg-ground!"` で背景を地の色にします（車両管理の「距離の入力方式」）。画面の地（`ground`）の上に直接置くなら既定のままで使えます（統計の期間フィルタ）。
 - 入力フォーム・車両管理・設定のフォームは、グループリストの行と同じ幅・余白（左右 16px・最小の高さ 46〜56px）で組み、スイッチは `role="switch"` の自前の部品（`EditFuelRecordForm.tsx`）、セグメントは `SegmentedControl` を使います。
+- 公開の計算ツール（/calc・/gas-cost・/annual-gas-cost・/fuel-convert・/warikan）の入力欄・結果・リセットは `CalculatorField` / `ResultItem` / `ResetButton` を使い、ページごとに書き直しません。燃費の換算表（/fuel-convert）のように形の違う結果は各ページで組みます。
 - 設定画面（`components/settingsUi.ts`）は、グループリストの下の補足（`captionClass`）・注意書き（`noticeClass`、`text-warn`）・行以外の領域の余白（`panelClass`）・ボタン（`primaryButtonClass` / `secondaryButtonClass` / `dangerButtonClass`）・入力（`inputClass`）のクラスを共有します。
 
 ### recharts の色
