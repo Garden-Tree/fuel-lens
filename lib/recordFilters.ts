@@ -7,6 +7,7 @@
  */
 
 import { normalizeDateString } from "./dates";
+import { compareChainTiebreak, type ChainTiebreakable } from "./fillChain";
 import type { FuelRecord } from "./types";
 
 /** @deprecated lib/events.ts から import する（互換のための再エクスポート） */
@@ -69,10 +70,12 @@ export function matchesSelectedVehicle(
 }
 
 /**
- * 日付の降順（同じ日付は id の降順）に並べた新しい配列を返す（純粋関数）。
- * 日付は normalizeDateString で比べる。日付が無い・不正な記録は最後（その中は id の降順）。
+ * 日付の降順に並べた新しい配列を返す（純粋関数）。
+ * 日付は normalizeDateString で比べる。日付が無い・不正な記録は最後。
+ * 同じ日付は連鎖計算の順（lib/fillChain.ts の compareChainTiebreak: オドメーター → created_at → id）の逆にする。
+ * id はクラウドではランダムな UUID なので、id だけで並べると「最新の記録」が連鎖計算とずれる。
  */
-export function sortRecordsByDateDesc<T extends Pick<FuelRecord, "id" | "date">>(list: readonly T[]): T[] {
+export function sortRecordsByDateDesc<T extends Pick<FuelRecord, "date"> & ChainTiebreakable>(list: readonly T[]): T[] {
   return [...list].sort((a, b) => {
     const dateA = normalizeDateString(a.date);
     const dateB = normalizeDateString(b.date);
@@ -81,7 +84,6 @@ export function sortRecordsByDateDesc<T extends Pick<FuelRecord, "id" | "date">>
       if (dateB === null) return -1;
       return dateA < dateB ? 1 : -1;
     }
-    if (a.id === b.id) return 0;
-    return b.id > a.id ? 1 : -1;
+    return compareChainTiebreak(b, a);
   });
 }
