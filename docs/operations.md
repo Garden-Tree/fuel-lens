@@ -12,7 +12,7 @@ DB の SQL 手順（マイグレーション適用・RLS 監査・バックア�
 | プレビュー（Preview） | `develop` ブランチ（および PR）。Vercel が発行するプレビュー URL |
 | DB | Supabase（Free プラン） |
 | 認証 | Clerk |
-| 定期実行 | Vercel Cron（本番デプロイのみ）+ GitHub Actions（[3 章](#3-supabase-の自動停止と-keepalive)） |
+| 定期実行 | Vercel Cron（本番デプロイのみ。keepalive と給油のお知らせの 2 本）+ GitHub Actions（[3 章](#3-supabase-の自動停止と-keepalive)、[4-9](#4-9-給油のお知らせweb-push)） |
 
 - 環境変数は Vercel の **Settings → Environment Variables** で Production / Preview ごとに設定します（一覧は [setup.md](./setup.md#環境変数)）。
   変更は次回のデプロイから反映されます。
@@ -29,6 +29,7 @@ DB の SQL 手順（マイグレーション適用・RLS 監査・バックア�
 - [ ] **Clerk（本番インスタンス）**: Supabase 連携を有効化し、Supabase に Third-Party Auth（Clerk）を追加する。`NEXT_PUBLIC_CLERK_SUPABASE_JWT_TEMPLATE` は **空のまま**にする（[auth-production.md](./auth-production.md)）
 - [ ] **Vercel**: 環境変数を設定し、`CRON_SECRET`（任意で `SUPABASE_SERVICE_ROLE_KEY`）を Production に追加して再デプロイする（[3-3](#3-3-vercel-側の設定)）
 - [ ] **Vercel**: **Settings → Cron Jobs** に `/api/keepalive`（`0 21 * * *`）が表示されることを確認する
+- [ ] **給油のお知らせ（任意）**: `0006_push_subscriptions.sql` を適用し、VAPID の鍵と `SUPABASE_SERVICE_ROLE_KEY` を Production に設定する（[4-9](#4-9-給油のお知らせweb-push)）
 - [ ] **GitHub**: リポジトリ Secrets に `SUPABASE_URL` / `SUPABASE_ANON_KEY` を追加し、ワークフローを手動実行する（[3-4](#3-4-github-側の設定)）
 - [ ] **確認**: `curl` で `/api/keepalive` が 200 を返すことを確認する（[3-5](#3-5-動作確認)）
 
@@ -303,6 +304,65 @@ Vercel Web Analytics（Hobby）はページビューしか取れないため、�
 2. `--dry-run` を外して実行するか、`regular` / `highOctane` / `diesel` と `surveyDate`（調査日）・`publishedDate`（公表日）を手でまとめて書き換える（小数第 1 位まで。ハイオクが 181 円ちょうどでも `181.0` と書く。`キー: 値,` の形を変えない）。
 3. `npm run lint && npm run typecheck && npm test` を通して PR を出し、マージする。
 
+## 4-9. 給油のお知らせ（Web Push）
+
+ログイン中の利用者が設定画面の「給油のお知らせ」をオンにした端末へ、前回の給油からいつもの間隔を過ぎた日に 1 回だけ通知を送ります
+（判定の規則と構成は [architecture.md「給油のお知らせ」](./architecture.md#給油のお知らせweb-push)）。
+
+| 項目 | 内容 |
+|---|---|
+| Cron | `vercel.json` の `/api/push/reminders`、`0 9 * * *`（UTC）= 毎日 18:00 JST 頃（Hobby は ±59 分のずれあり）。keepalive とは別の Cron（Hobby の上限は 1 プロジェクト 100 本・1 日 1 回まで。2026-11 時点の [Vercel のドキュメント](https://vercel.com/docs/cron-jobs/usage-and-pricing)） |
+| 認証 | keepalive と同じ `Authorization: Bearer <CRON_SECRET>`。`CRON_SECRET` 未設定は 500、不一致は 401 |
+| 必要な環境変数 | `NEXT_PUBLIC_VAPID_PUBLIC_KEY`・`VAPID_PRIVATE_KEY`・`VAPID_SUBJECT`・`SUPABASE_SERVICE_ROLE_KEY`（Production）。どれかが無いと送らずに `200 {"ok":true,"skipped":"..."}` を返す |
+| DB | `supabase/migrations/0006_push_subscriptions.sql`（`push_subscriptions` テーブル）。**`NEXT_PUBLIC_VAPID_PUBLIC_KEY` を設定する前に適用する** |
+| 読む列 | `push_subscriptions` の送信に使う列（`enabled = true` の行）と、利用者ごとの直近 11 件の `fuel_records.id` / `date` だけ |
+
+### 4-9-1. 有効にする手順
+
+1. Supabase の SQL Editor で `supabase/migrations/0006_push_subscriptions.sql` を実行し、[supabase/README.md 2 章](../supabase/README.md#2-rls-が有効か確認する)の監査で `push_subscriptions` のポリシーが 3 本だけであることを確かめる。
+2. 手元で VAPID の鍵の組を作る（一度だけ。リポジトリには書かない）。
+
+   ```bash
+   npx web-push generate-vapid-keys
+   # =======================================
+   # Public Key:
+   # BKx...（87 文字ほど）
+   # Private Key:
+   # 3fQ...（43 文字ほど）
+   # =======================================
+   ```
+
+3. Vercel の **Settings → Environment Variables**（Production）に次を追加し、再デプロイする（公開鍵はビルド時に埋め込まれる）。
+
+   | Name | Value |
+   |---|---|
+   | `NEXT_PUBLIC_VAPID_PUBLIC_KEY` | 手順 2 の Public Key |
+   | `VAPID_PRIVATE_KEY` | 手順 2 の Private Key（**`NEXT_PUBLIC_` を付けない**） |
+   | `VAPID_SUBJECT` | `mailto:<連絡先のメールアドレス>` |
+   | `SUPABASE_SERVICE_ROLE_KEY` | 未設定なら Supabase の service_role キー |
+
+4. **Settings → Cron Jobs** に `/api/push/reminders`（`0 9 * * *`）が出ることを確かめる。
+5. 設定画面でオンにし（iPhone はホーム画面に追加したアプリから）、次の手順で動作を確かめる。
+
+鍵を作り直すと、既存の購読には届かなくなります（プッシュサービスが 403 などを返す）。作り直したときは利用者にオンにし直してもらう必要があるため、鍵は変えないでください。
+
+### 4-9-2. 動作確認
+
+```bash
+curl -i -H "Authorization: Bearer <CRON_SECRET>" https://<your-domain>/api/push/reminders
+```
+
+| 結果 | 意味 |
+|---|---|
+| `200 {"ok":true,"subscriptions":N,"users":N,"sent":N,"skipped":N,"deactivated":N,"failed":N,...}` | 正常。`skipped` は「まだ間隔を過ぎていない・同じ記録に送り済み」など。`deactivated` は 404 / 410 で無効にした購読 |
+| `200 {"ok":true,"skipped":"vapid_not_configured"}` | VAPID の 3 つのどれかが無い（`VAPID_SUBJECT` が `mailto:` / `https://` で始まらない場合も） |
+| `200 {"ok":true,"skipped":"service_role_not_configured"}` | `SUPABASE_SERVICE_ROLE_KEY` が無い |
+| `401` / `500 CRON_SECRET is not configured` | keepalive と同じ |
+| `503`（`paused: true` なら Supabase の停止） / `502` | 購読を読めない（`0006` の未適用など）。Vercel の Logs の `[push]` を見る |
+
+同じ記録には 2 回送らず、最後に送ってから 20 時間以内も送らないため、手で何度呼んでも重複して届きません。
+すぐに試したいときは、SQL Editor で自分の購読の `last_notified_record_id` / `last_notified_at` を null に戻し、最後の記録が 14 日以上前の状態で呼びます。
+
 ## 5. トラブルシューティング
 
 | 症状 | 原因と対処 |
@@ -313,6 +373,9 @@ Vercel Web Analytics（Hobby）はページビューしか取れないため、�
 | 「クラウドDBが一時停止中です。…」のバナー、API が 540 | プロジェクトが停止している（[3-6](#3-6-停止した場合の復旧)） |
 | 「クラウドDBに接続できません。…」のバナー | ネットワーク断、または Supabase が 5xx を返している。復旧後に「再試行」を押す |
 | `/api/keepalive` が 401 / 500 | `CRON_SECRET` の不一致 / 未設定（[3-5](#3-5-動作確認)） |
+| 設定画面に「給油のお知らせ」が出ない | 未ログイン、または `NEXT_PUBLIC_VAPID_PUBLIC_KEY` が未設定（設定後は再デプロイが必要）（[4-9](#4-9-給油のお知らせweb-push)） |
+| 「お知らせの設定を保存できませんでした。…」 | `0006_push_subscriptions.sql` が未適用、または障害中。ブラウザの console に Supabase のエラーが出る |
+| お知らせが届かない | `/api/push/reminders` を `curl` で呼んで `skipped` / `failed` を見る（[4-9-2](#4-9-2-動作確認)）。iPhone はホーム画面のアプリでオンにしたか、端末の設定で通知が許可されているかを確かめる |
 | AI 解析が 403 `ORIGIN_MISMATCH` | リバースプロキシやカスタムドメインで `Host` が公開ホストと異なる。`NEXT_PUBLIC_APP_URL` を設定する（[api-analyze.md](./api-analyze.md)） |
 | AI 解析が 500 `SERVER_MISCONFIGURED` | `GEMINI_API_KEY` が未設定 |
 | ローカルの記録がクラウドに移行されない | 画面の移行エラー表示を確認する。データはブラウザに残り、次回の読み込みで再試行される（[architecture.md 5 章](./architecture.md#5-ローカル--クラウド移行)） |

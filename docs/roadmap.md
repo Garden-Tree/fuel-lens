@@ -7,6 +7,7 @@
 
 | 項目 | 実装日 | 内容 |
 |---|---|---|
+| 給油のお知らせ（Web Push。`/settings`） | 2026-11-12 | ログイン中の利用者が端末ごとにオンにすると、前回の給油からいつもの間隔（記録が 3 件以上なら間隔の中央値を 3〜60 日に収めたもの、足りなければ 14 日）を過ぎた日に 1 回だけ通知し、タップで `/app?action=scan` を開く。同じ記録には 2 回送らない。iPhone はホーム画面に追加した PWA（iOS 16.4 以上）だけ。送信は Vercel Cron（毎日 18:00 JST 頃）→ `/api/push/reminders`（service_role）。VAPID の鍵が無ければ機能全体が無効。テーブルは `0006_push_subscriptions.sql`。詳細は [architecture.md](./architecture.md#給油のお知らせweb-push)・[operations.md 4-9](./operations.md#4-9-給油のお知らせweb-push) |
 | バックアップと復元（`/settings`） | 2026-10-04 | 全車両・全記録の JSON バックアップ、追記のみの復元（件数プレビュー付き）、全車両 CSV の書き出し。詳細は [architecture.md 8 章](./architecture.md#8-バックアップと復元) |
 | PWA の基本（manifest、アイコン、ショートカット） | 2026-10-04 | ホーム画面に追加でき、「スキャン」「手動で入力」のショートカットを持つ。詳細は [architecture.md 9 章](./architecture.md#9-pwa) |
 | インポート（Fuelio CSV / FuelLens CSV。`/settings`） | 2026-10-05 | Fuelio の CSV（`Odo` / `Full` / `Missed` / `FuelType` / `Notes` を新しい列に取り込み、区間距離と燃費は連鎖計算が導出）と FuelLens の全車両・車両別 CSV を、復元と同じ重複判定で追記のみ取り込む。詳細は [architecture.md 8 章](./architecture.md#インポートcsv) |
@@ -46,7 +47,8 @@
 |---|---|---|---|
 | 車両比較と月次コストの積み上げ | 複数車両の燃費・支出を並べて比較し、月次コストを車両別に積み上げて表示する | M | `app/(app)/stats/page.tsx`、`lib/stats/`（`buildStatsModel`）、`lib/useFuelRecords.ts`（全車両の取得は `fetchAllRecords` を利用できる） |
 | 月次予算 | 月ごとの燃料費の予算に対する進み具合が分かる | S | `lib/stats/`（`buildMonthlyCostSeries` を利用）、`app/(app)/stats/page.tsx`、予算の保存先 |
-| 整備リマインダー | オイル交換などの時期を距離・日付で知らせる | M | 新規テーブルとマイグレーション（RLS ポリシーを追加したら [supabase/README.md](../supabase/README.md#2-rls-が有効か確認する) の監査対象一覧も更新）、新規画面 |
+| 整備リマインダー | オイル交換などの時期を距離・日付で知らせる | M | 新規テーブルとマイグレーション（RLS ポリシーを追加したら [supabase/README.md](../supabase/README.md#2-rls-が有効か確認する) の監査対象一覧も更新）、新規画面。通知は給油のお知らせの Web Push（`lib/push/`・`push_subscriptions`）を流用できる |
+| 給油のお知らせの改善 | 車両ごとの間隔・通知の時刻の選択・送った通知からの再開率の計測で、効き目を確かめながら調整できる | S〜M | `lib/push/reminder.ts`、`lib/server/push/reminderHandler.ts`、`push_subscriptions` の列の追加 |
 
 ### 基盤・運用
 
@@ -67,7 +69,12 @@
 - 公開ページ（`/`・`/calc`・`/gas-cost`・`/annual-gas-cost`・`/fuel-convert`・`/expense`）の「登録なしで3回まで試せます」は静的に描画するため、`TRIAL_COOKIE_SECRET` の有無はビルド時の値で決まります。設定を変えたら再デプロイします。
 - GitHub Actions の keepalive は anon キーを使います。anon が実行できるのは `keepalive_ping()` だけで
   （3 テーブルの権限は revoke 済み）、10 分のスロットルがあります。
-- `SUPABASE_SERVICE_ROLE_KEY` を設定していない場合、`/api/keepalive` の件数（`counts`）は `null` になります（想定どおり）。
+- `SUPABASE_SERVICE_ROLE_KEY` を設定していない場合、`/api/keepalive` の件数（`counts`）は `null` になります（想定どおり）。給油のお知らせも送られません（`200 { skipped }`）。
+- 給油のお知らせの間隔は利用者の全車両の記録をまとめて計算します（車両ごとではない）。複数の車両を交互に使う人は間隔が短めに出ます。
+  通知は Vercel Cron（Hobby）の 1 日 1 回・±59 分のずれがあり、時刻は選べません。送信は利用者ごとに順番に行うので、利用者が数千人規模になったら関数の実行時間（`maxDuration` 60 秒）を見直します。
+- 同じ端末でログアウトして別のアカウントでログインしても、前のアカウントの購読はその端末に残ります（新しいアカウントでオンにすると購読を作り直すので、前のアカウントの分は届かなくなる）。
+  ログアウトだけでは購読を消しません。
+- iPhone / iPad の Safari のタブ（ホーム画面に追加していない状態）では通知を受け取れません。`Notification.requestPermission()` が使えない古いブラウザ・アプリ内ブラウザでも使えません。
 - AI はオドメーターも読み取ります。オドメーターモードの車両では確認シートのオドメーター欄に入れて保存しますが、トリップモードの車両では参考表示するだけで保存しません。
 - レシートとメーターを別々に撮ったとき（2 枚）の役割は利用者の選択どおりに送ります。画像の取り違え（入れ替わり・メーターが写っていない）はサーバーでは判定せず、
   プロンプトで null と低い確信度を返させて確認シートの「要確認」に出すだけです（モデルが確実に気づく保証はありません。実際の Gemini での 2 枚の読み取り精度は未検証）。

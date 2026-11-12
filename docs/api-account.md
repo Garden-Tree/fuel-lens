@@ -2,7 +2,8 @@
 
 ログイン中の利用者の **Clerk のユーザー** を削除する API です。設定画面の「アカウント」から呼ばれます。
 DB のデータ（記録・車両・`users` 行）はこの API の前に、ブラウザが利用者自身の Clerk JWT（RLS）で削除します
-（`lib/data/accountDeletion.ts` の `deleteOwnData`）。サーバーには service_role キーを置かないため、DB には触れません。
+（`lib/data/accountDeletion.ts` の `deleteOwnData`）。この API は service_role キーを使わず、DB には触れません。
+給油のお知らせの購読（`push_subscriptions`）は `users` 行の削除で外部キー（`ON DELETE CASCADE`）により一緒に消えます。
 全体の流れは [architecture.md「アカウント削除」](./architecture.md#アカウント削除) を参照してください。
 
 実装は `app/api/account/route.ts`（実際の依存 = Clerk の `auth()` と `clerkClient().users.deleteUser`、モジュールレベルのレートリミッタを渡すだけの薄い `DELETE`）と、
