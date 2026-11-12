@@ -75,6 +75,13 @@ describe("ctaClickParamsOf", () => {
     expect(ctaClickParamsOf("/calc", "unknown")).toBeNull();
     expect(ctaClickParamsOf("/calc", null)).toBeNull();
   });
+
+  it("記録ガイド（/fuel-log・/fuel-log-excel）の位置を区別する", () => {
+    expect(ctaClickParamsOf("/fuel-log", "guide_top")).toEqual({ page: "/fuel-log", position: "guide_top" });
+    expect(ctaClickParamsOf("/fuel-log", "guide_inline")).toEqual({ page: "/fuel-log", position: "guide_inline" });
+    expect(ctaClickParamsOf("/fuel-log-excel", "excel_import")).toEqual({ page: "/fuel-log-excel", position: "excel_import" });
+    expect(ctaClickParamsOf("/fuel-log-excel", "cta_box")).toEqual({ page: "/fuel-log-excel", position: "cta_box" });
+  });
 });
 
 describe("gaMeasurementIdOf", () => {
