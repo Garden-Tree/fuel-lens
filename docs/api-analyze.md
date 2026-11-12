@@ -5,7 +5,8 @@
 `route.ts` は `maxDuration` と、実際の依存（Clerk の `auth`、`callGemini`、`process.env`、モジュールレベルのレートリミッタ）を渡すだけの薄い `POST` です。
 処理の本体は `lib/server/analyze/` に分かれています。`handler.ts`（`handleAnalyze(req, deps)`。下記の処理順序とエラーコードを実装し、依存を注入できるので `tests/analyzeHandler.test.ts` で fake を使って検証）、
 `geminiClient.ts`（`import "server-only"`。スキーマ・`callGemini`・上流エラーの分類 `classifyUpstreamError`）、
-`rateLimit.ts`（`createRateLimiter`・クライアント IP の取り出し `clientIpOf`・お試しの IP ごとの 1 日の上限の定数。Map と時計を注入でき `tests/rateLimit.test.ts` で検証）、
+`rateLimit.ts`（メモリの `createRateLimiter`・クライアント IP の取り出し `clientIpOf`・お試しの IP ごとの 1 日の上限の定数。Map と時計を注入でき `tests/rateLimit.test.ts` で検証）、
+`redisRateLimit.ts`（Upstash Redis で数える `createRedisRateLimiter`・環境変数の読み取り・2 つのリミッタを作る `createAnalyzeLimiters`。fetch を注入でき `tests/redisRateLimit.test.ts` で検証。[外部ストア](#レートリミットの外部ストアupstash-redis)）、
 `trialCookie.ts`（未ログインのお試しの署名付き Cookie。`node:crypto` の HMAC-SHA256。`tests/trialCookie.test.ts`）、
 `prompt.ts`（システム指示・ユーザープロンプト・画像の並べ方 `buildAnalyzeParts`。`server-only` も SDK も読まない純粋モジュールで、`tests/analyzePrompt.test.ts` で文言と並べ方を検証）、
 `errors.ts`（`callGemini` が投げる分類済みエラー `GeminiCallError`。`server-only` を持たないので `handler.ts` から実体を読める）です。
@@ -81,8 +82,30 @@ Content-Type: application/json
 7. **Gemini 呼び出し**（下記）。
 8. **応答の検証と正規化**、単価の再計算、妥当性チェック（下記）。
 
-レートリミット（1 分間・お試しの 1 日）のカウンタはサーバーインスタンスのメモリ上にあるベストエフォートな実装です
-（[既知の制約](./roadmap.md#既知の制約)）。
+レートリミット（1 分間・お試しの 1 日）のカウンタは、Upstash Redis が設定されていれば外部ストアに、
+未設定・障害時はサーバーインスタンスのメモリ上（ベストエフォート）に置きます（[外部ストア](#レートリミットの外部ストアupstash-redis)、[既知の制約](./roadmap.md#既知の制約)）。
+
+## レートリミットの外部ストア（Upstash Redis）
+
+サーバーレスではメモリのカウンタがインスタンスごとに別々で、コールドスタートで消えるため、
+Upstash Redis の REST API で全インスタンス共通に数えられるようにしています（`lib/server/analyze/redisRateLimit.ts`。依存は足さず `fetch` で呼ぶ）。
+上限の数・窓・429 の応答（`RATE_LIMITED` / `TRIAL_IP_LIMITED`）・`Retry-After` はメモリの実装と同じです。
+
+- **有効になる条件**: 接続先（`UPSTASH_REDIS_REST_URL` + `UPSTASH_REDIS_REST_TOKEN`、または Vercel の Marketplace 連携の既定で入る `KV_REST_API_URL` + `KV_REST_API_TOKEN`。
+  同じ組の URL とトークンがそろったものを使い、両方あれば `UPSTASH_REDIS_REST_*` を優先。URL は https のみ）と、
+  キーを変換する鍵（`RATE_LIMIT_KEY_SECRET`、無ければ `TRIAL_COOKIE_SECRET`）の両方があるとき。どれかが欠ければ従来どおりメモリだけで数えます。
+  環境変数は最初のリクエストで読みます（変えたら再デプロイ）。
+- **数え方**: メモリの実装と同じ「最初のリクエストから窓の長さの固定窓」。`EVAL` で Lua スクリプトを 1 回実行し、
+  `INCR` → 初回（または TTL が無いとき）だけ `PEXPIRE <窓の ms>` → `PTTL` を原子的に行います。回数が上限を超えたら拒否し、
+  `Retry-After` は残りの TTL を秒に切り上げた値（1 以上）です。成否にかかわらず 1 リクエスト 1 回と数える点も同じです。
+- **キー**: `fuel_lens:rl:<バケツ>:<HMAC-SHA256(鍵, "fuel_lens_rate_limit:v1:<バケツ>:<元のキー>") の base64url>`。
+  バケツは `minute`（1 分間 5 回）と `trial-day`（お試しの 1 日 10 回）、元のキーは `user:<userId>` か `ip:<IP>`。
+  **生の IP も userId も外部ストアには置きません**（userId 自体は秘密ではありませんが、外部ストアの中身だけで利用者を特定できないようにする）。
+  TTL は窓の長さ（60 秒 / 24 時間）なので、期限が来ればキーは消えます。鍵を変えるとキーが変わり、回数は数え直しになります。
+- **障害時**: 呼び出しのタイムアウトは 300ms。タイムアウト・接続エラー・HTTP エラー・不正な応答のときは、そのリクエストをメモリのリミッタで数え、
+  `console.warn` に日本語で理由（タイムアウト / HTTP 500 など）とバケツ名だけを記録します（キー・IP は出さない）。
+  失敗の直後 30 秒は外部ストアを呼ばずにメモリで数えます（毎回タイムアウトを待たないため）。外部ストアの障害で `/api/analyze` は止まりません。
+- 設定手順は [operations.md](./operations.md#4-9-upstash-redisapianalyze-の回数制限)。
 
 ## 未ログインのお試し読み取り
 
@@ -99,7 +122,8 @@ Content-Type: application/json
 - **乱用の歯止め**: Cookie は消せば数え直せるため、お試しには IP ごとの上限を 2 つ掛けます。1 分間 5 回（ログイン中のユーザー単位の上限と同じリミッタ、キー `ip:<IP>`）と、
   **1 日 10 回**（最初のリクエストから 24 時間の固定窓、キー `ip:<IP>`。成否にかかわらず数える）。使い切った Cookie（401 `TRIAL_EXHAUSTED`）は IP の上限を消費しません。
   IP は `X-Forwarded-For` の先頭、無ければ `X-Real-IP`、どちらも無ければ `"unknown"`（そういうリクエストすべてで 1 つのバケツを共有）。
-  どちらのカウンタもインスタンスごとのメモリ上にあり（ベストエフォート）、IP はこのメモリにだけ置きます（ログ・Sentry・アナリティクスには出さない）。
+  どちらのカウンタも、Upstash Redis が設定されていれば外部ストア、未設定・障害時はインスタンスごとのメモリ上（ベストエフォート）にあります。
+  IP はリミッタにだけ渡し、生の IP を置くのはメモリだけです。外部ストアには HMAC-SHA256 で変換した値だけを置きます（ログ・Sentry・アナリティクスには出さない）。
 - **残り回数**: お試しとして受け付けた未ログインのリクエストには、成否にかかわらず `X-Trial-Remaining: <0〜3>` を付けます
   （成功時は加算後の値）。ログイン中・お試しが無効のときは付けません。
 - **画面**: アプリ画面のレイアウト（`app/(app)/layout.tsx`）がサーバーで Cookie から残り回数を読み（HttpOnly なのでクライアントからは読めない）、
@@ -241,3 +265,5 @@ Gemini のエラー本文はクライアントへ返しません。詳細はサ�
 | `GEMINI_FALLBACK_MODEL` | 主モデルが一時的に失敗し続けたときの代替モデル。既定 `gemini-2.5-flash`。空文字または主モデルと同じなら代替しない |
 | `TRIAL_COOKIE_SECRET` | 未ログインのお試し読み取りの Cookie 署名鍵。設定すると端末ごとに 3 回まで（IP ごとに 1 日 10 回の上限つき）。未設定ならお試しは無効（未ログインは 401）。変えると発行済みの Cookie は無効になり回数が数え直しになる |
 | `NEXT_PUBLIC_APP_URL` | Origin チェックで追加で許可するホスト（リバースプロキシやカスタムドメインで `Host` が異なる場合） |
+| `UPSTASH_REDIS_REST_URL` / `UPSTASH_REDIS_REST_TOKEN` | レートリミットを数える Upstash Redis の REST API。任意。`KV_REST_API_URL` / `KV_REST_API_TOKEN`（Vercel の Marketplace 連携の既定の名前）でもよい。未設定ならメモリで数える |
+| `RATE_LIMIT_KEY_SECRET` | 外部ストアのキーを HMAC で変換する鍵。任意。未設定なら `TRIAL_COOKIE_SECRET` を使い、どちらも無ければ外部ストアを使わない |

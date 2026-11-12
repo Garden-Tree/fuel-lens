@@ -1,14 +1,7 @@
 import { auth } from "@clerk/nextjs/server";
 import { handleAnalyze } from "@/lib/server/analyze/handler";
 import { callGemini } from "@/lib/server/analyze/geminiClient";
-import {
-  MAX_RATE_LIMIT_KEYS,
-  MAX_REQUESTS_PER_WINDOW,
-  MAX_TRIAL_REQUESTS_PER_IP_PER_DAY,
-  RATE_LIMIT_WINDOW_MS,
-  TRIAL_IP_WINDOW_MS,
-  createRateLimiter,
-} from "@/lib/server/analyze/rateLimit";
+import { createAnalyzeLimiters } from "@/lib/server/analyze/redisRateLimit";
 
 /**
  * Gemini 呼び出し（1 回最大30秒。一時的な失敗の再試行・代替モデルは残り時間が足りるときだけ。全体の予算は 55 秒）＋前後処理の余裕を見て関数全体の上限を60秒にする。
@@ -16,21 +9,26 @@ import {
  */
 export const maxDuration = 60;
 
-// モジュールレベルのインスタンス（= サーバーレスのインスタンスごとの状態。ベストエフォート）。
 // 1分間に5回まで（キー = ログインユーザーID、未ログインはIP）／未ログインのお試しは IP ごとに 1 日 10 回まで。
-const limiter = createRateLimiter({
-  windowMs: RATE_LIMIT_WINDOW_MS,
-  max: MAX_REQUESTS_PER_WINDOW,
-  maxKeys: MAX_RATE_LIMIT_KEYS,
-});
-const trialLimiter = createRateLimiter({
-  windowMs: TRIAL_IP_WINDOW_MS,
-  max: MAX_TRIAL_REQUESTS_PER_IP_PER_DAY,
-  maxKeys: MAX_RATE_LIMIT_KEYS,
-});
+// Upstash Redis（UPSTASH_REDIS_REST_* または KV_REST_API_*）と HMAC の鍵がそろえば外部ストアで数え、
+// 未設定・障害時はモジュールレベルのメモリ（= サーバーレスのインスタンスごと。ベストエフォート）で数える。
+// 環境変数はビルド時ではなく最初のリクエストで読む。
+let limiters: ReturnType<typeof createAnalyzeLimiters> | undefined;
+function getLimiters() {
+  limiters ??= createAnalyzeLimiters({
+    UPSTASH_REDIS_REST_URL: process.env.UPSTASH_REDIS_REST_URL,
+    UPSTASH_REDIS_REST_TOKEN: process.env.UPSTASH_REDIS_REST_TOKEN,
+    KV_REST_API_URL: process.env.KV_REST_API_URL,
+    KV_REST_API_TOKEN: process.env.KV_REST_API_TOKEN,
+    RATE_LIMIT_KEY_SECRET: process.env.RATE_LIMIT_KEY_SECRET,
+    TRIAL_COOKIE_SECRET: process.env.TRIAL_COOKIE_SECRET,
+  });
+  return limiters;
+}
 
 /** 仕様・処理順序は docs/api-analyze.md、本体は lib/server/analyze/handler.ts */
 export async function POST(req: Request) {
+  const { limiter, trialLimiter } = getLimiters();
   return handleAnalyze(req, {
     auth: async () => {
       const { userId } = await auth();

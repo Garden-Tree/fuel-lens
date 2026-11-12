@@ -303,6 +303,35 @@ Vercel Web Analytics（Hobby）はページビューしか取れないため、�
 2. `--dry-run` を外して実行するか、`regular` / `highOctane` / `diesel` と `surveyDate`（調査日）・`publishedDate`（公表日）を手でまとめて書き換える（小数第 1 位まで。ハイオクが 181 円ちょうどでも `181.0` と書く。`キー: 値,` の形を変えない）。
 3. `npm run lint && npm run typecheck && npm test` を通して PR を出し、マージする。
 
+## 4-9. Upstash Redis（/api/analyze の回数制限）
+
+`/api/analyze` の回数制限（1 分 5 回、お試しの IP ごとの 1 日 10 回）を、インスタンスのメモリではなく Upstash Redis で全インスタンス共通に数えます。
+任意の設定で、未設定なら従来どおりメモリで数えます。仕様（キーの形・障害時の動き）は [api-analyze.md](./api-analyze.md#レートリミットの外部ストアupstash-redis)。
+
+### 4-9-1. 設定手順（Vercel の Marketplace）
+
+1. Vercel のプロジェクト → **Storage**（または **Integrations → Marketplace**）→ **Upstash**（Upstash for Redis）を選び、データベースを作る。
+   - **Primary Region は Tokyo（`ap-northeast-1`）にする。** 関数は東京（`hnd1`）で動き、外部ストアの呼び出しは 300ms でタイムアウトするため、遠い地域だとメモリに切り替わりやすい。
+   - プランは Free で足りる（1 リクエストあたり 1〜2 コマンド）。
+2. 作ったデータベースをこのプロジェクトに接続する（環境は **Production**。Preview でも試すなら Preview も）。環境変数の接頭辞は既定の `KV` のままでよい。
+3. プロジェクトの **Settings → Environment Variables** に `KV_REST_API_URL` と `KV_REST_API_TOKEN` が入ったことを確かめる
+   （`KV_REST_API_READ_ONLY_TOKEN` / `KV_URL` / `REDIS_URL` も入るが使わない。読み取り専用のトークンでは数えられない）。
+   接頭辞を `UPSTASH_REDIS_REST` にした場合や、Upstash のコンソールから手で入れる場合は `UPSTASH_REDIS_REST_URL` / `UPSTASH_REDIS_REST_TOKEN` でもよい。
+4. キーの HMAC の鍵があることを確かめる。`TRIAL_COOKIE_SECRET` が設定済みならそれを使う。分けたいときは `RATE_LIMIT_KEY_SECRET`（`openssl rand -base64 32`）を追加する。
+   **どちらも無いと外部ストアは使われない**（生の IP を外部に置かないため）。
+5. 再デプロイする（環境変数は関数の最初のリクエストで読む）。
+
+### 4-9-2. 動作確認
+
+- 本番で 1 回読み取りをしたあと、Upstash のコンソールの **Data Browser** に `fuel_lens:rl:minute:<ランダムな文字列>` のキーが TTL 付きで見えること（IP や `user_...` がそのまま入っていないこと）。
+- Vercel の関数のログに `[rate-limit] 外部ストア（Upstash Redis）で回数を数えられませんでした` が出続けていないこと。
+  出ている場合は括弧内の理由を見る: `HTTP 401` はトークンの誤り（読み取り専用トークンなど）、`タイムアウト` は地域が遠いか Upstash 側の障害。
+  この間もメモリで数えるので `/api/analyze` は止まらない。
+
+### 4-9-3. やめるとき
+
+`KV_REST_API_*`（と `UPSTASH_REDIS_REST_*`）を消して再デプロイすれば、メモリだけで数える従来の動作に戻る。データベースのキーは TTL（最長 24 時間）で消える。
+
 ## 5. トラブルシューティング
 
 | 症状 | 原因と対処 |

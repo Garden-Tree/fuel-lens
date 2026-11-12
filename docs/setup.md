@@ -32,6 +32,9 @@ npm run dev                  # http://localhost:3000
 | `NEXT_PUBLIC_APP_URL` | 任意 | アプリの公開 URL。`/api/analyze` の Origin 許可ホストと `metadataBase` に使う |
 | `NEXT_PUBLIC_ENABLE_SW` | 任意 | `1` で開発ビルドでも Service Worker（Web Share Target の受け取り）を登録する。本番ビルドでは常に登録 |
 | `TRIAL_COOKIE_SECRET` | 任意 | 未ログインのお試し読み取りの Cookie 署名鍵（サーバー専用。`openssl rand -base64 32` などで生成）。設定すると未ログインでも端末ごとに 3 回まで AI 解析を試せる（IP ごとに 1 日 10 回の上限つき）。未設定ならお試しは無効で、未ログインの AI 解析は 401。公開ページの文言もビルド時にこれで切り替わる（[api-analyze.md](./api-analyze.md#未ログインのお試し読み取り)） |
+| `UPSTASH_REDIS_REST_URL` / `UPSTASH_REDIS_REST_TOKEN` | 任意 | `/api/analyze` の回数制限を数える Upstash Redis の REST API（サーバー専用）。Vercel の Marketplace 連携の既定では `KV_REST_API_URL` / `KV_REST_API_TOKEN` の名前で入り、どちらの名前でもよい（両方あれば `UPSTASH_REDIS_REST_*` を優先）。未設定ならインスタンスのメモリで数える（従来どおり）。手順は [operations.md](./operations.md#4-9-upstash-redisapianalyze-の回数制限) |
+| `KV_REST_API_URL` / `KV_REST_API_TOKEN` | 任意 | 上と同じ（Vercel の Marketplace 連携で入る名前） |
+| `RATE_LIMIT_KEY_SECRET` | 任意 | 外部ストアに置くキー（IP・userId）を HMAC-SHA256 で変換する鍵（サーバー専用）。未設定なら `TRIAL_COOKIE_SECRET` を使い、どちらも無ければ外部ストアを使わない（生の IP を外部に置かないため） |
 | `CRON_SECRET` | 本番で必須 | Vercel Cron → `/api/keepalive` の認証用シークレット |
 | `SUPABASE_SERVICE_ROLE_KEY` | 任意 | `/api/keepalive` で件数取得まで行う場合に設定。サーバー専用（`NEXT_PUBLIC_` を付けない） |
 | `NEXT_PUBLIC_GA_MEASUREMENT_ID` | 任意 | Google Analytics 4 の測定 ID（`G-XXXX`）。未設定なら gtag を読み込まず計測しない。本番のみ設定（[operations.md](./operations.md#4-6-google-analytics-4行動イベント)） |

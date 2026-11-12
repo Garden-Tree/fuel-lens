@@ -15,7 +15,7 @@ import { TRIAL_COOKIE_NAME, TRIAL_EXHAUSTED_MESSAGE, TRIAL_MAX_SCANS, TRIAL_REMA
 import { GeminiCallError } from "./errors";
 // 型のみ。geminiClient は `server-only` を import するため、実体はここから読み込まない（テストで差し替え可能にする）
 import type { callGemini } from "./geminiClient";
-import { clientIpOf, type RateLimiter } from "./rateLimit";
+import { clientIpOf, type RateLimitConsumer } from "./rateLimit";
 import { decodeTrialCookie, readCookie, trialSetCookie } from "./trialCookie";
 
 export const DEFAULT_GEMINI_MODEL = "gemini-3.5-flash-lite";
@@ -58,10 +58,13 @@ export type AnalyzeDeps = {
   auth: () => Promise<{ userId: string | null }>;
   gemini: typeof callGemini;
   env: AnalyzeEnv;
-  /** 1 分間の上限（キー = `user:<id>`、未ログインは `ip:<IP>`） */
-  limiter: RateLimiter;
+  /**
+   * 1 分間の上限（キー = `user:<id>`、未ログインは `ip:<IP>`）。メモリ（同期）でも外部ストア（非同期）でもよい。
+   * 外部ストアの実装はキーを HMAC で変換してから置く（lib/server/analyze/redisRateLimit.ts）
+   */
+  limiter: RateLimitConsumer;
   /** 未ログインのお試しの IP ごとの 1 日の上限（キー = `ip:<IP>`） */
-  trialLimiter: RateLimiter;
+  trialLimiter: RateLimitConsumer;
   now: () => number;
   /** リトライ前の待機（省略時は setTimeout。テストで差し替える） */
   sleep?: (ms: number) => Promise<void>;
@@ -136,10 +139,10 @@ export async function handleAnalyze(req: Request, deps: AnalyzeDeps): Promise<Re
       }
     }
 
-    // ---- レートリミット（ユーザーID単位。未ログインは IP 単位。インスタンス内ベストエフォート） ----
-    // IP はリミッタのメモリにだけ置き、ログには出さない
+    // ---- レートリミット（ユーザーID単位。未ログインは IP 単位。外部ストアが無ければインスタンス内ベストエフォート） ----
+    // IP はリミッタにだけ渡し（外部ストアには HMAC で変換した値だけが入る）、ログには出さない
     const rateKey = userId ? `user:${userId}` : `ip:${ip}`;
-    const rate = limiter.consume(rateKey, deps.now());
+    const rate = await limiter.consume(rateKey, deps.now());
     if (!rate.allowed) {
       log("warn", userId ? `Rate limit exceeded for user:${userId}` : "Rate limit exceeded (trial)");
       return errorResponse(
@@ -150,7 +153,7 @@ export async function handleAnalyze(req: Request, deps: AnalyzeDeps): Promise<Re
     }
     if (trial) {
       // お試しは IP ごとに 1 日の上限も掛ける（Cookie は消せば数え直せるため）
-      const daily = trialLimiter.consume(`ip:${ip}`, deps.now());
+      const daily = await trialLimiter.consume(`ip:${ip}`, deps.now());
       if (!daily.allowed) {
         log("warn", "Trial daily limit exceeded");
         return errorResponse(
