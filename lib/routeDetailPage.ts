@@ -206,7 +206,7 @@ export function routeInsights(route: RouteEntry): string[] {
     }
     paragraphs.push(
       diff > 0
-        ? `平日の深夜0時に入口のICを出ると、深夜割引で普通車の高速代は${yen(route.nightToll.standard)}円（平日昼間より${yen(diff)}円安い）。${compare}`
+        ? `平日の深夜0時に入口のICを通ると、深夜割引で普通車の高速代は${yen(route.nightToll.standard)}円（平日昼間より${yen(diff)}円安い）。${compare}`
         : `平日の深夜0時に出ても、普通車の高速代は${yen(route.nightToll.standard)}円で平日昼間と変わりませんでした。`
     );
   }
