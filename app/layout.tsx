@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 import { getSiteUrl } from "@/lib/siteUrl";
+import { startupImages } from "@/lib/startupImages";
 import ServiceWorkerRegister from "@/components/ServiceWorkerRegister";
 import WebAnalytics from "@/components/WebAnalytics";
 import GoogleAnalytics from "@/components/GoogleAnalytics";
@@ -43,6 +44,8 @@ export const metadata: Metadata = {
     capable: true,
     title: APP_NAME,
     statusBarStyle: "black-translucent",
+    // ホーム画面から起動したときの起動画像（暗い背景の中央にアイコン）。端末の一覧は lib/startupImages.json
+    startupImage: startupImages(),
   },
   formatDetection: {
     telephone: false,

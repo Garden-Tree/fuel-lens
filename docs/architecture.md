@@ -743,6 +743,9 @@ CSV を `lib/importers/` の純粋関数でバックアップ形式（`FuelLensB
   `orientation` は `portrait`、背景色とテーマ色は `#0B0F14`（`ground` トークン）です。`app/layout.tsx` の `metadata.manifest` から参照し、テーマ色は `viewport.themeColor` にも設定しています。
 - アイコンは `public/icons/` の `icon-192.png` / `icon-512.png`（通常）と `icon-maskable-512.png`（maskable。余白付きの全面塗り）、
   iOS 用の `public/apple-touch-icon.png`（180x180。`metadata.icons.apple`）です。
+- iOS でホーム画面から起動したときの起動画像（apple-touch-startup-image）は `public/splash/apple-splash-<幅>x<高さ>.png`（物理ピクセル、縦向きのみ）です。
+  `node scripts/generate-startup-images.mjs` が背景 `#0B0F14` の中央に `icon-512.png` を置いて生成し、生成物はコミットします（Vercel では実行しない）。
+  端末の一覧は `lib/startupImages.json` が正本で、`lib/startupImages.ts` の `startupImages()` が `metadata.appleWebApp.startupImage` の `{ url, media }` を作ります。
 - manifest には `id`（`/app`。`start_url` と同じ値で、省略時の既定と同じ）、`dir`、`categories`、`screenshots`（`public/screenshots/` の 1080x1920 を 3 枚、`form_factor: narrow`）も入っています。
   Google Play 版（TWA）のために `/.well-known/assetlinks.json`（`app/.well-known/assetlinks.json/route.ts`、本体は `lib/assetlinks.ts`）が、環境変数 `ANDROID_ASSETLINKS_SHA256` の署名鍵フィンガープリントを返します（未設定なら 404）。
   `proxy.ts` の matcher は `/.well-known` を除外します。手順は [play-store/README.md](./play-store/README.md)。
