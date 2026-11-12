@@ -19,6 +19,8 @@ FuelLens の構成、データの流れ、主要なモジュールの役割を�
 | `app/api/analyze/route.ts` | Gemini で画像（1 枚、またはレシートとメーターの 2 枚）を解析する API（[api-analyze.md](./api-analyze.md)。本体は `lib/server/analyze/`、プロンプトは `prompt.ts`） |
 | `app/api/account/route.ts`、`lib/server/account/handler.ts` | アカウント削除の API（`DELETE /api/account`。Clerk のユーザーを削除する。[api-account.md](./api-account.md)） |
 | `app/api/keepalive/route.ts` | Supabase 自動停止対策のエンドポイント（[operations.md](./operations.md#3-supabase-の自動停止と-keepalive)） |
+| `app/api/push/reminders/route.ts`、`lib/server/push/reminderHandler.ts` | 給油のお知らせ（Web Push）を送る Cron のエンドポイント（`GET`、`CRON_SECRET`）と送信の本体（[給油のお知らせ](#給油のお知らせweb-push)） |
+| `lib/push/` | 給油のお知らせの判定（`reminder.ts`。純粋関数）、環境の判定と鍵の変換（`support.ts`）、VAPID の設定（`config.ts`）、ブラウザ側の購読・保存（`browser.ts`） |
 | `app/layout.tsx` | ルートレイアウト。フォント（数字用の JetBrains Mono。日本語は端末のフォント）、`ServiceWorkerRegister` / `WebAnalytics` / `GoogleAnalytics`（`NEXT_PUBLIC_GA_MEASUREMENT_ID` があるときだけ GA4。[operations.md](./operations.md#4-6-google-analytics-4行動イベント)）、`metadata` と `viewport`、`IosViewportGuard`（iOS だけ viewport に `maximum-scale=1` を足して入力欄の自動ズームを止める。ピンチズームは有効のまま。判定は `lib/iosViewport.ts`）。Clerk・トースト・Supabase は載せない（公開ページ `/`・`/calc`・`/gas-cost`・`/privacy`・`/terms` を軽くするため） |
 | `app/(app)/layout.tsx` | アプリ画面（`/app`・`/history`・`/stats`・`/settings`。ルートグループなので URL は変わらない）の共通レイアウト。`ClerkProvider`（`localization` は `lib/clerkLocalization.ts`） / `InitialAuthProvider`（サーバーの `auth()` の結果。[2 章「最初の描画」](#2-データフロー)。このため 4 画面は動的描画） / `ToastProvider` / `UserSync` / `SupabaseStatusBanner`、Clerk Frontend API への `preconnect`（`lib/clerkFrontendApi.ts`）。画面の枠 `AppShell` もここで描画する。各画面に `loading.tsx`（見出しとスケルトン。[画面の切り替え](#画面の切り替えタブのタップ)） |
 | `app/globals.css` | デザイントークン（`@theme`）と `num` などのユーティリティ（[design-system.md](./design-system.md)） |
@@ -32,6 +34,7 @@ FuelLens の構成、データの流れ、主要なモジュールの役割を�
 | `components/Modal.tsx` | 共通モーダル。`useFocusTrap` + `useBackdropClose` + Escape + 任意の本文スクロールロックを束ね、`role="dialog"` / `aria-modal` / `aria-labelledby` を付ける。保存中は `disableClose` で Escape・背景クリック・× を無視。`Modal.Header`（見出しと ×）/ `Modal.Body` / `Modal.Footer`、Escape だけ別処理にする `onEscape` |
 | `components/vehicles/*` / `lib/useVehicleDraft.ts` | 車両の管理モーダルの部品。`VehicleRow`（表示 / 編集行、削除確認文 `deleteConfirmMessage`）、`AddVehicleForm`、`VehicleSettingsFields`（距離の入力方式・既定の燃料種別・車両タイプの切り替え、`modeSwitchNote`）。追加フォーム・編集行の下書きと検証は `useVehicleDraft` |
 | `components/BackupPanel.tsx` | 設定画面の本体。データ概要、JSON / CSV の書き出し、復元（ファイル選択 → 件数プレビュー → 確認 → 追加） |
+| `components/PushReminderPanel.tsx` | 設定画面の「給油のお知らせ」のスイッチ（ログイン中かつ `NEXT_PUBLIC_VAPID_PUBLIC_KEY` があるときだけ。[給油のお知らせ](#給油のお知らせweb-push)） |
 | `components/AccountPanel.tsx` / `components/landing/AccountDeletedNotice.tsx` | 設定画面の「アカウント」（ログイン中はアカウント削除、未ログインはこの端末のデータの削除）/ 削除後にランディング（`/?deleted=1`）で一度だけ出す通知（[アカウント削除](#アカウント削除)） |
 | `components/ImportPanel.tsx` | 設定画面の「インポート」。Fuelio / FuelLens の CSV を読み込み、復元と同じ流れで追加する（[8 章](#インポートcsv)） |
 | `components/RestoreCounts.tsx` / `components/settingsUi.ts` | 復元・取り込みの件数プレビュー（と補足の箇条書き） / 設定画面のパネルで共有するクラス名と処理中フラグの型（`SettingsBusy`） |
@@ -75,7 +78,7 @@ FuelLens の構成、データの流れ、主要なモジュールの役割を�
 | `lib/useRecordEditing.ts` | 記録の編集・手動入力のフォームの開閉と保存（重複確認・toast・車両切り替えで閉じる）。/app と /history で共用 |
 | `lib/manualPrefill.ts` | 手動入力の事前入力 `/app?action=manual&distance=…&amount=…&cost=…` の組み立て（`buildManualPrefillHref`。`/calc` から）・解析（`parseManualPrefill`。信頼できない入力として検証）・車両の入力方式への当てはめ（`prefillToRecord`）。純粋関数（[燃費計算ページ](#燃費計算ページcalc)） |
 | `lib/shareInbox.ts` | Web Share Target の受け取り箱。Service Worker が IndexedDB に置いた共有画像を、トークン一致かつ 10 分以内のときだけ取り出して削除する（`takeSharedImage` / `clearSharedImage`。[9 章](#9-pwa)） |
-| `public/sw.js` | Service Worker。Web Share Target（POST `/share`）の受け取り専用で、キャッシュはしない（[9 章](#9-pwa)） |
+| `public/sw.js` | Service Worker。Web Share Target（POST `/share`）の受け取りと、給油のお知らせの `push` / `notificationclick` だけ。キャッシュはしない（[9 章](#9-pwa)） |
 | `components/ServiceWorkerRegister.tsx` | `public/sw.js` を登録する（本番ビルドのみ。開発中は `NEXT_PUBLIC_ENABLE_SW=1` で有効化）。`app/layout.tsx` にマウント |
 | `public/icons/` / `public/apple-touch-icon.png` | PWA アイコン（`icon-192.png` / `icon-512.png` / `icon-maskable-512.png` と 180x180 の apple-touch-icon）。`scripts/generate-icons.mjs` が生成 |
 | `scripts/generate-icons.mjs` | `app/icon.svg` から PWA アイコンを生成するスクリプト（`node scripts/generate-icons.mjs`） |
@@ -83,7 +86,7 @@ FuelLens の構成、データの流れ、主要なモジュールの役割を�
 | `scripts/update-gas-price.mjs` | 資源エネルギー庁の結果詳細版（xlsx）から全国平均のレギュラー・ハイオク・軽油を読み、新しい調査日なら `lib/nationalGasPrice.ts` を書き換える（`--dry-run` あり）。xlsx は Node 標準の zlib で展開する（追加の依存なし）。解析は純粋関数で `tests/updateGasPrice.test.ts` がテストする |
 | `tests/*.test.ts`、`tests/data/*.test.ts` | Vitest の単体テスト（`node` プロジェクト、`environment: "node"`。対象は `lib/` の関数。`tests/data/` はデータアダプタ層で、偽の Supabase クライアントと Map の Storage は `tests/data/fakeSupabase.ts`） |
 | `tests/components/*.test.tsx`、`tests/setup/` | Vitest のコンポーネントテスト（`dom` プロジェクト、jsdom + Testing Library。セットアップは `tests/setup/dom.ts`） |
-| `supabase/migrations/*.sql` | スキーマ・RLS・keepalive・給油の連鎖計算用の列（`0004_fill_chain.sql`）・記録の入口（`0005_record_source.sql`）（冪等）。手順は [supabase/README.md](../supabase/README.md) |
+| `supabase/migrations/*.sql` | スキーマ・RLS・keepalive・給油の連鎖計算用の列（`0004_fill_chain.sql`）・記録の入口（`0005_record_source.sql`）・給油のお知らせの購読（`0006_push_subscriptions.sql`）（冪等）。手順は [supabase/README.md](../supabase/README.md) |
 | `docs/` | このドキュメント群。連鎖計算の仕様は [design-fill-chain.md](./design-fill-chain.md) |
 | `.github/workflows/` | `ci.yml`（CI）、`supabase-keepalive.yml`（keepalive の予備経路）、`indexnow.yml`（本番デプロイ後の IndexNow 通知）、`update-gas-price.yml`（全国平均のガソリン価格の週次更新 PR） |
 | `proxy.ts` | Clerk ミドルウェア。Next.js 16 ではファイル名が `proxy.ts`。全ルートを公開のままにしている |
@@ -185,6 +188,7 @@ useVehicles / useFuelRecords
 | `vehicles` | `id`（uuid）, `user_id`, `name`, `type`（`car` / `bike`）, `created_at`, `distance_mode`, `default_fuel_type` | `type` は CHECK 制約。`distance_mode` / `default_fuel_type` は `0004` で追加（下表） |
 | `fuel_records` | `id`（uuid）, `user_id`, `vehicle_id`（uuid、null 可）, `date`, `total_distance`, `fuel_amount`, `total_cost`, `price_per_unit`, `fuel_efficiency`, `gas_station`, `created_at`, `odometer`, `is_full`, `missed_previous`, `fuel_type`, `memo`, `source` | `total_distance` は区間距離（トリップモードは入力値、オドメーターモードは導出値）。`odometer` 〜 `memo` の 5 列は `0004`、`source` は `0005` で追加（下表） |
 | `keepalive` | `id`（常に 1）, `last_ping`, `source` | 自動停止対策のハートビート（`0002`）。アプリからは触らない |
+| `push_subscriptions` | `id`（uuid）, `user_id`, `endpoint`, `p256dh`, `auth`, `enabled`, `created_at`, `updated_at`, `last_notified_record_id`, `last_notified_at` | 給油のお知らせの購読（端末ごとに 1 行。`0006`）。利用者は自分の行の読み取り・追加・削除だけ（update 権限なし）。`enabled` と `last_notified_*` はサーバー（service_role）だけが書く（[給油のお知らせ](#給油のお知らせweb-push)） |
 
 `0004` で追加した列（すべて冪等な `add column if not exists`。既存行は書き換えず、既定値として読まれる）:
 
@@ -208,7 +212,7 @@ useVehicles / useFuelRecords
   （`useRecordEditing.startManualEntry(initial, { source })`）、Fuelio / FuelLens CSV の取り込み = `import`、バックアップの復元 = 元の値（無い・不明なら `restore`）。
   `source` は作成時に決まり、更新（`pickUpdateColumns` / `applyRecordPatch`）では変えません（編集で消えない）。CSV 出力には含めません（利用者向けの出力で、取り込み時は `import` になるため）。
 - `total_distance`（オドメーターモード）と `fuel_efficiency` の保存値は信頼しません。読み取り時に必ず再計算して上書きします（[10 章](#10-給油の連鎖計算fill-chain)）。
-- 外部キーはすべて `ON DELETE CASCADE` です（`fuel_records.vehicle_id` → `vehicles`、`vehicles.user_id` / `fuel_records.user_id` → `users`）。
+- 外部キーはすべて `ON DELETE CASCADE` です（`fuel_records.vehicle_id` → `vehicles`、`vehicles.user_id` / `fuel_records.user_id` / `push_subscriptions.user_id` → `users`）。
 - `fuel_efficiency` と `price_per_unit` は、保存時にクライアントが `calculateFuelMetrics` で計算した値です
   （燃費は小数第 2 位、単価は 0.1 円/L 単位に丸める）。表示する燃費は読み取り時の連鎖計算の結果です（保存値は参考）。単価の表示は `formatPricePerUnit` で常に小数第 1 位まで出す（旧仕様の整数値も `160.0` と表示）。
 
@@ -624,12 +628,13 @@ Supabase Free のプロジェクトが一時停止すると、API は HTTP 540 �
 
 ### アカウント削除
 
-設定画面の「アカウント」（`components/AccountPanel.tsx`）から、利用者が自分で削除します。サーバーには service_role キーを置かないため、
+設定画面の「アカウント」（`components/AccountPanel.tsx`）から、利用者が自分で削除します。アカウント削除の経路では service_role キーを使わず、
 DB のデータは利用者自身の Supabase クライアント（RLS）で消し、サーバー（`DELETE /api/account`）は Clerk のユーザーだけを消します。
 
 1. 「アカウントを削除」→ `useToast().confirm`（すべての車両・記録が消え、元に戻せないこと。先にバックアップを勧める）→ 「削除」と入力すると「完全に削除する」が押せる（バックアップへのページ内リンク `#settings-backup` 付き）。
 2. **データの削除**: `stores.deleteAccountData()`（`lib/data/useDataStores.ts`）が `deleteOwnData` を `runWithOutageHandling(…, "write")` で呼ぶ。
    記録 → 車両 → `users` 行の順に削除し（ポリシー `fuel_records_delete_own` / `vehicles_delete_own` / `users_delete_own`。外部キーの `ON DELETE CASCADE` に頼らない。本番 DB の既存の外部キーは削除時の動作を保証できないため）、0 件を確認する。
+   給油のお知らせの購読（`push_subscriptions`）は、`0006` で新しく作る `user_id` → `users(id)` の外部キーが必ず `ON DELETE CASCADE` なので、`users` 行の削除で一緒に消える（`0006` 未適用の DB でも削除が失敗しないよう、明示的には消さない）。
    成功したら、この端末のこのユーザーのキャッシュ（`clearUserCaches`）・移行の途中状態（`clearMigrationState`）・選択中の車両の保存値を消す。閲覧専用中はボタンを無効にし、呼んでも日本語の `DataError` で拒否する。
 3. **Clerk のユーザーの削除**: `DELETE /api/account`（[api-account.md](./api-account.md)）。204 なら次へ。
 4. **ログアウト**: `useClerk().signOut({ redirectUrl: "/?deleted=1" })`（失敗したら `location.assign` で移動）。ランディングの `AccountDeletedNotice` が一度だけ「削除しました」を出し、URL から `deleted` を消す（トーストは画面の移動で消えるため使わない）。
@@ -747,7 +752,7 @@ CSV を `lib/importers/` の純粋関数でバックアップ形式（`FuelLensB
 ## 9. PWA
 
 ホーム画面に追加して、アプリのように起動できます。写真アプリの「共有」から FuelLens に画像を送ってスキャンできます（Web Share Target）。
-**Service Worker は共有の受け取り専用で、キャッシュはしません。オフライン動作には対応していません**（[今後の候補](./roadmap.md)）。
+**Service Worker は共有の受け取りと給油のお知らせの表示（[下記](#給油のお知らせweb-push)）だけで、キャッシュはしません。オフライン動作には対応していません**（[今後の候補](./roadmap.md)）。
 
 - `app/manifest.ts` が `/manifest.webmanifest` を返します。`name` / `short_name` は `FuelLens`、`start_url` は `/app`、`display` は `standalone`、
   `orientation` は `portrait`、背景色とテーマ色は `#0B0F14`（`ground` トークン）です。`app/layout.tsx` の `metadata.manifest` から参照し、テーマ色は `viewport.themeColor` にも設定しています。
@@ -795,6 +800,39 @@ CSV を `lib/importers/` の純粋関数でバックアップ形式（`FuelLensB
   iOS ではアプリ内のカメラ／画像選択、またはショートカットの「スキャン」を使います。
 - アイコンの再生成: `app/icon.svg` を元に `node scripts/generate-icons.mjs` を実行します（インストール済みの `sharp` を使用。追加の依存なし）。
   生成後に各ファイルの寸法を表示するので確認し、出力されたファイルをコミットします。
+
+### 給油のお知らせ（Web Push）
+
+給油のたびにアプリを思い出してもらうための通知です。**ログイン中の利用者だけ**が、設定画面の「給油のお知らせ」で端末ごとにオンにします。
+VAPID の鍵（`NEXT_PUBLIC_VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` / `VAPID_SUBJECT`）が無ければ機能全体が無効で、設定画面にも出しません（`lib/push/config.ts`）。
+運用（鍵の作り方・Cron・動作確認）は [operations.md 4-10](./operations.md#4-10-給油のお知らせweb-push)。
+
+**オンにする（`components/PushReminderPanel.tsx` → `lib/push/browser.ts`）**
+
+1. 使える環境かを `detectPushSupport`（`lib/push/support.ts`）で判定し、使えなければスイッチを無効にして理由を出す。
+   iPhone / iPad は **ホーム画面に追加した PWA（iOS 16.4 以上）でだけ** 使える（Safari のタブでは追加を案内、PWA でも API が無ければ iOS の更新を案内）。通知がブロック済みなら設定での許可を案内する。
+   iOS の案内文は環境に関わらず常にスイッチの下に出す。障害中（閲覧専用）は切り替えを無効にする。
+2. スイッチを押すと、最初に `Notification.requestPermission()` を呼ぶ（iOS はユーザー操作の直後でないと許可を求められない）。
+3. 既存の購読があれば自分の行を消して解除し、`pushManager.subscribe({ userVisibleOnly: true, applicationServerKey })` で作り直す
+   （前に同じ端末でログインしていた別のアカウントの購読のエンドポイントを無効にするため）。
+4. 利用者自身の Clerk JWT（RLS）で `push_subscriptions` に `{ user_id, endpoint, p256dh, auth }` を insert する。保存に失敗したら購読を解除して日本語のエラーを出す（オンに見えて届かない状態を作らない）。
+
+オフにするときは自分の行を削除してから購読を解除します（行を消せなくても解除すれば以後は届かず、サーバーが 404 / 410 で行を無効にする）。
+画面の「オン」の表示は、ブラウザの購読があり・通知が許可され・DB に `enabled` の行があるときだけです。
+
+**送る（Vercel Cron → `GET /api/push/reminders` → `lib/server/push/reminderHandler.ts`）**
+
+- 1 日 1 回（`0 9 * * *` UTC = 18:00 JST 頃）。認証は keepalive と同じ `CRON_SECRET`。service_role キーで RLS を迂回し、
+  `enabled = true` の購読と、利用者ごとの直近 11 件の記録の `id` / `date` だけを読む（全車両まとめて）。VAPID の鍵か service_role キーが無ければ何もせず 200 `{ skipped }`。
+- 判定は `decideReminder`（`lib/push/reminder.ts`。純粋関数）:
+  - 間隔 = 記録が 3 件以上なら直近の記録どうしの間隔（同じ日の記録 = 0 日は除く）の中央値を整数日に丸めて 3〜60 日に収めたもの。足りなければ 14 日。
+  - 最後の記録の日（日本時間の暦日）から間隔以上たっていれば送る。Cron が遅れても、過ぎていれば次の実行で送る。
+  - 同じ記録（`last_notified_record_id`）には 2 回送らない。最後に送ってから 20 時間以内も送らない（Cron の二重実行・手動実行）。
+- 本文は「前回の給油から N 日です。給油したらレシートとメーターを撮っておきましょう」、タイトルは「給油のお知らせ」、タップ先は `/app?action=scan`。
+  送れたら `last_notified_record_id` / `last_notified_at` を保存し、404 / 410 が返った購読は `enabled = false` にする。それ以外の失敗はその購読だけ飛ばして続ける。
+  エンドポイントや鍵はログに出さない（購読の id だけ）。
+- `public/sw.js` の `push` が JSON（`ReminderPayload`）を通知にし（読めなければ既定の文言）、`notificationclick` が同じオリジンの URL だけを開く（開いている画面があれば前面に出して移動）。
+  SW のキャッシュしない方針は変えていません。
 
 ## 10. 給油の連鎖計算（fill chain）
 

@@ -35,8 +35,11 @@ npm run dev                  # http://localhost:3000
 | `UPSTASH_REDIS_REST_URL` / `UPSTASH_REDIS_REST_TOKEN` | 任意 | `/api/analyze` の回数制限を数える Upstash Redis の REST API（サーバー専用）。Vercel の Marketplace 連携の既定では `KV_REST_API_URL` / `KV_REST_API_TOKEN` の名前で入り、どちらの名前でもよい（両方あれば `UPSTASH_REDIS_REST_*` を優先）。未設定ならインスタンスのメモリで数える（従来どおり）。手順は [operations.md](./operations.md#4-9-upstash-redisapianalyze-の回数制限) |
 | `KV_REST_API_URL` / `KV_REST_API_TOKEN` | 任意 | 上と同じ（Vercel の Marketplace 連携で入る名前） |
 | `RATE_LIMIT_KEY_SECRET` | 任意 | 外部ストアに置くキー（IP・userId）を HMAC-SHA256 で変換する鍵（サーバー専用）。未設定なら `TRIAL_COOKIE_SECRET` を使い、どちらも無ければ外部ストアを使わない（生の IP を外部に置かないため） |
-| `CRON_SECRET` | 本番で必須 | Vercel Cron → `/api/keepalive` の認証用シークレット |
-| `SUPABASE_SERVICE_ROLE_KEY` | 任意 | `/api/keepalive` で件数取得まで行う場合に設定。サーバー専用（`NEXT_PUBLIC_` を付けない） |
+| `CRON_SECRET` | 本番で必須 | Vercel Cron → `/api/keepalive`・`/api/push/reminders` の認証用シークレット |
+| `SUPABASE_SERVICE_ROLE_KEY` | 任意 | `/api/keepalive` で件数取得まで行う場合と、給油のお知らせを送る場合（`/api/push/reminders`。未設定なら送らない）に設定。サーバー専用（`NEXT_PUBLIC_` を付けない） |
+| `NEXT_PUBLIC_VAPID_PUBLIC_KEY` | 任意 | 給油のお知らせ（Web Push）の VAPID 公開鍵。未設定なら機能全体が無効で、設定画面にも出さない。ビルド時に埋め込まれる（[operations.md](./operations.md#4-10-給油のお知らせweb-push)） |
+| `VAPID_PRIVATE_KEY` | 任意 | VAPID 秘密鍵。サーバー専用（`NEXT_PUBLIC_` を付けない）。`npx web-push generate-vapid-keys` で公開鍵と組で作る |
+| `VAPID_SUBJECT` | 任意 | VAPID の連絡先（`mailto:you@example.com` か `https://` の URL）。3 つのどれかが欠けるとサーバーは送らない |
 | `NEXT_PUBLIC_GA_MEASUREMENT_ID` | 任意 | Google Analytics 4 の測定 ID（`G-XXXX`）。未設定なら gtag を読み込まず計測しない。本番のみ設定（[operations.md](./operations.md#4-6-google-analytics-4行動イベント)） |
 | `NEXT_PUBLIC_SENTRY_DSN` | 任意 | Sentry（エラー監視）の DSN。未設定なら Sentry は完全に無効。本番では設定を推奨（[operations.md](./operations.md#4-3-sentryエラー監視)） |
 | `SENTRY_ORG` / `SENTRY_PROJECT` | 任意 | Sentry の組織・プロジェクトのスラッグ。ソースマップのアップロード用（ビルド時のみ） |

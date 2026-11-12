@@ -1,7 +1,7 @@
 /*
  * FuelLens Service Worker
  *
- * 役割は Web Share Target（manifest の share_target）の受け取りだけ。
+ * 役割は Web Share Target（manifest の share_target）の受け取りと、給油のお知らせ（Web Push）の表示だけ。
  * - ギャラリー等から共有された画像（POST /share の multipart/form-data）をここで横取りし、
  *   サーバーへは送らずに IndexedDB（DB "fuel-lens-share" / ストア "inbox" / キー "pending"）へ
  *   { blob, name, type, at, token } として一時保存し、/app?action=shared&t=<token> へリダイレクトする。
@@ -10,6 +10,10 @@
  *   （前回の共有画像が誤って読み込まれないようにする）。
  * - キャッシュは一切しない（precache なし、Cache Storage も使わない）。オフライン動作も提供しない。
  *   /share への POST 以外のリクエストには respondWith を呼ばず、ブラウザ既定のネットワーク処理に任せる。
+ * - push: サーバー（/api/push/reminders。本文は lib/push/reminder.ts の ReminderPayload）から届いた JSON を通知として出す。
+ *   読めない・欠けている値は既定の文言で補う（userVisibleOnly のため、届いたら必ず通知を出す）。
+ * - notificationclick: 通知を閉じ、同じオリジンの URL（既定 /app?action=scan）を開く。開いているタブがあればそれを前面に出して移動する。
+ *   別オリジンの URL は開かない。
  *
  * DB 名・ストア名・キーは lib/shareInbox.ts と揃えること。
  */
@@ -111,4 +115,73 @@ self.addEventListener("fetch", (event) => {
   const url = new URL(request.url);
   if (url.origin !== self.location.origin || url.pathname !== "/share") return;
   event.respondWith(handleShare(request));
+});
+
+// --- 給油のお知らせ（Web Push）---------------------------------------------
+// 文言・URL・タグの既定は lib/push/reminder.ts と揃えること
+
+const REMINDER_DEFAULT_TITLE = "給油のお知らせ";
+const REMINDER_DEFAULT_BODY = "給油したらレシートとメーターを撮っておきましょう";
+const REMINDER_DEFAULT_URL = "/app?action=scan";
+const REMINDER_DEFAULT_TAG = "fuel-lens-refuel-reminder";
+const REMINDER_ICON = "/icons/icon-192.png";
+
+function readPushPayload(event) {
+  try {
+    const data = event.data ? event.data.json() : null;
+    if (data && typeof data === "object") return data;
+  } catch (err) {
+    console.error("[sw] お知らせの内容を読めませんでした", err);
+  }
+  return {};
+}
+
+/** 同じオリジンの URL だけを許す（それ以外・不正な値は既定の URL） */
+function safeAppUrl(url) {
+  try {
+    const parsed = new URL(typeof url === "string" ? url : REMINDER_DEFAULT_URL, self.location.origin);
+    if (parsed.origin === self.location.origin) return parsed.href;
+  } catch {
+    // 既定へ
+  }
+  return new URL(REMINDER_DEFAULT_URL, self.location.origin).href;
+}
+
+self.addEventListener("push", (event) => {
+  const data = readPushPayload(event);
+  const title = typeof data.title === "string" && data.title ? data.title : REMINDER_DEFAULT_TITLE;
+  const body = typeof data.body === "string" && data.body ? data.body : REMINDER_DEFAULT_BODY;
+  const tag = typeof data.tag === "string" && data.tag ? data.tag : REMINDER_DEFAULT_TAG;
+  event.waitUntil(
+    self.registration.showNotification(title, {
+      body,
+      tag,
+      icon: REMINDER_ICON,
+      badge: REMINDER_ICON,
+      data: { url: safeAppUrl(data.url) },
+    })
+  );
+});
+
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  const url = safeAppUrl(event.notification.data && event.notification.data.url);
+  event.waitUntil(
+    (async () => {
+      const windows = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+      for (const client of windows) {
+        if (new URL(client.url).origin !== self.location.origin) continue;
+        try {
+          const focused = await client.focus();
+          if (focused && "navigate" in focused) {
+            await focused.navigate(url);
+            return;
+          }
+        } catch (err) {
+          console.error("[sw] 開いている画面へ移動できませんでした", err);
+        }
+      }
+      await self.clients.openWindow(url);
+    })()
+  );
 });

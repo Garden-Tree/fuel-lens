@@ -8,6 +8,8 @@
  * users 行の削除は外部キー（vehicles_user_id_fkey / fuel_records_user_id_fkey の ON DELETE CASCADE）で車両・記録も消すが、
  * 本番 DB の既存の外部キーは 0001 より前に作られており削除時の動作を保証できないため、記録 → 車両 → users 行の順に明示的に削除する
  * （外部キーが NO ACTION でも失敗しない。CASCADE なら記録・車両の削除は 0 件になるだけ）。
+ * 給油のお知らせの購読（push_subscriptions。0006_push_subscriptions.sql）は新しいテーブルで、外部キーが必ず ON DELETE CASCADE なので
+ * users 行の削除で一緒に消える（0006 未適用の DB で削除が失敗しないよう、ここでは明示的に消さない）。
  * 最後に記録・車両・users 行が 1 件も残っていないことを確かめる。何度呼んでも同じ結果になる（冪等。再試行できる）。
  *
  * ここは「生の層」: Supabase の失敗は status を付けてそのまま投げる。障害の分類・閲覧専用の拒否・日本語への変換は
