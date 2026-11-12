@@ -139,7 +139,7 @@ FuelLens の構成、データの流れ、主要なモジュールの役割を�
     こちらは `previewing` ではなく通常の表示で、書き込みもできます（ストアは準備済み。書き込み中に一覧の読み込みが実行中なら読み直す従来の仕組みがそのまま効く）。
     使うのはそのフックのインスタンスがまだクラウドから一覧を読めていない間だけで、キャッシュが無ければ従来どおりスケルトンです。失敗時の扱い（障害・日本語エラー・キャッシュの閲覧専用表示）は変わりません。
   - `syncCacheOwner` は従来どおり Clerk の確定値（`authLoaded`）を待って呼びます。移行（`migrateLocalData`）は従来どおりクラウドの初期化からだけ走ります。
-  - `auth()` を読むため `/app`・`/history`・`/stats`・`/settings` はリクエストごとの描画（ビルド出力の `ƒ`）です。公開ページ（`/`・`/calc`・`/gas-cost`・`/warikan`・`/route-gas-cost`（区間ごとのページは SSG）・`/annual-gas-cost`・`/fuel-convert`・`/expense`・`/privacy`・`/terms`）は静的のままです。
+  - `auth()` を読むため `/app`・`/history`・`/stats`・`/settings` はリクエストごとの描画（ビルド出力の `ƒ`）です。公開ページ（`/`・`/calc`・`/gas-cost`・`/warikan`・`/route-gas-cost`（区間ごとのページは SSG）・`/annual-gas-cost`・`/fuel-convert`・`/expense`・`/fuelio`・`/fuel-log`・`/fuel-log-excel`・`/privacy`・`/terms`）は静的のままです。
 - 選択中の車両 ID は localStorage に保存します。未ログイン時は `fuel_lens_selected_vehicle_id`、ログイン時はユーザーごとの `fuel_lens_selected_vehicle_id_<userId>` を使い、保存値が現在の車両一覧に無い場合は既定車両へフォールバックして保存値を書き換えます。
 
 ### データアダプタ層（`lib/data/`）
@@ -515,9 +515,19 @@ OG / Twitter 画像は静的な 1 枚（`WARIKAN_OG`。クエリごとの画像�
 `app/expense/page.tsx` は「ガソリン代 経費」の検索からの入口となる静的な説明ページで、計算機はありません。レシートの撮影で日付・店名・金額を記録し、CSV に書き出せることを案内し、ログイン導線と `/calc`・`/gas-cost` への関連リンクを置きます。CSV の節の下に公開ツールページの PR（`ToolPagePromoCard`。法人・個人事業主向けのガソリンカード）を置きます。
 文面・FAQ・構造化データは `lib/expensePage.ts`（`expenseFaqs(trialEnabled)`、`buildExpenseJsonLd`。CSV の列は `lib/csv.ts` の `RECORDS_CSV_HEADERS` から組み立てる）。テストは `tests/expensePage.test.ts` と `tests/components/ExpensePage.test.tsx`。
 
+### 燃費の記録ガイド（`/fuel-log`・`/fuel-log-excel`）
+
+「燃費 記録 つけ方」「燃費 管理 エクセル」など、記録を続けたい人の検索からの入口となる静的な説明ページで、計算機はありません（1 回きりの計算は `/calc`）。
+`app/fuel-log/page.tsx` は満タン法で給油ごとに残す項目・手順・部分給油と記録し忘れの扱い・続けるコツと、FuelLens での記録（写真の読み取り・「満タン給油」「前回の給油を記録し忘れた」・統計）を案内します。例の燃費と単価は `calculateFuelMetrics`、部分給油の例は連鎖計算と同じ値になることをテストで確かめます。
+`app/fuel-log-excel/page.tsx` はエクセルの列と数式の例を、FuelLens の全車両 CSV の列名（`RECORDS_CSV_BASE_HEADERS`。任意の列は `RECORD_CSV_EXTRA_HEADERS`）で示し、CSV で保存して設定画面の「インポート」（`lib/importers/fuellensCsv.ts`）から取り込む手順を案内します。Excel・Google スプレッドシートの操作は公式ヘルプで確認できたことだけを書き、出典の URL を `lib/fuelLogExcelPage.ts` のコメントに残しています。
+文面・FAQ・構造化データ（`WebPage` + `FAQPage`）は `lib/fuelLogPage.ts`（`fuelLogFaqs(trialEnabled)`・`buildFuelLogJsonLd`）と `lib/fuelLogExcelPage.ts`（`sheetColumns`・`fuelLogExcelFaqs`・`buildFuelLogExcelJsonLd`）、OG 画像は `lib/og/fuelLogOg.ts`・`lib/og/fuelLogExcelOg.ts`。
+`/app` への導線は `data-ga-cta` の `guide_top`（冒頭）・`guide_inline`（/fuel-log の「FuelLens で記録する」）・`excel_import`（/fuel-log-excel の取り込み手順の設定画面へのリンク）・`cta_box` で区別します。
+テストは `tests/fuelLogPages.test.ts`（ページのとおりに作った CSV を実際に取り込めることを含む）と `tests/components/FuelLogPages.test.tsx`。
+
 ### 公開ページの関連ナビ
 
-公開ページ（`/calc`・`/gas-cost`・`/warikan`・`/route-gas-cost`・`/annual-gas-cost`・`/fuel-convert`・`/expense`）の「関連ページ」ナビとランディングのフッターは、`lib/publicNav.ts` の `PUBLIC_TOOL_LINKS` を共有します（各ページは `otherToolLinks(現在のパス)` で自分自身を除外）。ツールを増やすときはここと `app/sitemap.ts` に足します。JSON-LD は `</script>` で閉じられないよう、各ビルダーが `<` を `<` に置換します。
+公開ページ（`/calc`・`/gas-cost`・`/warikan`・`/route-gas-cost`・`/annual-gas-cost`・`/fuel-convert`・`/expense`）の「関連ページ」ナビとランディングのフッターは、`lib/publicNav.ts` の `PUBLIC_TOOL_LINKS` を共有します（各ページは `otherToolLinks(現在のパス)` で自分自身を除外）。ツールを増やすときはここと `app/sitemap.ts` に足します。
+記録ガイド（`/fuel-log`・`/fuel-log-excel`）は別の `FUEL_LOG_GUIDE_LINKS`（`otherGuideLinks`）に置き、ガイド 2 枚・`/expense`・`/fuelio` のナビとランディングのフッターにだけ載せます（`/calc` と区間ページのリンク構成は変えない）。JSON-LD は `</script>` で閉じられないよう、各ビルダーが `<` を `<` に置換します。
 
 ## 5. ローカル → クラウド移行
 

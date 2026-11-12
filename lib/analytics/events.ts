@@ -9,16 +9,29 @@ import type { DistanceMode, RecordSource, VehicleType } from "@/lib/types";
  */
 
 /** /app への CTA を置いている公開ページ */
-export const CTA_PAGES = ["/", "/calc", "/gas-cost", "/annual-gas-cost", "/fuel-convert", "/expense", "/fuelio", "/warikan", "/route-gas-cost"] as const;
+export const CTA_PAGES = ["/", "/calc", "/gas-cost", "/annual-gas-cost", "/fuel-convert", "/expense", "/fuelio", "/fuel-log", "/fuel-log-excel", "/warikan", "/route-gas-cost"] as const;
 export type CtaPage = (typeof CTA_PAGES)[number];
 
 /**
  * CTA の位置（リンクの `data-ga-cta` 属性の値）。
  * hero = ランディングの最初の画面、bottom = ランディングの最後、header = ヘッダーの「今すぐ始める」、
  * cta_box = ツールページ本文の「アプリを使う」の枠、calc_result = 燃費計算の「この内容で FuelLens に記録する」、
- * calc_next = 燃費計算の結果の下の「次回からは写真 1 枚で自動記録」
+ * calc_next = 燃費計算の結果の下の「次回からは写真 1 枚で自動記録」、
+ * guide_top = 記録ガイド（/fuel-log・/fuel-log-excel）の冒頭のアプリへのリンク、
+ * guide_inline = /fuel-log の「FuelLens で記録する」の節のアプリへのリンク、
+ * excel_import = /fuel-log-excel の取り込み手順の「設定の「インポート」を開く」
  */
-export const CTA_POSITIONS = ["hero", "bottom", "header", "cta_box", "calc_result", "calc_next"] as const;
+export const CTA_POSITIONS = [
+  "hero",
+  "bottom",
+  "header",
+  "cta_box",
+  "calc_result",
+  "calc_next",
+  "guide_top",
+  "guide_inline",
+  "excel_import",
+] as const;
 export type CtaPosition = (typeof CTA_POSITIONS)[number];
 
 /** CTA のリンクに付ける属性名（components/GoogleAnalytics.tsx の 1 か所のクリック listener が拾う） */
