@@ -3,7 +3,7 @@ import sitemap from "@/app/sitemap";
 import { CAR_TYPE_EFFICIENCIES } from "@/lib/gasCostPage";
 import { NATIONAL_GAS_PRICE } from "@/lib/nationalGasPrice";
 import { WARIKAN_QUERY_KEYS, computeWarikan, parseWarikanQuery } from "@/lib/warikanPage";
-import { ROUTES, routePath, standardTotal, type RouteEntry } from "@/lib/routeGasCostPage";
+import { ROUTES, gasCostYen, routePath, standardTotal, type RouteEntry } from "@/lib/routeGasCostPage";
 import {
   buildRouteDetailJsonLd,
   findRoute,
@@ -14,8 +14,15 @@ import {
   routePageDescription,
   routePageTitle,
   routeSplits,
+  formatDuration,
+  oneWayLiters,
+  restStops,
+  routeFaqs,
+  routeInsights,
   routeStaticParams,
+  routeTollComparison,
   routeWarikanLink,
+  routeWarikanInput,
 } from "@/lib/routeDetailPage";
 
 const tokyoOsaka = findRoute("tokyo-osaka")!;
@@ -120,13 +127,14 @@ describe("近くの区間・構造化データ", () => {
     expect(ids).toEqual([ROUTES[index - 1].id, ROUTES[index + 1].id, ROUTES[index - 2].id]);
   });
 
-  it("JSON-LD は WebPage + BreadcrumbList で < をエスケープする", () => {
+  it("JSON-LD は WebPage + BreadcrumbList + FAQPage で < をエスケープする", () => {
     for (const route of ROUTES) {
       const json = buildRouteDetailJsonLd(route);
       expect(json).not.toContain("<");
       const data = JSON.parse(json);
-      expect(data["@graph"].map((n: { "@type": string }) => n["@type"])).toEqual(["WebPage", "BreadcrumbList"]);
+      expect(data["@graph"].map((n: { "@type": string }) => n["@type"])).toEqual(["WebPage", "BreadcrumbList", "FAQPage"]);
       expect(data["@graph"][0].url).toBe(routeCanonicalUrl(route));
+      expect(data["@graph"][2].mainEntity.map((q: { name: string }) => q.name)).toEqual(routeFaqs(route).map((f) => f.q));
     }
   });
 
@@ -135,5 +143,90 @@ describe("近くの区間・構造化データ", () => {
     const t = standardTotal(tokyoOsaka);
     expect(t.toll).toBe(10840);
     expect(f.map((p) => p.text).join("")).toBe(`${yen(t.gasOneWay)}円+10,840円=${yen(t.totalOneWay!)}円`);
+  });
+});
+
+describe("区間ごとの段落（所要時間・休日・深夜）と FAQ", () => {
+  const hakone = findRoute("tokyo-hakone")!;
+  const takamatsu = findRoute("osaka-takamatsu")!;
+
+  it("所要時間の表示と、2 時間ごとに休憩したときの途中の休憩の回数", () => {
+    expect(formatDuration(54)).toBe("54分");
+    expect(formatDuration(120)).toBe("2時間");
+    expect(formatDuration(281)).toBe("4時間41分");
+    expect(restStops(54)).toBe(0);
+    expect(restStops(120)).toBe(0);
+    expect(restStops(121)).toBe(1);
+    expect(restStops(871)).toBe(7);
+  });
+
+  it("東京〜箱根: 54 分で休憩なし、休日は 220 円安く、深夜がいちばん安い。ETC なしは ETC と同じ", () => {
+    const [time, holiday, night, fuel] = routeInsights(hakone);
+    expect(time).toContain("渋滞なしの目安が54分");
+    expect(time).toContain("途中の休憩は要りません");
+    expect(time).toContain("日帰りで往復すると、運転は渋滞なしでも計1時間48分");
+    expect(holiday).toContain("普通車の高速代は1,820円");
+    expect(holiday).toContain("片道220円（約11%）安く");
+    const perPerson = computeWarikan(routeWarikanInput(hakone, 4, 1820)).perPerson!;
+    expect(holiday).toContain(`家族4人なら1人${yen(perPerson)}円`);
+    expect(holiday).toContain(`${yen(gasCostYen(65, 13, true) + 1820 * 2)}円`);
+    expect(night).toContain("1,430円（平日昼間より610円安い）");
+    expect(night).toContain("さらに390円安く、この区間では深夜がいちばん安く");
+    expect(fuel).toContain(`普通車が約${oneWayLiters(hakone, 13).toFixed(1)}L`);
+    expect(routeFaqs(hakone)[0].a).toContain("平日昼間の ETC 料金と同じ");
+  });
+
+  it("大阪〜高松: 休日のほうが深夜より安い区間は、そう書く", () => {
+    const night = routeInsights(takamatsu).find((p) => p.includes("深夜0時"))!;
+    expect(night).toContain("休日の料金のほうが380円安く");
+    expect(routeFaqs(takamatsu)[0].a).toContain("普通車で9,250円");
+    expect(routeFaqs(takamatsu)[0].a).toContain("2,370円高く");
+  });
+
+  it("段落と FAQ は区間ごとに違い、区間の数字を含む", () => {
+    const all = ROUTES.map((r) => routeInsights(r));
+    for (let i = 0; i < all.length; i++) {
+      expect(all[i]).toHaveLength(4);
+      for (let j = i + 1; j < all.length; j++) {
+        // 同じ段落を持つ区間の組はない（所要時間・休日・深夜・ガソリンの量のどれも区間ごとに違う）
+        for (let k = 0; k < 4; k++) expect(all[i][k], `${ROUTES[i].id} / ${ROUTES[j].id}`).not.toBe(all[j][k]);
+      }
+    }
+    for (const r of ROUTES) {
+      const text = routeInsights(r).join("");
+      expect(text).toContain(formatDuration(r.durationMin!));
+      expect(text).toContain(`${yen(r.holidayToll!.standard)}円`);
+      expect(text).toContain(`${yen(r.nightToll!.standard)}円`);
+      expect(text).not.toMatch(/undefined|NaN|null/);
+      const faqs = routeFaqs(r);
+      expect(faqs.length).toBeGreaterThanOrEqual(2);
+      expect(faqs.length).toBeLessThanOrEqual(4);
+      for (const f of faqs) expect(f.q).toContain(r.name);
+    }
+  });
+
+  it("本文の段落と FAQ で同じ金額の話を繰り返さない（FAQ の通常料金・ハイオクは本文に出ない）", () => {
+    for (const r of ROUTES) {
+      const body = routeInsights(r).join("");
+      expect(body).not.toContain("通常料金");
+      expect(body).not.toContain("ハイオク");
+      expect(body).not.toContain(`${yen(r.cashToll!.standard)}円`);
+    }
+  });
+
+  it("確認できなかった項目は段落・表・FAQ に出さない", () => {
+    const route: RouteEntry = { ...hakone, durationMin: null, holidayToll: null, nightToll: null, cashToll: null };
+    const paragraphs = routeInsights(route);
+    expect(paragraphs).toHaveLength(1);
+    expect(paragraphs[0]).toContain("で使うガソリン");
+    expect(routeTollComparison(route).map((r) => r.label)).toEqual(["平日昼間"]);
+    expect(routeFaqs(route).map((f) => f.q)).toEqual([`ハイオク車だと${route.name}のガソリン代はいくら？`]);
+    expect(routeTollComparison({ ...hakone, toll: null })).toEqual([]);
+  });
+
+  it("高速代の比較表は平日昼間・休日・深夜の順（ETC なしは FAQ で答えるので入れない）。東京〜鹿児島は 6:00 出発", () => {
+    expect(routeTollComparison(hakone).map((r) => r.label)).toEqual(["平日昼間", "休日", "深夜"]);
+    expect(routeTollComparison(hakone)[1].note).toBe("ETC・土曜 10:20 出発");
+    expect(routeTollComparison(findRoute("tokyo-kagoshima")!)[0].note).toBe("ETC・平日 6:00 出発");
   });
 });
