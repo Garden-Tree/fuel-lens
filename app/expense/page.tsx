@@ -1,10 +1,11 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { otherToolLinks } from "@/lib/publicNav";
+import { otherGuideLinks, otherToolLinks } from "@/lib/publicNav";
 import { Camera, ChevronRight } from "lucide-react";
 import { PublicPageHeader } from "@/components/LegalPage";
 import { RECORDS_CSV_HEADERS } from "@/lib/csv";
 import { GAS_COST_PATH } from "@/lib/gasCostPage";
+import { FUEL_LOG_EXCEL_PATH } from "@/lib/fuelLogExcelPage";
 import {
   APPORTION_EXAMPLE_MONTHLY_COST,
   APPORTION_EXAMPLE_TOTAL_KM,
@@ -128,6 +129,13 @@ export default function ExpensePage() {
               履歴画面の書き出しボタンからは、選んでいる車両の記録だけを書き出せます（車両の列はありません）。
               Excel で開いても文字化けしない形式（UTF-8・BOM 付き）です。
               月ごとの支払総額は、アプリの統計画面の「月ごとの給油代」でも見られます。
+            </p>
+            <p>
+              これまでエクセルで付けてきた記録は、列名をそろえて CSV で保存すれば取り込めます（
+              <Link href={FUEL_LOG_EXCEL_PATH} className={linkClass}>
+                燃費管理をエクセルで
+              </Link>
+              ）。
             </p>
             <ToolPagePromoCard promo={PROMO} page={EXPENSE_PATH} liters={null} />
           </section>
@@ -266,6 +274,9 @@ export default function ExpensePage() {
         <nav aria-label="関連ページ" className="mt-12 flex flex-wrap gap-x-6 gap-y-2 border-t border-line pt-6 text-sm text-sub">
           <Link href="/" className="inline-flex min-h-10 items-center hover:text-ink">FuelLens のトップ</Link>
           {otherToolLinks("/expense").map((l) => (
+            <Link key={l.href} href={l.href} className="inline-flex min-h-10 items-center hover:text-ink">{l.label}</Link>
+          ))}
+          {otherGuideLinks("/expense").map((l) => (
             <Link key={l.href} href={l.href} className="inline-flex min-h-10 items-center hover:text-ink">{l.label}</Link>
           ))}
           <Link href="/privacy" className="inline-flex min-h-10 items-center hover:text-ink">プライバシーポリシー</Link>

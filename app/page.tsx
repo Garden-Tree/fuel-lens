@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { PUBLIC_TOOL_LINKS } from "@/lib/publicNav";
+import { FUEL_LOG_GUIDE_LINKS, PUBLIC_TOOL_LINKS } from "@/lib/publicNav";
 import {
   Sparkles,
   Calculator,
@@ -389,7 +389,7 @@ export default function LandingPage() {
             <a href="#demo" className="hover:text-ink transition px-2 py-3 sm:p-0">デモ</a>
             <a href="#how-to" className="hover:text-ink transition px-2 py-3 sm:p-0">使い方</a>
             <a href="#faq" className="hover:text-ink transition px-2 py-3 sm:p-0">よくある質問</a>
-            {PUBLIC_TOOL_LINKS.map((l) => (
+            {[...PUBLIC_TOOL_LINKS, ...FUEL_LOG_GUIDE_LINKS].map((l) => (
               <Link key={l.href} href={l.href} className="hover:text-ink transition px-2 py-3 sm:p-0">{l.label}</Link>
             ))}
             <Link href="/privacy" className="hover:text-ink transition px-2 py-3 sm:p-0">プライバシーポリシー</Link>

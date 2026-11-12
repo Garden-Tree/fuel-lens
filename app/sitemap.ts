@@ -15,6 +15,8 @@ export default function sitemap(): MetadataRoute.Sitemap {
     { url: `${base}/fuel-convert`, changeFrequency: "monthly", priority: 0.8 },
     { url: `${base}/expense`, changeFrequency: "monthly", priority: 0.7 },
     { url: `${base}/fuelio`, changeFrequency: "monthly", priority: 0.7 },
+    { url: `${base}/fuel-log`, changeFrequency: "monthly", priority: 0.7 },
+    { url: `${base}/fuel-log-excel`, changeFrequency: "monthly", priority: 0.7 },
     { url: `${base}/app`, changeFrequency: "monthly", priority: 0.7 },
     { url: `${base}/privacy`, changeFrequency: "yearly", priority: 0.3 },
     { url: `${base}/terms`, changeFrequency: "yearly", priority: 0.3 },

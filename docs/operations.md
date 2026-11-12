@@ -12,7 +12,7 @@ DB の SQL 手順（マイグレーション適用・RLS 監査・バックア�
 | プレビュー（Preview） | `develop` ブランチ（および PR）。Vercel が発行するプレビュー URL |
 | DB | Supabase（Free プラン） |
 | 認証 | Clerk |
-| 定期実行 | Vercel Cron（本番デプロイのみ。keepalive と給油のお知らせの 2 本）+ GitHub Actions（[3 章](#3-supabase-の自動停止と-keepalive)、[4-9](#4-9-給油のお知らせweb-push)） |
+| 定期実行 | Vercel Cron（本番デプロイのみ。keepalive と給油のお知らせの 2 本）+ GitHub Actions（[3 章](#3-supabase-の自動停止と-keepalive)、[4-10](#4-10-給油のお知らせweb-push)） |
 
 - 環境変数は Vercel の **Settings → Environment Variables** で Production / Preview ごとに設定します（一覧は [setup.md](./setup.md#環境変数)）。
   変更は次回のデプロイから反映されます。
@@ -29,7 +29,7 @@ DB の SQL 手順（マイグレーション適用・RLS 監査・バックア�
 - [ ] **Clerk（本番インスタンス）**: Supabase 連携を有効化し、Supabase に Third-Party Auth（Clerk）を追加する。`NEXT_PUBLIC_CLERK_SUPABASE_JWT_TEMPLATE` は **空のまま**にする（[auth-production.md](./auth-production.md)）
 - [ ] **Vercel**: 環境変数を設定し、`CRON_SECRET`（任意で `SUPABASE_SERVICE_ROLE_KEY`）を Production に追加して再デプロイする（[3-3](#3-3-vercel-側の設定)）
 - [ ] **Vercel**: **Settings → Cron Jobs** に `/api/keepalive`（`0 21 * * *`）が表示されることを確認する
-- [ ] **給油のお知らせ（任意）**: `0006_push_subscriptions.sql` を適用し、VAPID の鍵と `SUPABASE_SERVICE_ROLE_KEY` を Production に設定する（[4-9](#4-9-給油のお知らせweb-push)）
+- [ ] **給油のお知らせ（任意）**: `0006_push_subscriptions.sql` を適用し、VAPID の鍵と `SUPABASE_SERVICE_ROLE_KEY` を Production に設定する（[4-10](#4-10-給油のお知らせweb-push)）
 - [ ] **GitHub**: リポジトリ Secrets に `SUPABASE_URL` / `SUPABASE_ANON_KEY` を追加し、ワークフローを手動実行する（[3-4](#3-4-github-側の設定)）
 - [ ] **確認**: `curl` で `/api/keepalive` が 200 を返すことを確認する（[3-5](#3-5-動作確認)）
 
@@ -304,7 +304,36 @@ Vercel Web Analytics（Hobby）はページビューしか取れないため、�
 2. `--dry-run` を外して実行するか、`regular` / `highOctane` / `diesel` と `surveyDate`（調査日）・`publishedDate`（公表日）を手でまとめて書き換える（小数第 1 位まで。ハイオクが 181 円ちょうどでも `181.0` と書く。`キー: 値,` の形を変えない）。
 3. `npm run lint && npm run typecheck && npm test` を通して PR を出し、マージする。
 
-## 4-9. 給油のお知らせ（Web Push）
+## 4-9. Upstash Redis（/api/analyze の回数制限）
+
+`/api/analyze` の回数制限（1 分 5 回、お試しの IP ごとの 1 日 10 回）を、インスタンスのメモリではなく Upstash Redis で全インスタンス共通に数えます。
+任意の設定で、未設定なら従来どおりメモリで数えます。仕様（キーの形・障害時の動き）は [api-analyze.md](./api-analyze.md#レートリミットの外部ストアupstash-redis)。
+
+### 4-9-1. 設定手順（Vercel の Marketplace）
+
+1. Vercel のプロジェクト → **Storage**（または **Integrations → Marketplace**）→ **Upstash**（Upstash for Redis）を選び、データベースを作る。
+   - **Primary Region は Tokyo（`ap-northeast-1`）にする。** 関数は東京（`hnd1`）で動き、外部ストアの呼び出しは 300ms でタイムアウトするため、遠い地域だとメモリに切り替わりやすい。
+   - プランは Free で足りる（1 リクエストあたり 1〜2 コマンド）。
+2. 作ったデータベースをこのプロジェクトに接続する（環境は **Production**。Preview でも試すなら Preview も）。環境変数の接頭辞は既定の `KV` のままでよい。
+3. プロジェクトの **Settings → Environment Variables** に `KV_REST_API_URL` と `KV_REST_API_TOKEN` が入ったことを確かめる
+   （`KV_REST_API_READ_ONLY_TOKEN` / `KV_URL` / `REDIS_URL` も入るが使わない。読み取り専用のトークンでは数えられない）。
+   接頭辞を `UPSTASH_REDIS_REST` にした場合や、Upstash のコンソールから手で入れる場合は `UPSTASH_REDIS_REST_URL` / `UPSTASH_REDIS_REST_TOKEN` でもよい。
+4. キーの HMAC の鍵があることを確かめる。`TRIAL_COOKIE_SECRET` が設定済みならそれを使う。分けたいときは `RATE_LIMIT_KEY_SECRET`（`openssl rand -base64 32`）を追加する。
+   **どちらも無いと外部ストアは使われない**（生の IP を外部に置かないため）。
+5. 再デプロイする（環境変数は関数の最初のリクエストで読む）。
+
+### 4-9-2. 動作確認
+
+- 本番で 1 回読み取りをしたあと、Upstash のコンソールの **Data Browser** に `fuel_lens:rl:minute:<ランダムな文字列>` のキーが TTL 付きで見えること（IP や `user_...` がそのまま入っていないこと）。
+- Vercel の関数のログに `[rate-limit] 外部ストア（Upstash Redis）で回数を数えられませんでした` が出続けていないこと。
+  出ている場合は括弧内の理由を見る: `HTTP 401` はトークンの誤り（読み取り専用トークンなど）、`タイムアウト` は地域が遠いか Upstash 側の障害。
+  この間もメモリで数えるので `/api/analyze` は止まらない。
+
+### 4-9-3. やめるとき
+
+`KV_REST_API_*`（と `UPSTASH_REDIS_REST_*`）を消して再デプロイすれば、メモリだけで数える従来の動作に戻る。データベースのキーは TTL（最長 24 時間）で消える。
+
+## 4-10. 給油のお知らせ（Web Push）
 
 ログイン中の利用者が設定画面の「給油のお知らせ」をオンにした端末へ、前回の給油からいつもの間隔を過ぎた日に 1 回だけ通知を送ります
 （判定の規則と構成は [architecture.md「給油のお知らせ」](./architecture.md#給油のお知らせweb-push)）。
@@ -317,7 +346,7 @@ Vercel Web Analytics（Hobby）はページビューしか取れないため、�
 | DB | `supabase/migrations/0006_push_subscriptions.sql`（`push_subscriptions` テーブル）。**`NEXT_PUBLIC_VAPID_PUBLIC_KEY` を設定する前に適用する** |
 | 読む列 | `push_subscriptions` の送信に使う列（`enabled = true` の行）と、利用者ごとの直近 11 件の `fuel_records.id` / `date` だけ |
 
-### 4-9-1. 有効にする手順
+### 4-10-1. 有効にする手順
 
 1. Supabase の SQL Editor で `supabase/migrations/0006_push_subscriptions.sql` を実行し、[supabase/README.md 2 章](../supabase/README.md#2-rls-が有効か確認する)の監査で `push_subscriptions` のポリシーが 3 本だけであることを確かめる。
 2. 手元で VAPID の鍵の組を作る（一度だけ。リポジトリには書かない）。
@@ -346,7 +375,7 @@ Vercel Web Analytics（Hobby）はページビューしか取れないため、�
 
 鍵を作り直すと、既存の購読には届かなくなります（プッシュサービスが 403 などを返す）。作り直したときは利用者にオンにし直してもらう必要があるため、鍵は変えないでください。
 
-### 4-9-2. 動作確認
+### 4-10-2. 動作確認
 
 ```bash
 curl -i -H "Authorization: Bearer <CRON_SECRET>" https://<your-domain>/api/push/reminders
@@ -373,9 +402,9 @@ curl -i -H "Authorization: Bearer <CRON_SECRET>" https://<your-domain>/api/push/
 | 「クラウドDBが一時停止中です。…」のバナー、API が 540 | プロジェクトが停止している（[3-6](#3-6-停止した場合の復旧)） |
 | 「クラウドDBに接続できません。…」のバナー | ネットワーク断、または Supabase が 5xx を返している。復旧後に「再試行」を押す |
 | `/api/keepalive` が 401 / 500 | `CRON_SECRET` の不一致 / 未設定（[3-5](#3-5-動作確認)） |
-| 設定画面に「給油のお知らせ」が出ない | 未ログイン、または `NEXT_PUBLIC_VAPID_PUBLIC_KEY` が未設定（設定後は再デプロイが必要）（[4-9](#4-9-給油のお知らせweb-push)） |
+| 設定画面に「給油のお知らせ」が出ない | 未ログイン、または `NEXT_PUBLIC_VAPID_PUBLIC_KEY` が未設定（設定後は再デプロイが必要）（[4-10](#4-10-給油のお知らせweb-push)） |
 | 「お知らせの設定を保存できませんでした。…」 | `0006_push_subscriptions.sql` が未適用、または障害中。ブラウザの console に Supabase のエラーが出る |
-| お知らせが届かない | `/api/push/reminders` を `curl` で呼んで `skipped` / `failed` を見る（[4-9-2](#4-9-2-動作確認)）。iPhone はホーム画面のアプリでオンにしたか、端末の設定で通知が許可されているかを確かめる |
+| お知らせが届かない | `/api/push/reminders` を `curl` で呼んで `skipped` / `failed` を見る（[4-10-2](#4-10-2-動作確認)）。iPhone はホーム画面のアプリでオンにしたか、端末の設定で通知が許可されているかを確かめる |
 | AI 解析が 403 `ORIGIN_MISMATCH` | リバースプロキシやカスタムドメインで `Host` が公開ホストと異なる。`NEXT_PUBLIC_APP_URL` を設定する（[api-analyze.md](./api-analyze.md)） |
 | AI 解析が 500 `SERVER_MISCONFIGURED` | `GEMINI_API_KEY` が未設定 |
 | ローカルの記録がクラウドに移行されない | 画面の移行エラー表示を確認する。データはブラウザに残り、次回の読み込みで再試行される（[architecture.md 5 章](./architecture.md#5-ローカル--クラウド移行)） |

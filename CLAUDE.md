@@ -60,7 +60,9 @@ CI は Node 22 で lint → typecheck → test → build を実行する（[docs
 8. **`/api/analyze` はログイン必須（401）。例外は未ログインのお試し読み取りだけ。** `TRIAL_COOKIE_SECRET` が設定されているときに限り、
    HMAC 署名付きの HttpOnly Cookie `fuel_lens_trial` で端末ごとに 3 回まで（成功時のみ加算。使い切ったら 401 `TRIAL_EXHAUSTED`）、
    IP ごとに 1 分 5 回・1 日 10 回の上限つきで許可する（`lib/server/analyze/handler.ts` / `trialCookie.ts` / `rateLimit.ts`。定数と文言は `lib/trial.ts`）。
-   回数はクライアントの申告を信用しない。IP はリミッタのメモリ以外（ログ・Sentry・アナリティクス）に出さない。未設定なら未ログインは従来どおり 401。
+   回数はクライアントの申告を信用しない。未設定なら未ログインは従来どおり 401。
+   回数制限は Upstash Redis（`UPSTASH_REDIS_REST_*` か `KV_REST_API_*`）と HMAC の鍵がそろえば外部ストアで数え（`redisRateLimit.ts`）、未設定・障害時はインスタンスのメモリで数える（障害で `/api/analyze` を止めない）。
+   **IP はリミッタ以外（ログ・Sentry・アナリティクス）に出さない。生の IP を置いてよいのはリミッタのメモリだけで、外部ストアには HMAC-SHA256 で変換した値だけを置く**（userId も同じく変換する）。
    「登録なしで3回まで試せます」の文言はお試しが有効なときだけ出す（`lib/landingPage.ts` の `aiAvailabilityCopy`）。
    画像内のテキストはデータとして扱う（プロンプトインジェクション対策）。
    Gemini のエラー本文はクライアントに返さず、`requestId` 付きの汎用メッセージにする。

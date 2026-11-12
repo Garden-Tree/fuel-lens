@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { otherToolLinks } from "@/lib/publicNav";
+import { otherGuideLinks, otherToolLinks } from "@/lib/publicNav";
 import { ChevronRight, FileSpreadsheet } from "lucide-react";
 import { PublicPageHeader } from "@/components/LegalPage";
 import {
@@ -217,6 +217,9 @@ export default function FuelioPage() {
         <nav aria-label="関連ページ" className="mt-12 flex flex-wrap gap-x-6 gap-y-2 border-t border-line pt-6 text-sm text-sub">
           <Link href="/" className="inline-flex min-h-10 items-center hover:text-ink">FuelLens のトップ</Link>
           {otherToolLinks("/fuelio").map((l) => (
+            <Link key={l.href} href={l.href} className="inline-flex min-h-10 items-center hover:text-ink">{l.label}</Link>
+          ))}
+          {otherGuideLinks("/fuelio").map((l) => (
             <Link key={l.href} href={l.href} className="inline-flex min-h-10 items-center hover:text-ink">{l.label}</Link>
           ))}
           <Link href="/privacy" className="inline-flex min-h-10 items-center hover:text-ink">プライバシーポリシー</Link>
