@@ -28,7 +28,7 @@ CI は Node 22 で lint → typecheck → test → build を実行する（[docs
 
 | パス | 役割 |
 |---|---|
-| `app/` | 画面（`page.tsx` ランディング、`calc/`・`gas-cost/`・`annual-gas-cost/`・`fuel-convert/`・`warikan/`・`route-gas-cost/`（公開の計算ツール）・`expense/`（経費向けの入口）、ルートグループ `(app)/` 配下に `app/` ホーム・`history/`・`stats/`・`settings/` バックアップと復元）と API（`api/analyze`、`api/account` アカウント削除、`api/keepalive`）。Clerk・トースト・Supabase 同期は `(app)/layout.tsx` だけに置き、公開ページには載せない |
+| `app/` | 画面（`page.tsx` ランディング、`calc/`・`gas-cost/`・`annual-gas-cost/`・`fuel-convert/`・`warikan/`・`route-gas-cost/`（公開の計算ツール）・`expense/`（経費向けの入口）、ルートグループ `(app)/` 配下に `app/` ホーム・`history/`・`stats/`・`settings/` バックアップと復元）と API（`api/analyze`、`api/account` アカウント削除、`api/keepalive`、`api/push/reminders` 給油のお知らせの Cron）。Clerk・トースト・Supabase 同期は `(app)/layout.tsx` だけに置き、公開ページには載せない |
 | `components/` | 画面の枠とナビ（`AppShell` / `AppNav` / `ScanActionMenu`）、デザインシステムの部品（`ui/`）、確認シート、入力フォーム、車両管理、`Toast`（`useToast()`）、`UserSync`、`SupabaseStatusBanner` |
 | `lib/` | 型（`types`）・日付（`dates`）・純粋ロジック（`analyze` / `calculations` / `fillChain` / `stats` / `recordFilters` / `vehicleSelection`、画面用の `home/` / `history/`）、イベント（`events`）、フック、移行、Supabase クライアントと障害検知 |
 | `lib/data/` | データアダプタ層。`RecordStore` / `VehicleStore`（`types.ts`）を localStorage（`localStore.ts`）と Supabase（`cloudStore.ts`）が実装し、`withOutageHandling` / `withCache`（`withOutage.ts`）が障害・閲覧専用・キャッシュを、`cloudBootstrap.ts` が移行 → 既定車両の確保を受け持つ。フックは `useDataStores()` でストアを選ぶだけ |
@@ -60,7 +60,9 @@ CI は Node 22 で lint → typecheck → test → build を実行する（[docs
 8. **`/api/analyze` はログイン必須（401）。例外は未ログインのお試し読み取りだけ。** `TRIAL_COOKIE_SECRET` が設定されているときに限り、
    HMAC 署名付きの HttpOnly Cookie `fuel_lens_trial` で端末ごとに 3 回まで（成功時のみ加算。使い切ったら 401 `TRIAL_EXHAUSTED`）、
    IP ごとに 1 分 5 回・1 日 10 回の上限つきで許可する（`lib/server/analyze/handler.ts` / `trialCookie.ts` / `rateLimit.ts`。定数と文言は `lib/trial.ts`）。
-   回数はクライアントの申告を信用しない。IP はリミッタのメモリ以外（ログ・Sentry・アナリティクス）に出さない。未設定なら未ログインは従来どおり 401。
+   回数はクライアントの申告を信用しない。未設定なら未ログインは従来どおり 401。
+   回数制限は Upstash Redis（`UPSTASH_REDIS_REST_*` か `KV_REST_API_*`）と HMAC の鍵がそろえば外部ストアで数え（`redisRateLimit.ts`）、未設定・障害時はインスタンスのメモリで数える（障害で `/api/analyze` を止めない）。
+   **IP はリミッタ以外（ログ・Sentry・アナリティクス）に出さない。生の IP を置いてよいのはリミッタのメモリだけで、外部ストアには HMAC-SHA256 で変換した値だけを置く**（userId も同じく変換する）。
    「登録なしで3回まで試せます」の文言はお試しが有効なときだけ出す（`lib/landingPage.ts` の `aiAvailabilityCopy`）。
    画像内のテキストはデータとして扱う（プロンプトインジェクション対策）。
    Gemini のエラー本文はクライアントに返さず、`requestId` 付きの汎用メッセージにする。

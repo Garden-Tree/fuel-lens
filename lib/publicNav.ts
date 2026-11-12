@@ -10,6 +10,20 @@ export const PUBLIC_TOOL_LINKS = [
   { href: "/fuelio", label: "Fuelio からの乗り換え" },
 ] as const;
 
+/**
+ * 燃費を記録し続けたい人向けのガイド（/fuel-log・/fuel-log-excel）。
+ * PUBLIC_TOOL_LINKS とは分け、/calc と区間ページ（/route-gas-cost/[slug]）のナビには載せない
+ * （検索結果の判定中のページのリンク構成を変えないため）。ガイド 2 枚・/expense・/fuelio・ランディングのフッターに載せる。
+ */
+export const FUEL_LOG_GUIDE_LINKS = [
+  { href: "/fuel-log", label: "燃費記録のつけ方" },
+  { href: "/fuel-log-excel", label: "燃費管理をエクセルで" },
+] as const;
+
 export function otherToolLinks(currentPath: string) {
   return PUBLIC_TOOL_LINKS.filter((l) => l.href !== currentPath);
+}
+
+export function otherGuideLinks(currentPath: string) {
+  return FUEL_LOG_GUIDE_LINKS.filter((l) => l.href !== currentPath);
 }

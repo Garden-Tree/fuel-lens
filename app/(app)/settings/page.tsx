@@ -8,6 +8,7 @@ import AccountPanel from "@/components/AccountPanel";
 import { AppPage, HookErrorLine, PageHeader, ReadOnlyCaption } from "@/components/AppShell";
 import BackupPanel from "@/components/BackupPanel";
 import ImportPanel from "@/components/ImportPanel";
+import PushReminderPanel from "@/components/PushReminderPanel";
 import { GroupedList, ListRow, Section } from "@/components/ui";
 import type { SettingsBusy } from "@/components/settingsUi";
 
@@ -76,6 +77,8 @@ export default function SettingsPage() {
           busy={busy}
           setBusy={setBusy}
         />
+
+        <PushReminderPanel readOnly={outageReadOnly} />
 
         <AccountPanel
           readOnly={outageReadOnly}

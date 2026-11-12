@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import { ANNUAL_GAS_COST_DESCRIPTION, ANNUAL_GAS_COST_PAGE_TITLE, QUICK_ANSWER_EXAMPLE, exampleMonthlyAndYearly } from "@/lib/annualGasCostPage";
 import { CALC_DESCRIPTION, CALC_PAGE_TITLE } from "@/lib/calcPage";
 import { FUEL_CONVERT_DESCRIPTION, FUEL_CONVERT_PAGE_TITLE } from "@/lib/fuelConvertPage";
+import { FUEL_LOG_DESCRIPTION, FUEL_LOG_PAGE_TITLE } from "@/lib/fuelLogPage";
+import { FUEL_LOG_EXCEL_DESCRIPTION, FUEL_LOG_EXCEL_PAGE_TITLE } from "@/lib/fuelLogExcelPage";
 import { GAS_COST_DESCRIPTION, GAS_COST_PAGE_TITLE, quickAnswer } from "@/lib/gasCostPage";
 import { LANDING_DESCRIPTION, LANDING_DESCRIPTION_WITH_TRIAL, LANDING_TITLE } from "@/lib/landingPage";
 import { routePageDescription, routePageTitle } from "@/lib/routeDetailPage";
@@ -44,6 +46,8 @@ function publicPages(): Page[] {
     { path: "/gas-cost", title: GAS_COST_PAGE_TITLE, description: GAS_COST_DESCRIPTION, answer: `普通車で約${standard.cost}円` },
     { path: "/annual-gas-cost", title: ANNUAL_GAS_COST_PAGE_TITLE, description: ANNUAL_GAS_COST_DESCRIPTION, answer: `月約${annual.monthly}円` },
     { path: "/warikan", title: WARIKAN_PAGE_TITLE, description: WARIKAN_DESCRIPTION, answer: "1人いくら" },
+    { path: "/fuel-log", title: FUEL_LOG_PAGE_TITLE, description: FUEL_LOG_DESCRIPTION, answer: "区間距離÷給油量" },
+    { path: "/fuel-log-excel", title: FUEL_LOG_EXCEL_PAGE_TITLE, description: FUEL_LOG_EXCEL_DESCRIPTION, answer: "区間距離÷給油量" },
     {
       path: "/route-gas-cost",
       title: ROUTE_GAS_COST_PAGE_TITLE,

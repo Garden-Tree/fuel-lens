@@ -40,7 +40,8 @@ export default function PrivacyPage() {
             アクセス情報: 閲覧したページのパスなどの統計情報（Vercel Web Analytics）と、本サービス内の操作の統計（Google アナリティクス。4-2 章）。ページの URL からハッシュと、流入元を示す utm パラメータ以外のクエリ文字列は取り除いて送信します。
           </li>
           <li>
-            通信情報: AI 読み取りの利用回数を制限するため、リクエスト元の IP アドレスをサーバーのメモリ上で一時的に使います（データベースには保存しません）。
+            通信情報: AI 読み取りの利用回数を制限するため、リクエスト元の IP アドレスを一時的に使います。IP アドレスそのものはサーバーのメモリ上でだけ扱い、
+            回数の記録（4 章の Upstash）には元に戻せない形に変換した値だけを使います（最長 24 時間で消え、データベースには保存しません）。
             また、サーバーの動作記録（ログ）に処理の結果やエラーが残ることがあります。画像そのものは記録しません。
           </li>
         </ul>
@@ -71,6 +72,10 @@ export default function PrivacyPage() {
             Google Gemini API（AI 読み取り）: 読み取りを実行したときに、画像を Google に送信します。
             {ext("https://policies.google.com/privacy", "Google のプライバシーポリシー")}、
             {ext("https://ai.google.dev/gemini-api/terms", "Gemini API の利用規約")}もご確認ください。
+          </li>
+          <li>
+            Upstash（利用回数の管理）: AI 読み取りの回数の記録。IP アドレスやアカウントの ID は元に戻せない形に変換してから送り、記録は最長 24 時間で消えます。
+            {ext("https://upstash.com/trust/privacy", "Upstash のプライバシーポリシー")}
           </li>
           <li>
             Vercel（ホスティング・アクセス解析）: 本サービスの配信と、Cookie を使わないページ閲覧の統計。

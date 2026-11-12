@@ -1,9 +1,9 @@
 /**
  * /api/analyze のレートリミット（ユーザー / IP ごとの 1 分間の上限と、未ログインのお試しの IP ごとの 1 日の上限）。
  *
- * 注意: 状態はプロセスメモリ上の Map にあるため、サーバーレス環境（Vercel 等）では
- * インスタンスごとに別々の状態を持ち、コールドスタートで消える（ベストエフォート）。
- * 厳密な制限が必要な場合は Upstash Redis 等の外部ストアに置き換える。
+ * ここはプロセスメモリ上の Map の実装。サーバーレス環境（Vercel 等）ではインスタンスごとに別々の状態を持ち、
+ * コールドスタートで消える（ベストエフォート）。Upstash Redis が設定されていれば外部ストアで数え
+ * （`redisRateLimit.ts`）、未設定・障害時はこのメモリの実装を使う。
  * Map と時計は注入できる（テスト用）。
  */
 
@@ -32,6 +32,13 @@ export type RateLimiter = {
    * `at` を渡すとその時刻（ms）で判定する（省略時は注入された時計）。
    */
   consume(key: string, at?: number): RateLimitResult;
+};
+
+/**
+ * ハンドラが受け取るリミッタ。メモリの実装（同期）と外部ストアの実装（非同期）のどちらでもよい。
+ */
+export type RateLimitConsumer = {
+  consume(key: string, at?: number): RateLimitResult | Promise<RateLimitResult>;
 };
 
 export function createRateLimiter(options: RateLimiterOptions): RateLimiter {
@@ -84,7 +91,8 @@ export function createRateLimiter(options: RateLimiterOptions): RateLimiter {
 /**
  * レートリミットのキーに使うクライアントの IP。`X-Forwarded-For` の先頭（"client, proxy1, proxy2" の client）、
  * 無ければ `X-Real-IP`、どちらも無ければ "unknown"（すべてのそういうリクエストが同じバケツを共有する）。
- * IP はこのリミッタのメモリ（Map のキー）にだけ置き、ログ・Sentry には出さない。
+ * IP はリミッタにだけ渡す。メモリの実装は Map のキーにそのまま置き、外部ストアには HMAC-SHA256 で変換した値だけを置く
+ * （`redisRateLimit.ts`）。ログ・Sentry・アナリティクスには出さない。
  */
 export function clientIpOf(headers: Headers): string {
   const forwarded = headers.get("x-forwarded-for")?.split(",")[0]?.trim();
@@ -101,7 +109,7 @@ export const MAX_RATE_LIMIT_KEYS = 10_000;
 /**
  * 未ログインのお試し読み取りの、IP ごとの 1 日の上限（2 つ目のバケツ。createRateLimiter を 24 時間の窓で使う）。
  * 端末ごとの回数（署名付き Cookie）は Cookie を消せば数え直せるため、乱用の歯止めはこちらが受け持つ。
- * 窓は最初のリクエストから 24 時間の固定窓。1 分間の上限と同じくインスタンスごと・ベストエフォート。
+ * 窓は最初のリクエストから 24 時間の固定窓。外部ストアが未設定・障害時は、1 分間の上限と同じくインスタンスごと・ベストエフォート。
  */
 export const TRIAL_IP_WINDOW_MS = 24 * 60 * 60 * 1000;
 export const MAX_TRIAL_REQUESTS_PER_IP_PER_DAY = 10;

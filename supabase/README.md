@@ -9,7 +9,8 @@ supabase/
 │   ├── 0002_keepalive.sql                       # keepalive テーブル + keepalive_ping() 関数
 │   ├── 0003_fuel_records_vehicle_ownership.sql  # fuel_records の insert/update ポリシー強化（適用済み DB 向け）
 │   ├── 0004_fill_chain.sql                      # オドメーター・部分給油・記録漏れ・燃料種別・メモ・車両の距離の入力方式
-│   └── 0005_record_source.sql                   # 記録の入口（fuel_records.source。利用状況の計測用）
+│   ├── 0005_record_source.sql                   # 記録の入口（fuel_records.source。利用状況の計測用）
+│   └── 0006_push_subscriptions.sql              # 給油のお知らせ（Web Push）の購読 + RLS
 └── README.md                                    # このファイル
 ```
 
@@ -32,6 +33,7 @@ supabase/
 | `0003_fuel_records_vehicle_ownership.sql` | `fuel_records_insert_own` / `fuel_records_update_own` を「`vehicle_id` は null か自分の車両に限る」定義へ更新（`0001` の該当部分と同一） |
 | `0004_fill_chain.sql` | `fuel_records` に `odometer` / `is_full`（既定 true）/ `missed_previous`（既定 false）/ `fuel_type` / `memo`、`vehicles` に `distance_mode`（既定 `'trip'`）/ `default_fuel_type` を追加。CHECK 制約 4 本を `NOT VALID` で追加（仕様は [docs/design-fill-chain.md](../docs/design-fill-chain.md)） |
 | `0005_record_source.sql` | `fuel_records` に `source`（text null。記録の入口: scan / manual / calc / import / restore。既存行は null = 不明）を追加。CHECK 制約 1 本（null か 20 文字以下）を `NOT VALID` で追加 |
+| `0006_push_subscriptions.sql` | `push_subscriptions` テーブル（`user_id` → `users(id)` の `ON DELETE CASCADE`、`unique (user_id, endpoint)`、CHECK 2 本、有効な行の部分インデックス）、RLS の有効化、anon / authenticated の権限の作り直し（authenticated は select / insert / delete のみ）、3 本のポリシー |
 
 `0001` は列の型の変更や行の削除は行いませんが、既存のデータ・制約に対して次の変更を行います。
 
@@ -53,12 +55,17 @@ supabase/
 `source` は画面にも計算にも出ません。**アプリが `source` を送るリリース（新規記録の保存すべて）より前に適用してください**（未適用の DB に送ると `PGRST204` で記録を保存できません）。
 集計は [runbooks/weekly_metrics.sql](./runbooks/weekly_metrics.sql) のクエリ 4。
 
+`0006` は新しいテーブルを作るだけで、既存のテーブルには触れません。利用者は自分の行の読み取り・追加・削除だけができ（update の権限もポリシーも無い）、
+`enabled`（404 / 410 での無効化）と `last_notified_record_id` / `last_notified_at` はサーバー（`/api/push/reminders` の service_role）だけが書きます。
+**`NEXT_PUBLIC_VAPID_PUBLIC_KEY` を設定して設定画面に「給油のお知らせ」を出す前に適用してください**（未適用だとオンにしたときの保存が失敗する。他の機能には影響しない）。
+仕様は [docs/architecture.md「給油のお知らせ」](../docs/architecture.md#給油のお知らせweb-push)、運用は [docs/operations.md 4-9](../docs/operations.md#4-9-給油のお知らせweb-push)。
+
 ### 方法 A: SQL Editor（推奨）
 
 1. Supabase Dashboard → **SQL Editor** → **New query**
 2. `migrations/0001_schema_and_rls.sql` の内容を貼り付けて **Run**
-3. 同様に `migrations/0002_keepalive.sql` → `migrations/0003_fuel_records_vehicle_ownership.sql` → `migrations/0004_fill_chain.sql` → `migrations/0005_record_source.sql` を **Run**
-   （必ず `0001` → `0002` → `0003` → `0004` → `0005` の順）
+3. 同様に `migrations/0002_keepalive.sql` → `migrations/0003_fuel_records_vehicle_ownership.sql` → `migrations/0004_fill_chain.sql` → `migrations/0005_record_source.sql` → `migrations/0006_push_subscriptions.sql` を **Run**
+   （必ず `0001` → `0002` → `0003` → `0004` → `0005` → `0006` の順）
 4. 続けて [2 章](#2-rls-が有効か確認する) の確認とポリシー監査を行う
 
 ### 方法 B: Supabase CLI
@@ -106,7 +113,7 @@ SQL Editor で次を実行し、すべて `rowsecurity = true` であること�
 select schemaname, tablename, rowsecurity
   from pg_tables
  where schemaname = 'public'
-   and tablename in ('users', 'vehicles', 'fuel_records', 'keepalive');
+   and tablename in ('users', 'vehicles', 'fuel_records', 'keepalive', 'push_subscriptions');
 ```
 
 Dashboard の **Table Editor**（各テーブルの "RLS enabled" 表示）と **Advisors → Security Advisor** でも確認できます。
@@ -124,14 +131,25 @@ select schemaname, tablename, policyname, roles, cmd, qual, with_check
  order by tablename, policyname;
 ```
 
-`users` / `vehicles` / `fuel_records` のポリシーが **次の 12 本だけ** で、`keepalive` には **ポリシーが無い**
-（関数経由でのみ更新）ことを確認します。
+`users` / `vehicles` / `fuel_records` のポリシーが **次の 12 本だけ**、`push_subscriptions`（`0006` を適用した場合）が **次の 3 本だけ** で、
+`keepalive` には **ポリシーが無い**（関数経由でのみ更新）ことを確認します。
 
 | テーブル | 本リポジトリが管理するポリシー（select / insert / update / delete） |
 |---|---|
 | `users` | `users_select_own`, `users_insert_own`, `users_update_own`, `users_delete_own` |
 | `vehicles` | `vehicles_select_own`, `vehicles_insert_own`, `vehicles_update_own`, `vehicles_delete_own` |
 | `fuel_records` | `fuel_records_select_own`, `fuel_records_insert_own`, `fuel_records_update_own`, `fuel_records_delete_own` |
+| `push_subscriptions` | `push_subscriptions_select_own`, `push_subscriptions_insert_own`, `push_subscriptions_delete_own`（update のポリシーは無い。authenticated に update 権限も無い） |
+
+`push_subscriptions` の権限は次で確認できます（`authenticated` が `SELECT` / `INSERT` / `DELETE` だけ、`anon` が無し）。
+
+```sql
+select grantee, privilege_type
+  from information_schema.role_table_grants
+ where table_schema = 'public' and table_name = 'push_subscriptions'
+   and grantee in ('anon', 'authenticated')
+ order by grantee, privilege_type;
+```
 
 これ以外のポリシーがあれば削除します（名前は監査クエリの `policyname` 列をそのまま使う）。
 
@@ -201,6 +219,7 @@ commit;
 ```
 
 外部キー（`vehicles_user_id_fkey` / `fuel_records_user_id_fkey`）が `ON DELETE CASCADE` なら `delete from public.users where id = '<clerk_user_id>';` だけでも車両・記録まで消えます。
+給油のお知らせの購読（`push_subscriptions`）は外部キーが必ず `ON DELETE CASCADE` なので、`users` 行の削除で消えます。
 本番 DB の既存の外部キーの動作は次で確認できます（`confdeltype` が `c` なら CASCADE）。
 
 ```sql
