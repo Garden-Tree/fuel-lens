@@ -78,7 +78,7 @@ FuelLens の構成、データの流れ、主要なモジュールの役割を�
 | `lib/useRecordEditing.ts` | 記録の編集・手動入力のフォームの開閉と保存（重複確認・toast・車両切り替えで閉じる）。/app と /history で共用 |
 | `lib/manualPrefill.ts` | 手動入力の事前入力 `/app?action=manual&distance=…&amount=…&cost=…` の組み立て（`buildManualPrefillHref`。`/calc` から）・解析（`parseManualPrefill`。信頼できない入力として検証）・車両の入力方式への当てはめ（`prefillToRecord`）。純粋関数（[燃費計算ページ](#燃費計算ページcalc)） |
 | `lib/shareInbox.ts` | Web Share Target の受け取り箱。Service Worker が IndexedDB に置いた共有画像を、トークン一致かつ 10 分以内のときだけ取り出して削除する（`takeSharedImage` / `clearSharedImage`。[9 章](#9-pwa)） |
-| `public/sw.js` | Service Worker。Web Share Target（POST `/share`）の受け取りと、給油のお知らせの `push` / `notificationclick` だけ。キャッシュはしない（[9 章](#9-pwa)） |
+| `public/sw.js` | Service Worker。Web Share Target（POST `/share`）の受け取り、給油のお知らせの `push` / `notificationclick`、`/_next/static/` のキャッシュ（cache-first）（[9 章](#9-pwa)） |
 | `components/ServiceWorkerRegister.tsx` | `public/sw.js` を登録する（本番ビルドのみ。開発中は `NEXT_PUBLIC_ENABLE_SW=1` で有効化）。`app/layout.tsx` にマウント |
 | `public/icons/` / `public/apple-touch-icon.png` | PWA アイコン（`icon-192.png` / `icon-512.png` / `icon-maskable-512.png` と 180x180 の apple-touch-icon）。`scripts/generate-icons.mjs` が生成 |
 | `scripts/generate-icons.mjs` | `app/icon.svg` から PWA アイコンを生成するスクリプト（`node scripts/generate-icons.mjs`） |
@@ -752,12 +752,16 @@ CSV を `lib/importers/` の純粋関数でバックアップ形式（`FuelLensB
 ## 9. PWA
 
 ホーム画面に追加して、アプリのように起動できます。写真アプリの「共有」から FuelLens に画像を送ってスキャンできます（Web Share Target）。
-**Service Worker は共有の受け取りと給油のお知らせの表示（[下記](#給油のお知らせweb-push)）だけで、キャッシュはしません。オフライン動作には対応していません**（[今後の候補](./roadmap.md)）。
+**Service Worker は共有の受け取り、給油のお知らせの表示（[下記](#給油のお知らせweb-push)）、静的ファイル（`/_next/static/`）のキャッシュだけです。HTML やデータはキャッシュせず、オフライン動作には対応していません**（[今後の候補](./roadmap.md)）。
 
 - `app/manifest.ts` が `/manifest.webmanifest` を返します。`name` / `short_name` は `FuelLens`、`start_url` は `/app`、`display` は `standalone`、
   `orientation` は `portrait`、背景色とテーマ色は `#0B0F14`（`ground` トークン）です。`app/layout.tsx` の `metadata.manifest` から参照し、テーマ色は `viewport.themeColor` にも設定しています。
 - アイコンは `public/icons/` の `icon-192.png` / `icon-512.png`（通常）と `icon-maskable-512.png`（maskable。余白付きの全面塗り）、
   iOS 用の `public/apple-touch-icon.png`（180x180。`metadata.icons.apple`）です。
+- iOS のホーム画面から起動したときのステータスバーは `metadata.appleWebApp.statusBarStyle: "black"`（不透明な黒）です。
+  `black-translucent` だと最近の iOS はステータスバーの下にすりガラスの効果を重ね、静止時でもぼけた帯が出るため使いません。
+  ページはステータスバーの下から始まるので `env(safe-area-inset-top)` は通常 0 です。`viewport.viewportFit: "cover"` は下の安全領域（タブバー）のために残しています。
+  iOS はこの設定をホーム画面に追加した時点で覚えることがあり、変更が効かないときはアイコンを追加し直します。
 - iOS でホーム画面から起動したときの起動画像（apple-touch-startup-image）は `public/splash/apple-splash-<幅>x<高さ>.png`（物理ピクセル、縦向きのみ）です。
   `node scripts/generate-startup-images.mjs` が背景 `#0B0F14` の中央に `icon-512.png` を置いて生成し、生成物はコミットします（Vercel では実行しない）。
   端末の一覧は `lib/startupImages.json` が正本で、`lib/startupImages.ts` の `startupImages()` が `metadata.appleWebApp.startupImage` の `{ url, media }` を作ります。
@@ -791,7 +795,14 @@ CSV を `lib/importers/` の純粋関数でバックアップ形式（`FuelLensB
      `redirects()` はメソッドを問わずルーティングの最初に評価されるため、`/share` のルート（`app/share/`）は置いていません。
 - **Service Worker の登録**: `components/ServiceWorkerRegister.tsx`（`app/layout.tsx` にマウント）が本番ビルドでのみ `/sw.js` をスコープ `/` で登録します。
   開発中に試すときは `NEXT_PUBLIC_ENABLE_SW=1` を設定します。SW は `install` で `skipWaiting`、`activate` で `clients.claim` し、
-  `{ type: "SKIP_WAITING" }` メッセージにも応じます。**キャッシュ（precache / Cache Storage）は一切使いません。**
+  `{ type: "SKIP_WAITING" }` メッセージにも応じます。
+- **静的ファイルのキャッシュ（2 回目以降の起動を速くする）**: 同じオリジンの GET `/_next/static/`（ファイル名に内容のハッシュが入り中身が変わらない JS / CSS / フォント）だけを
+  Cache Storage の `fuel-lens-static-v1` に cache-first で置きます。キャッシュにあればそれを返し、無ければネットワークから取って `ok` かつ `type: "basic"` の応答だけを保存します（ネットワークの失敗はそのまま返し、代わりの応答は作らない）。
+  HTML・RSC・`/api`・別オリジン（Clerk・Google Analytics など）はキャッシュしません。precache はしません。
+  デプロイのたびにファイル名が変わって増えるので、保存のあと 150 件（`STATIC_CACHE_MAX_ENTRIES`）を超えた分を古いものから消します（応答は待たせない）。
+  キャッシュの持ち方を変えたときは `public/sw.js` の `STATIC_CACHE` の版（`-v1`）を上げます。`activate` で `fuel-lens-static-` で始まる古い版を削除します。
+- **sw.js の更新**: `/sw.js` は `public/` の静的ファイルで、`next.config.ts` / `vercel.json` に独自のヘッダーはありません（Next.js / Vercel の既定は `Cache-Control: public, max-age=0, must-revalidate`）。
+  登録は既定の `updateViaCache: "imports"` なので、ブラウザは sw.js 本体を HTTP キャッシュを通さずに確認し、変更があれば次の起動で入れ替わります。
   `proxy.ts`（Clerk）のマッチャーは `.js` の静的ファイルを除外するので `/sw.js` は素通しです。`/share` もマッチャーから除外しています（Clerk を通さずにリダイレクトする）。
 - **動作確認（Android Chrome）**: 本番 URL（HTTPS）を開いて「ホーム画面に追加」（インストール）し、一度アプリを起動して SW を有効にします。
   フォトアプリで写真を開いて「共有」→ FuelLens を選ぶと、アプリが開いてプレビューと「共有された画像を読み取りますか？」の確認が出ます。
