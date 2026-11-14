@@ -8,6 +8,7 @@ import {
   ROUTE_GAS_COST_FAQS,
   ROUTE_GAS_COST_PAGE_TITLE,
   ROUTE_SNIPPET_IDS,
+  ROUTE_EXTRA_SOURCE,
   ROUTE_PRICE,
   buildRouteGasCostJsonLd,
   displayKm,
@@ -86,6 +87,37 @@ describe("区間別の表", () => {
       expect(route.from.endsWith("IC") && route.to.endsWith("IC")).toBe(true);
       if (route.retrieved !== undefined) expect(route.retrieved).toMatch(/^\d{4}年\d{1,2}月\d{1,2}日$/);
     }
+  });
+
+  it("種別: 2026-11-09 に足した 23 区間が行楽地、ほかの 22 区間が都市間", () => {
+    const resort = ROUTES.filter((r) => r.kind === "resort");
+    expect(resort).toHaveLength(23);
+    expect(ROUTES.filter((r) => r.kind === "intercity")).toHaveLength(22);
+    for (const r of ROUTES) expect(r.kind === "resort", r.id).toBe(r.retrieved === "2026年11月9日");
+  });
+
+  it("所要時間・休日・深夜・通常料金のデータの整合性", () => {
+    for (const r of ROUTES) {
+      // 所要時間は正の整数（分）で、平均時速が高速道路としてありえる範囲（50〜110 km/h）
+      expect(Number.isInteger(r.durationMin), r.id).toBe(true);
+      const speed = r.sourceKm / (r.durationMin! / 60);
+      expect(speed, r.id).toBeGreaterThan(50);
+      expect(speed, r.id).toBeLessThan(110);
+      for (const t of [r.holidayToll!, r.nightToll!, r.cashToll!]) {
+        expect(Number.isInteger(t.standard) && Number.isInteger(t.kei), r.id).toBe(true);
+        expect(t.kei, r.id).toBeLessThan(t.standard);
+      }
+      // 割引は平日昼間の ETC 料金を超えず、通常料金（現金等）は ETC 料金以上
+      expect(r.holidayToll!.standard, r.id).toBeLessThanOrEqual(r.toll!.standard);
+      expect(r.holidayToll!.kei, r.id).toBeLessThanOrEqual(r.toll!.kei);
+      expect(r.nightToll!.standard, r.id).toBeLessThan(r.toll!.standard);
+      expect(r.nightToll!.kei, r.id).toBeLessThan(r.toll!.kei);
+      expect(r.cashToll!.standard, r.id).toBeGreaterThanOrEqual(r.toll!.standard);
+      expect(r.cashToll!.kei, r.id).toBeGreaterThanOrEqual(r.toll!.kei);
+    }
+    // 出発時刻が違うのは東京〜鹿児島（6:00）だけ
+    expect(ROUTES.filter((r) => r.departure !== undefined).map((r) => [r.id, r.departure])).toEqual([["tokyo-kagoshima", "6:00"]]);
+    expect(ROUTE_EXTRA_SOURCE.retrieved).toMatch(/^\d{4}年\d{1,2}月\d{1,2}日$/);
   });
 
   it("高速代が null の区間はガソリン代だけで、合計は null", () => {

@@ -9,6 +9,7 @@ import { NATIONAL_GAS_PRICE } from "@/lib/nationalGasPrice";
 import {
   ROUTES,
   ROUTE_DISTANCE_SOURCE,
+  ROUTE_EXTRA_SOURCE,
   ROUTE_GAS_COST_PATH,
   ROUTE_TOLL_NOTE,
   displayKm,
@@ -23,18 +24,22 @@ import {
   SPLIT_ROUNDING_NOTE,
   buildRouteDetailJsonLd,
   findRoute,
+  formatDuration,
   neighborRoutes,
   routeCarRows,
+  routeFaqs,
+  routeInsights,
   routePageDescription,
   routePageTitle,
   routeSplits,
   routeStaticParams,
+  routeTollComparison,
   routeWarikanLink,
 } from "@/lib/routeDetailPage";
 import RouteCta from "../_components/RouteCta";
 import CostPair from "../_components/CostPair";
 import ToolPagePromoCard from "@/components/ToolPagePromoCard";
-import { findToolPagePromo } from "@/lib/promo/toolPage";
+import { routePagePromo } from "@/lib/promo/toolPage";
 
 // 区間ごとのガソリン代・高速代のページ（「大阪から東京 車 ガソリン代」などの検索からの入口）。ROUTES から静的に生成する。
 
@@ -60,9 +65,6 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   };
 }
 
-// 高速代の下に 1 回だけ出す提携先（法人 ETC カード）
-const PROMO = findToolPagePromo(ROUTE_GAS_COST_PATH);
-
 const LINK = "text-accent underline underline-offset-2 hover:no-underline";
 
 export default async function RouteDetailPage({ params }: Props) {
@@ -73,6 +75,12 @@ export default async function RouteDetailPage({ params }: Props) {
   const carRows = routeCarRows(route);
   const splits = routeSplits(route);
   const neighbors = neighborRoutes(route);
+  // 高速代の下に 1 回だけ出す提携先。都市間は法人 ETC カード、行楽地は宿の予約サイト（区間の種別で選ぶ）
+  const promo = routePagePromo(route.kind);
+  const tollRows = routeTollComparison(route);
+  const insights = routeInsights(route);
+  const faqs = routeFaqs(route);
+  const hasExtra = route.durationMin != null || route.holidayToll != null || route.nightToll != null || route.cashToll != null;
 
   return (
     <div className="min-h-screen bg-ground font-sans text-ink">
@@ -115,6 +123,12 @@ export default async function RouteDetailPage({ params }: Props) {
                   約<span className="num">{km}</span>km（ルート検索の値 <span className="num">{route.sourceKm}</span>km）
                 </dd>
               </div>
+              {route.durationMin != null && (
+                <div className="flex justify-between gap-4 px-4 py-3">
+                  <dt className="text-sub">所要時間</dt>
+                  <dd>渋滞なしの目安 {formatDuration(route.durationMin)}</dd>
+                </div>
+              )}
               <div className="flex justify-between gap-4 px-4 py-3">
                 <dt className="text-sub">高速代（ETC）</dt>
                 <dd className="text-right">
@@ -131,7 +145,42 @@ export default async function RouteDetailPage({ params }: Props) {
                 </dd>
               </div>
             </dl>
-            <ToolPagePromoCard promo={PROMO} page={ROUTE_GAS_COST_PATH} liters={null} />
+            <ToolPagePromoCard promo={promo} page={ROUTE_GAS_COST_PATH} liters={null} />
+          </section>
+
+          <section>
+            <h2>{route.name}の所要時間と高速代の割引</h2>
+            {tollRows.length > 1 && (
+              <div className="mb-4 overflow-x-auto rounded-2xl border border-line bg-surface">
+                <table className="w-full border-collapse text-right text-sm">
+                  <caption className="sr-only">{route.name}の片道の高速代（円）を、平日昼間・休日・深夜の ETC 料金で比べた表</caption>
+                  <thead>
+                    <tr className="border-b border-line text-xs text-sub">
+                      <th scope="col" className="px-3 py-2.5 text-left font-medium">片道の高速代</th>
+                      <th scope="col" className="px-3 py-2.5 font-medium">普通車</th>
+                      <th scope="col" className="px-3 py-2.5 font-medium">軽自動車等</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {tollRows.map(({ label, note, toll }) => (
+                      <tr key={label} className="border-b border-line last:border-b-0">
+                        <th scope="row" className="px-3 py-2.5 text-left font-medium text-ink">
+                          <span className="block text-[13px]">{label}</span>
+                          <span className="block text-xs font-normal text-sub">{note}</span>
+                        </th>
+                        <td className="num whitespace-nowrap px-3 py-2.5">{yen(toll.standard)}</td>
+                        <td className="num whitespace-nowrap px-3 py-2.5">{yen(toll.kei)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+            <div className="space-y-3">
+              {insights.map((text) => (
+                <p key={text}>{text}</p>
+              ))}
+            </div>
           </section>
 
           <section>
@@ -195,6 +244,18 @@ export default async function RouteDetailPage({ params }: Props) {
           </section>
 
           <section>
+            <h2>よくある質問</h2>
+            <dl className="space-y-4">
+              {faqs.map(({ q, a }) => (
+                <div key={q}>
+                  <dt className="font-bold text-ink">{q}</dt>
+                  <dd className="mt-1 text-sub">{a}</dd>
+                </div>
+              ))}
+            </dl>
+          </section>
+
+          <section>
             <h2>計算の前提</h2>
             <ul className="list-disc space-y-1 pl-5 text-sm text-sub">
               <li>
@@ -211,6 +272,12 @@ export default async function RouteDetailPage({ params }: Props) {
                 </a>
                 で{route.retrieved ?? ROUTE_DISTANCE_SOURCE.tollRetrieved}に確認しました。
               </li>
+              {hasExtra && (
+                <li>
+                  所要時間・休日・深夜・ETC なしの料金は、同じ IC・同じ経路を{ROUTE_EXTRA_SOURCE.retrieved}に同じルート検索で調べた値です（所要時間は渋滞予測を含まない「通常時間」、休日は
+                  {ROUTE_EXTRA_SOURCE.holidayDate} {route.departure ?? ROUTE_EXTRA_SOURCE.departure} 出発、深夜は{ROUTE_EXTRA_SOURCE.nightDate} 0:00 出発の ETC 料金）。
+                </li>
+              )}
               <li>距離は IC 間の高速道路の距離を 5 km 単位に丸めた値で、IC までの一般道は含みません。</li>
             </ul>
             <p className="mt-3 text-sm">
