@@ -21,7 +21,7 @@ import { aiAvailabilityCopy } from "@/lib/landingPage";
 import { isTrialEnabled } from "@/lib/server/analyze/trialCookie";
 
 // 燃費をエクセルで管理している人・始めたい人向けの入口（ログイン不要・静的）。新しい機能は持たず、
-// 列の作り方と、設定画面の既存の取り込み（FuelLens の CSV）で記録をアプリに移す方法を説明する。
+// 列の作り方と、設定画面の既存の取り込み（FuelLens の CSV、列名が違えば列を選ぶ汎用 CSV）で記録をアプリに移す方法を説明する。
 // AI の読み取りの可否はお試し（TRIAL_COOKIE_SECRET）の有無で文言を切り替える（静的描画なのでビルド時の値）。
 // OG 画像は同じフォルダの opengraph-image.tsx・twitter-image.tsx（ファイル規約）が付く。
 
@@ -130,7 +130,8 @@ export default function FuelLogExcelPage() {
             <h2>エクセルの記録を FuelLens に移す</h2>
             <ol>
               <li>
-                列名を上の表の 8 つにそろえます（順番は自由。単価・燃費の列は空でもかまいません）。日付は 2026/11/12 のような年・月・日の形にします。
+                列名を上の表の 8 つにそろえると、そのまま取り込めます（順番は自由。単価・燃費の列は空でもかまいません）。
+                列名が違う表でも、取り込むときに日付・給油量・距離などに当たる列を選べます。日付は 2026/11/12 のような年・月・日の形にします。
               </li>
               <li>
                 Excel の「名前を付けて保存」で、ファイルの種類に「CSV UTF-8 (コンマ区切り)」か「CSV (コンマ区切り)」を選んで保存します（Web 版の Excel では CSV で保存できません）。
@@ -140,7 +141,7 @@ export default function FuelLogExcelPage() {
                 <Link href="/settings" data-ga-cta="excel_import" className={linkClass}>
                   設定
                 </Link>
-                画面の「インポート」で「FuelLens の CSV を選ぶ」を押し、件数を確認して「取り込む」を押します。
+                画面の「インポート」で CSV を選び（列名が違うときは列を選んで）、件数を確認して「取り込む」を押します。
               </li>
             </ol>
             <p className="mt-3">次の列を足すと、部分給油などもそのまま引き継げます。</p>
@@ -153,11 +154,11 @@ export default function FuelLogExcelPage() {
             </ul>
             <ul className="mt-3 text-sm text-sub">
               <li>
-                車両の列の名前ごとに車両ができます（同じ名前の車両があればそこに追加）。新しく作る車両は、オドメーターの列に値があれば積算距離の差から区間距離を計算する方式になります。
+                上の表の列名なら車両の列の名前ごとに、列を選ぶときは画面で決めた名前で車両ができます（同じ名前の車両があればそこに追加）。積算距離で取り込むと、新しく作る車両は積算距離の差から区間距離を計算する方式になります。
               </li>
               <li>燃費は取り込んだ区間距離と給油量から計算し直すので、シートの燃費の値は使いません。</li>
               <li>
-                日付が読めない行と、給油量も支払総額も無い行は読み飛ばします。ログインなしでも取り込め、ファイルは{" "}
+                日付が読めない行などは読み飛ばし、件数は取り込む前に確認できます。ログインなしでも取り込め、ファイルは{" "}
                 <span className="num">{EXCEL_MAX_FILE_MB}</span> MB・<span className="num">{EXCEL_MAX_RECORDS.toLocaleString("ja-JP")}</span> 件まで。
                 取り込みは追記のみで、同じ記録はスキップします。
               </li>

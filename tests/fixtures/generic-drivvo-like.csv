@@ -1,0 +1,6 @@
+Odometer,Date,Fuel,Price/L,Total cost,Liters,Full tank,Gas station,Notes
+12034,2026-08-03 08:15,Gasoline,172.0,5573,32.40,Yes,Shell Main St,
+12456,2026-08-17 18:40,Gasoline,174.0,5267,30.27,Yes,Shell Main St,
+12640,2026-08-25 07:05,Gasoline,175.0,2100,12.00,No,ENEOS Route 1,half tank
+12890,2026-09-02 19:30,Gasoline,173.0,3200,18.50,Yes,Shell Main St,
+13305,2026-09-16 12:00,Gasoline,171.0,5130,30.00,Yes,ENEOS Route 1,highway

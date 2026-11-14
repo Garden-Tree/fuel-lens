@@ -56,6 +56,25 @@ export function parseCsvRows(text: string): string[][] {
   return rows;
 }
 
+/**
+ * CSV ファイルのバイト列を文字列にする。UTF-8 として厳密に読み、壊れていれば Shift_JIS として読み直す
+ * （日本語版 Windows の Excel の「CSV (コンマ区切り)」は Shift_JIS で保存される）。
+ * Shift_JIS のデコーダが無い環境では UTF-8 として読む（壊れた文字は U+FFFD）。先頭の BOM は除く。
+ */
+export function decodeCsvBytes(bytes: ArrayBuffer | Uint8Array): string {
+  let text: string;
+  try {
+    text = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+  } catch {
+    try {
+      text = new TextDecoder("shift_jis").decode(bytes);
+    } catch {
+      text = new TextDecoder("utf-8").decode(bytes);
+    }
+  }
+  return text.charCodeAt(0) === 0xfeff ? text.slice(1) : text;
+}
+
 /** 空行（すべての列が空白のみ）か */
 export function isBlankRow(row: readonly string[]): boolean {
   return row.every(v => v.trim() === "");

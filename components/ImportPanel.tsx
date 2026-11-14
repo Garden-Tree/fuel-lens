@@ -1,8 +1,9 @@
 "use client";
 
 import { useMemo, useRef, useState, type ChangeEvent } from "react";
-import { Bike, Car, FileInput, FileSpreadsheet, Loader2 } from "lucide-react";
+import { Bike, Car, FileInput, FileSpreadsheet, Loader2, Table2 } from "lucide-react";
 
+import GenericCsvMappingForm from "@/components/GenericCsvMappingForm";
 import ImportNextStepCard, { type ImportNextStepCardProps } from "@/components/ImportNextStepCard";
 import RestoreCounts from "@/components/RestoreCounts";
 import {
@@ -17,8 +18,10 @@ import { GroupedList, ListRow, SegmentedControl, Section } from "@/components/ui
 import { useToast } from "@/components/Toast";
 import type { FuelRecord, Vehicle, VehicleType } from "@/lib/types";
 import { BACKUP_MAX_TEXT_LENGTH, planRestore, type FuelLensBackup } from "@/lib/backup";
+import { distanceModeOf } from "@/lib/fillChain";
 import { errorText, type RestoreDataAccess } from "@/lib/restore";
 import { useRestoreRunner } from "@/lib/useRestoreRunner";
+import { decodeCsvBytes } from "@/lib/importers/csvParse";
 import { fuelioToBackup, isFuelioCsv, parseFuelioCsv, type ParsedFuelio } from "@/lib/importers/fuelio";
 import {
   FUELLENS_CSV_DEFAULT_VEHICLE_NAME,
@@ -27,6 +30,16 @@ import {
   parseFuelLensCsv,
   type ParsedFuelLensCsv,
 } from "@/lib/importers/fuellensCsv";
+import {
+  GENERIC_CSV_DEFAULT_VEHICLE_NAME,
+  genericCsvToBackup,
+  guessGenericCsvMapping,
+  parseGenericCsv,
+  readGenericCsvTable,
+  type GenericCsvMapping,
+  type GenericCsvTable,
+  type ParseGenericCsvResult,
+} from "@/lib/importers/genericCsv";
 
 export type { ImportBusy } from "@/components/settingsUi";
 
@@ -53,7 +66,11 @@ export interface ImportPanelProps extends RestoreDataAccess {
   setBusy: (busy: SettingsBusy | null) => void;
 }
 
-type Source = { kind: "fuelio"; parsed: ParsedFuelio } | { kind: "fuellens"; parsed: ParsedFuelLensCsv };
+type Source =
+  | { kind: "fuelio"; parsed: ParsedFuelio }
+  | { kind: "fuellens"; parsed: ParsedFuelLensCsv }
+  /** Fuelio・FuelLens 以外の CSV。列の割り当てを利用者が選ぶ（割り当てと読み取り結果は ImportPanel の state） */
+  | { kind: "generic"; table: GenericCsvTable };
 
 type PendingImport = {
   fileName: string;
@@ -64,7 +81,7 @@ type PendingImport = {
 
 const MAX_VEHICLE_NAME_LENGTH = 50;
 
-/** UTF-8 として読み、壊れていれば Shift_JIS（Excel で保存し直した CSV）として読む */
+/** UTF-8 として読み、壊れていれば Shift_JIS（Excel で保存し直した CSV）として読む（lib/importers/csvParse.ts の decodeCsvBytes） */
 async function readCsvText(file: File): Promise<string> {
   let buf: ArrayBuffer;
   try {
@@ -74,24 +91,17 @@ async function readCsvText(file: File): Promise<string> {
     console.error(e);
     throw new Error("ファイルを読み込めませんでした。もう一度選択してください。");
   }
-  try {
-    return new TextDecoder("utf-8", { fatal: true }).decode(buf);
-  } catch {
-    try {
-      return new TextDecoder("shift_jis").decode(buf);
-    } catch {
-      return new TextDecoder("utf-8").decode(buf);
-    }
-  }
+  return decodeCsvBytes(buf);
 }
 
-/** 車両名の入力が必要な形式か（Fuelio と、車両列の無い履歴画面の CSV） */
+/** 車両名の入力が必要な形式か（Fuelio・汎用 CSV と、車両列の無い履歴画面の CSV） */
 function needsVehicleInput(source: Source): boolean {
-  return source.kind === "fuelio" || source.parsed.format === "vehicle";
+  return source.kind !== "fuellens" || source.parsed.format === "vehicle";
 }
 
 function sourceLabel(source: Source): string {
   if (source.kind === "fuelio") return "Fuelio の CSV";
+  if (source.kind === "generic") return "列を選んで取り込む CSV";
   return source.parsed.format === "all" ? "FuelLens の全車両 CSV" : "FuelLens の車両別 CSV";
 }
 
@@ -108,7 +118,7 @@ function findVehicleByName(vehicles: readonly Vehicle[], name: string): Vehicle 
 }
 
 function toBackup(
-  source: Source,
+  source: Exclude<Source, { kind: "generic" }>,
   vehicleName: string,
   vehicleType: VehicleType,
   vehicles: readonly Vehicle[]
@@ -151,6 +161,8 @@ export default function ImportPanel({
   const [nextStep, setNextStep] = useState<Omit<ImportNextStepCardProps, "onDismiss"> | null>(null);
   const [vehicleName, setVehicleName] = useState("");
   const [vehicleType, setVehicleType] = useState<VehicleType>("car");
+  // 汎用 CSV の列の割り当て（ファイルを選んだときに列名から推測し、画面で変更できる）
+  const [genericMapping, setGenericMapping] = useState<GenericCsvMapping | null>(null);
 
   const importDisabled = loading || busy !== null || readOnly || !!vehiclesError || vehicles.length === 0;
 
@@ -160,12 +172,39 @@ export default function ImportPanel({
       ? `車両名は 1〜${MAX_VEHICLE_NAME_LENGTH} 文字にしてください。`
       : null;
 
-  // 車両名・種別を変えるたびにプレビューを計算し直す（planRestore は純粋関数で件数に比例する程度の計算量）
+  const genericParsed = useMemo<ParseGenericCsvResult | null>(
+    () =>
+      pending?.source.kind === "generic" && genericMapping ? parseGenericCsv(pending.source.table, genericMapping) : null,
+    [pending, genericMapping]
+  );
+
+  // 名前と種別が一致する既存の車両（取り込み先になる）
+  const matchedVehicle = pending && needsVehicleInput(pending.source) ? findVehicleByName(vehicles, vehicleName) : undefined;
+  const willMatchExisting = !!matchedVehicle && matchedVehicle.type === vehicleType;
+
+  // 汎用 CSV: 既存の車両へ追加するときは、距離の列の意味を車両の入力方式に合わせる（違えば取り込ませない）
+  const genericKind = pending?.source.kind === "generic" ? genericMapping?.distanceKind : undefined;
+  const modeError =
+    genericKind && willMatchExisting && matchedVehicle && distanceModeOf(matchedVehicle) !== genericKind
+      ? `既存の車両「${matchedVehicle.name}」は${
+          distanceModeOf(matchedVehicle) === "odometer" ? "オドメーター" : "トリップ"
+        }入力方式です。距離の列の意味を「${
+          distanceModeOf(matchedVehicle) === "odometer" ? "積算距離（オドメーター）" : "区間距離（トリップメーター）"
+        }」にするか、別の車両名にしてください。`
+      : null;
+
+  // 車両名・種別・割り当てを変えるたびにプレビューを計算し直す（planRestore は純粋関数で件数に比例する程度の計算量）
   const preview = useMemo(() => {
     if (!pending || nameError) return null;
-    const backup = toBackup(pending.source, vehicleName, vehicleType, vehicles);
+    let backup: FuelLensBackup;
+    if (pending.source.kind === "generic") {
+      if (!genericParsed?.ok || genericParsed.records.length === 0 || modeError) return null;
+      backup = genericCsvToBackup(genericParsed, { vehicleName, vehicleType });
+    } else {
+      backup = toBackup(pending.source, vehicleName, vehicleType, vehicles);
+    }
     return { backup, plan: planRestore(backup, vehicles, pending.existing) };
-  }, [pending, nameError, vehicleName, vehicleType, vehicles]);
+  }, [pending, nameError, genericParsed, modeError, vehicleName, vehicleType, vehicles]);
 
   const handleFileChange = async (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -175,6 +214,7 @@ export default function ImportPanel({
 
     setPending(null);
     setNextStep(null);
+    setGenericMapping(null);
     if (file.size > BACKUP_MAX_TEXT_LENGTH) {
       toast("ファイルが大きすぎます。", { type: "error" });
       return;
@@ -199,10 +239,15 @@ export default function ImportPanel({
         }
         source = { kind: "fuellens", parsed };
       } else {
-        toast("対応していない CSV です。Fuelio または FuelLens で書き出した CSV を選んでください。", { type: "error" });
-        return;
+        // Fuelio・FuelLens 以外は、列の割り当てを選んで取り込む
+        const table = readGenericCsvTable(text);
+        if (!table.ok) {
+          toast(table.error, { type: "error" });
+          return;
+        }
+        source = { kind: "generic", table: { headers: table.headers, rows: table.rows, lineNumbers: table.lineNumbers } };
       }
-      if (source.parsed.records.length === 0) {
+      if (source.kind !== "generic" && source.parsed.records.length === 0) {
         toast("取り込める記録がありませんでした。", { type: "info" });
         return;
       }
@@ -213,6 +258,8 @@ export default function ImportPanel({
       if (source.kind === "fuelio") {
         name = source.parsed.vehicleName;
         type = source.parsed.vehicleType;
+      } else if (source.kind === "generic") {
+        name = GENERIC_CSV_DEFAULT_VEHICLE_NAME;
       } else if (source.parsed.format === "vehicle") {
         name = vehicleNameFromFileName(file.name);
       }
@@ -222,6 +269,7 @@ export default function ImportPanel({
       const existing = await fetchAllRecords();
       setVehicleName(name);
       setVehicleType(type);
+      setGenericMapping(source.kind === "generic" ? guessGenericCsvMapping(source.table.headers) : null);
       setPending({ fileName: file.name, source, existing });
     } catch (err) {
       console.error(err);
@@ -239,7 +287,7 @@ export default function ImportPanel({
   };
 
   const handleImport = async () => {
-    if (!pending || !preview || importDisabled || nameError) return;
+    if (!pending || !preview || importDisabled || nameError || modeError) return;
     const { counts } = preview.plan;
     const existingTarget = findVehicleByName(vehicles, vehicleName);
     const appendsToTripVehicle =
@@ -256,8 +304,11 @@ export default function ImportPanel({
     if (result && result.recordsAdded > 0) {
       // Fuelio の取り込み先はオドメーター入力方式（既存のトリップ入力方式の車両へ追加する場合を除く）。
       // FuelLens の CSV は方式が分からないので汎用の文言にする
+      // 汎用 CSV は距離の列の意味（既存の車両へ追加するときは方式が一致している）
       const odometerMode =
-        pending.source.kind === "fuelio" && !appendsToTripVehicle;
+        pending.source.kind === "generic"
+          ? genericKind === "odometer"
+          : pending.source.kind === "fuelio" && !appendsToTripVehicle;
       setNextStep({ recordsAdded: result.recordsAdded, vehiclesAdded: result.vehiclesAdded, odometerMode });
     }
   };
@@ -265,8 +316,6 @@ export default function ImportPanel({
   const source = pending?.source;
   const counts = preview?.plan.counts;
   const nothingToImport = !!counts && counts.vehiclesNew === 0 && counts.recordsNew === 0;
-  const matchedVehicle = source && needsVehicleInput(source) ? findVehicleByName(vehicles, vehicleName) : undefined;
-  const willMatchExisting = !!matchedVehicle && matchedVehicle.type === vehicleType;
 
   const notes: string[] = [];
   if (source?.kind === "fuelio") {
@@ -295,6 +344,16 @@ export default function ImportPanel({
     }
     if (skippedInvalid > 0) notes.push(`日付・給油量が読めない ${skippedInvalid} 行は読み飛ばし`);
     notes.push("最初の 1 件は走行距離・燃費なし（前回の積算距離が無いため）");
+  } else if (source?.kind === "generic") {
+    if (genericParsed?.ok) {
+      const { partial, emptyDistance } = genericParsed.stats;
+      if (partial > 0) notes.push(`部分給油 ${partial} 件は燃費なし（次の満タン給油でまとめて計算）`);
+      if (emptyDistance > 0) notes.push(`距離が空の ${emptyDistance} 件は区間距離・燃費なし`);
+      if (genericParsed.distanceKind === "odometer") {
+        notes.push("最初の 1 件は区間距離・燃費なし（前回の積算距離が無いため）");
+      }
+      if (genericParsed.skipped.length > 0) notes.push(`読めない ${genericParsed.skipped.length} 行は読み飛ばし`);
+    }
   } else if (source?.kind === "fuellens") {
     if (source.parsed.stats.skippedInvalid > 0) {
       notes.push(`日付・給油量が読めない ${source.parsed.stats.skippedInvalid} 行は読み飛ばし`);
@@ -320,7 +379,7 @@ export default function ImportPanel({
         aria-label="CSV ファイルを選択"
       />
       <GroupedList>
-        {/* どちらの行も同じファイル選択を開く。CSV の形式は読み込み時に自動判定する */}
+        {/* どの行も同じファイル選択を開く。CSV の形式は読み込み時に自動判定し、Fuelio・FuelLens 以外は列の割り当てへ進む */}
         <ListRow
           leading={<FileSpreadsheet className="h-5 w-5 text-accent" aria-hidden="true" />}
           title="Fuelio の CSV を選ぶ"
@@ -341,16 +400,37 @@ export default function ImportPanel({
           onClick={openPicker}
           disabled={importDisabled}
         />
+        <ListRow
+          leading={<Table2 className="h-5 w-5 text-accent" aria-hidden="true" />}
+          title="ほかの CSV（エクセルなど）を選ぶ"
+          subtitle="自作の表や他のアプリの CSV も、列を選んで取り込めます"
+          wrapSubtitle
+          trailing={preparing ? spinner : undefined}
+          showChevron={!preparing}
+          onClick={openPicker}
+          disabled={importDisabled}
+        />
 
         {pending && source && (
           <div className={panelClass}>
             <p className="mb-3 break-all text-xs text-sub">
-              {pending.fileName}（{sourceLabel(source)}・記録 {source.parsed.records.length} 件
+              {pending.fileName}（{sourceLabel(source)}・
+              {source.kind === "generic" ? `データ ${source.table.rows.length} 行` : `記録 ${source.parsed.records.length} 件`}
               {source.kind === "fuellens" && source.parsed.format === "all"
                 ? `・車両 ${source.parsed.vehicleNames.length} 台`
                 : ""}
               ）
             </p>
+
+            {source.kind === "generic" && genericMapping && genericParsed && (
+              <GenericCsvMappingForm
+                table={source.table}
+                mapping={genericMapping}
+                onChange={setGenericMapping}
+                parsed={genericParsed}
+                disabled={busy !== null}
+              />
+            )}
 
             {needsVehicleInput(source) ? (
               <div className="mb-4">
@@ -366,7 +446,7 @@ export default function ImportPanel({
                     onChange={e => handleNameChange(e.target.value)}
                     maxLength={MAX_VEHICLE_NAME_LENGTH}
                     disabled={busy !== null}
-                    aria-invalid={!!nameError}
+                    aria-invalid={!!nameError || !!modeError}
                     aria-describedby="import-vehicle-hint"
                     className={inputClass}
                   />
@@ -402,8 +482,13 @@ export default function ImportPanel({
                     ]}
                   />
                 </div>
-                <p id="import-vehicle-hint" className={`mt-1.5 text-[11px] ${nameError ? "text-red-400" : "text-sub"}`}>
+                <p
+                  id="import-vehicle-hint"
+                  role={modeError ? "alert" : undefined}
+                  className={`mt-1.5 text-[11px] ${nameError || modeError ? "text-red-400" : "text-sub"}`}
+                >
                   {nameError ??
+                    modeError ??
                     (willMatchExisting
                       ? `既存の車両「${matchedVehicle?.name}」に追加します。`
                       : "名前と種別が一致する既存の車両があればそこへ追加し、無ければ新しい車両を作ります。")}
