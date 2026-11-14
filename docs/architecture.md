@@ -36,7 +36,7 @@ FuelLens の構成、データの流れ、主要なモジュールの役割を�
 | `components/BackupPanel.tsx` | 設定画面の本体。データ概要、JSON / CSV の書き出し、復元（ファイル選択 → 件数プレビュー → 確認 → 追加） |
 | `components/PushReminderPanel.tsx` | 設定画面の「給油のお知らせ」のスイッチ（ログイン中かつ `NEXT_PUBLIC_VAPID_PUBLIC_KEY` があるときだけ。[給油のお知らせ](#給油のお知らせweb-push)） |
 | `components/AccountPanel.tsx` / `components/landing/AccountDeletedNotice.tsx` | 設定画面の「アカウント」（ログイン中はアカウント削除、未ログインはこの端末のデータの削除）/ 削除後にランディング（`/?deleted=1`）で一度だけ出す通知（[アカウント削除](#アカウント削除)） |
-| `components/ImportPanel.tsx` | 設定画面の「インポート」。Fuelio / FuelLens の CSV を読み込み、復元と同じ流れで追加する（[8 章](#インポートcsv)） |
+| `components/ImportPanel.tsx` / `components/GenericCsvMappingForm.tsx` | 設定画面の「インポート」。Fuelio / FuelLens の CSV を読み込み、それ以外の CSV は列の割り当て（`GenericCsvMappingForm`）を選ばせて、復元と同じ流れで追加する（[8 章](#インポートcsv)） |
 | `components/RestoreCounts.tsx` / `components/settingsUi.ts` | 復元・取り込みの件数プレビュー（と補足の箇条書き） / 設定画面のパネルで共有するクラス名と処理中フラグの型（`SettingsBusy`） |
 | `components/Toast.tsx` | `ToastProvider` と `useToast()`（通知と確認ダイアログ） |
 | `components/share/*` / `lib/share/` | 「今月の燃費をシェア」。`ShareCardButton`（ボタン。燃費が無ければ描画しない）と `ShareCardModal`（プレビューと 共有する / X に投稿 / 画像を保存）、モデル `lib/share/card.ts`（`shareCardModelOf`・文言・URL）と canvas の描画 `lib/share/drawCard.ts`（[シェアカード](#シェアカード今月の燃費をシェア)） |
@@ -56,7 +56,7 @@ FuelLens の構成、データの流れ、主要なモジュールの役割を�
 | `lib/backup.ts` | バックアップ JSON の組み立て・検証（`parseBackup`）・復元計画（`planRestore` / `finalizeRestoreRecords`）。純粋関数 |
 | `lib/restore.ts` / `lib/useRestoreRunner.ts` | 復元・取り込みの実行手順 `executeRestore`（データ操作は引数で受け取る。node でテスト可能）と、それを設定画面の UI（処理中フラグ・進捗・toast）につなぐフック（[8 章](#実行の共通化)） |
 | `lib/csv.ts` | CSV の組み立て・エスケープ・ダウンロード。履歴画面の CSV 出力と設定画面の全車両 CSV で共有 |
-| `lib/importers/fuelio.ts` / `lib/importers/fuellensCsv.ts` | CSV の取り込み（Fuelio / FuelLens の CSV → バックアップ形式）。純粋関数 |
+| `lib/importers/fuelio.ts` / `lib/importers/fuellensCsv.ts` / `lib/importers/genericCsv.ts` | CSV の取り込み（Fuelio / FuelLens / 列を選ぶ汎用 CSV → バックアップ形式）。純粋関数 |
 | `lib/useVehicles.ts` / `lib/useFuelRecords.ts` / `lib/useRecordForm.ts` | データフックとフォーム状態（[4 章](#4-フック-api)）。フォームの純粋なヘルパーは `lib/recordDraft.ts` |
 | `lib/useBackdropClose.ts` | モーダルの背景クリックで閉じるハンドラ（ドラッグでの誤閉じを防ぐ） |
 | `lib/data/` | データアダプタ層（[2 章](#データアダプタ層libdata)）。`types.ts`（`RecordStore` / `VehicleStore` / `DataError`）、`localStore.ts`（localStorage の実装と `LOCAL_*` キー・`writeLocalJson`）、`cloudStore.ts`（Supabase の実装と `ensureDefaultVehicle` / `ensureUserRow` / `withStatus`）、`withOutage.ts`（`withOutageHandling` / `withCache`）、`cloudBootstrap.ts`（移行 → 既定車両の確保をタブ内で 1 回）、`primedVehicles.ts`（取得済みの車両一覧を最初の `list()` に 1 回だけ返す）、`useDataStores.ts`（ログイン状態でストアを選ぶフック）、`initialAuth.ts` / `initialAuthContext.tsx`（サーバーの初期認証状態・Clerk の読み込み前の判定・キャッシュの先行表示）、`accountDeletion.ts`（アカウント削除のクラウドのデータの削除 `deleteOwnData`）、`columns.ts` / `scope.ts`（列の検証・パッチ、一覧の範囲。純粋関数） |
@@ -70,7 +70,7 @@ FuelLens の構成、データの流れ、主要なモジュールの役割を�
 | `lib/singleFlight.ts` | 実行中の Promise をキーごとに共有する `singleFlight`（`ensureUserRow` / `ensureDefaultVehicle` / `migrateLocalData`） |
 | `lib/home/` | ホーム画面の表示用の純粋関数。`hero`（ヒーローのモデルと前回比）/ `gauge`（燃費メーターの目盛りと円弧の座標）/ `month`（今月の集計）/ `recent`（最近の記録の行と日付の書式）。フックは `useCurrentMonthKey` / `useTodayKey`（いまの月 / 今日。画面に戻ってきたときに読み直す）だけ |
 | `lib/history/` | 履歴画面の純粋関数。`recordList`（年・月の絞り込み・並べ替え・数値の書式・行の DOM id と `#record-<id>` の解析）/ `groupByMonth`（月ごとのまとまりと合計） |
-| `lib/importers/csvParse.ts` | CSV 取り込みの共有プリミティブ（`parseCsvRows` / `parseCsvNumber` / `parseFlexibleDate` / `hashString` / `isBlankRow`）。`fuelio.ts` は互換のため再エクスポート |
+| `lib/importers/csvParse.ts` | CSV 取り込みの共有プリミティブ（`decodeCsvBytes` / `parseCsvRows` / `parseCsvNumber` / `parseFlexibleDate` / `hashString` / `isBlankRow`）。`fuelio.ts` は互換のため再エクスポート |
 | `lib/scan/` | メイン画面のスキャン。`analyzeClient.ts`（`compressToDataUrl` / `requestAnalyze` / `buildAnalyzeRequestBody`。1 枚と 2 枚の本文を組み立てる。React に依存しない I/O）、`shortcuts.ts`（`?action=` の判定 `resolveShortcutAction` / `shortcutReadinessOf`、スキャンメニューの可否 `scanMenuAvailabilityOf`。純粋関数）、写真の一括読み取りの `batch.ts`（上限・ペース配分・Retry-After・重複の可能性・文言。純粋関数）と `batchController.ts`（キュー。React に依存しない）、フック `useScanPipeline` / `useBatchScan` / `useImageDropPaste` / `useShortcutActions`（[メイン画面の構成](#メイン画面の構成app)、[写真の一括読み取り](#写真の一括読み取り旧レシート)） |
 | `lib/promo/` | 解析待ちの提携先の紹介（PR）。`scanWait.ts`（設定 `SCAN_WAIT_PROMOS` と表示判定 `decideScanWaitPromo`。バイクはバイク保険・車は自動車保険・端末ごとに 7 日に 1 回・一括読み取り中は出さない・解析開始から 1.5 秒後。純粋関数）、`useScanWaitPromo`（解析が終わると自動で閉じる）。表示は `components/ScanWaitPromoModal.tsx`（「PR」表示・`rel="sponsored"`）。`toolPage.ts` は公開ツールページの計算結果の下に出す PR（設定 `TOOL_PAGE_PROMOS`、出光でんきの値引き額 `fuelDiscountSavings` = min(給油量, 100 L) × 2 円（値引きの無い提携先は `discountYenPerL` を持たず額の文を出さない）、/gas-cost は `findToolPagePromo` が並び順でリンクの入っている先頭を選ぶので、出光でんきのリンクが入るまではインズウェブ（`insweb-car-gas-cost`）・金額まで計算できていなければ出さない、/annual-gas-cost は `annualGasCostPromo` が月間走行距離 500 km 以下ならエンキロ・超えるならインズウェブ・金額まで計算できていなければ出さない。計算機の無い /expense には法人・個人事業主向けのガソリンカード（ETC協同組合、`etc-kumiai-fuel-card`）を CSV の節の下に、区間ページ /route-gas-cost/[slug] には法人 ETC カード（高速情報協同組合、`kosoku-kumiai-etc-card`。page は `/route-gas-cost`）を高速代の表の下に 1 回だけ出す（一覧の /route-gas-cost には置かない）。この 2 件は広告主の NG 語（審査なし・ブラック・スタンドのブランド名・発行・申し込みなど）を本文・リンク文言・開示文に含めないことを `tests/toolPagePromo.test.ts` で確かめる。純粋関数）で、表示は `components/ToolPagePromoCard.tsx`（`href` が null の間は何も出さない。「PR」と開示文・`rel="sponsored noopener"`・`promo_impression` / `promo_click` に `page` を付ける） |
 | `lib/nationalGasPrice.ts` | 全国平均のガソリン価格 `NATIONAL_GAS_PRICE`（資源エネルギー庁の週次調査。レギュラー・ハイオク・軽油・調査日・出典）。`/gas-cost` の例の単価 `EXAMPLE_PRICE` / `EXAMPLE_HIGH_OCTANE_PRICE` の元で、`/warikan`・`/annual-gas-cost`・`/route-gas-cost` の例もこれに従う。`.github/workflows/update-gas-price.yml` が毎週 `scripts/update-gas-price.mjs` で更新し PR を作る（[operations.md 4-8](./operations.md#4-8-全国平均のガソリン価格の更新)） |
@@ -209,7 +209,7 @@ useVehicles / useFuelRecords
 - `source` は `RecordSource`（`lib/types.ts`）。CHECK 制約は「null か 20 文字以下」だけなので、値を増やしても DB の変更は要りません。
   アプリは知らない値を `sanitizeRecordSource` で null にします（読み込み・保存・バックアップの検証で共通）。**`0005` はアプリが `source` を送るリリースより前に適用します**。
   `source` を設定する入口: スキャン確認シートの保存 = `scan`（1 枚）・`pair`（レシートとメーターの 2 枚）、一括読み取りの確認シートの保存 = `batch`、手動入力 = `manual`、燃費計算ページから引き継いだ手動入力 = `calc`
-  （`useRecordEditing.startManualEntry(initial, { source })`）、Fuelio / FuelLens CSV の取り込み = `import`、バックアップの復元 = 元の値（無い・不明なら `restore`）。
+  （`useRecordEditing.startManualEntry(initial, { source })`）、CSV の取り込み（Fuelio / FuelLens / 汎用） = `import`、バックアップの復元 = 元の値（無い・不明なら `restore`）。
   `source` は作成時に決まり、更新（`pickUpdateColumns` / `applyRecordPatch`）では変えません（編集で消えない）。CSV 出力には含めません（利用者向けの出力で、取り込み時は `import` になるため）。
 - `total_distance`（オドメーターモード）と `fuel_efficiency` の保存値は信頼しません。読み取り時に必ず再計算して上書きします（[10 章](#10-給油の連鎖計算fill-chain)）。
 - 外部キーはすべて `ON DELETE CASCADE` です（`fuel_records.vehicle_id` → `vehicles`、`vehicles.user_id` / `fuel_records.user_id` / `push_subscriptions.user_id` → `users`）。
@@ -523,7 +523,7 @@ OG / Twitter 画像は静的な 1 枚（`WARIKAN_OG`。クエリごとの画像�
 
 「燃費 記録 つけ方」「燃費 管理 エクセル」など、記録を続けたい人の検索からの入口となる静的な説明ページで、計算機はありません（1 回きりの計算は `/calc`）。
 `app/fuel-log/page.tsx` は満タン法で給油ごとに残す項目・手順・部分給油と記録し忘れの扱い・続けるコツと、FuelLens での記録（写真の読み取り・「満タン給油」「前回の給油を記録し忘れた」・統計）を案内します。例の燃費と単価は `calculateFuelMetrics`、部分給油の例は連鎖計算と同じ値になることをテストで確かめます。
-`app/fuel-log-excel/page.tsx` はエクセルの列と数式の例を、FuelLens の全車両 CSV の列名（`RECORDS_CSV_BASE_HEADERS`。任意の列は `RECORD_CSV_EXTRA_HEADERS`）で示し、CSV で保存して設定画面の「インポート」（`lib/importers/fuellensCsv.ts`）から取り込む手順を案内します。Excel・Google スプレッドシートの操作は公式ヘルプで確認できたことだけを書き、出典の URL を `lib/fuelLogExcelPage.ts` のコメントに残しています。
+`app/fuel-log-excel/page.tsx` はエクセルの列と数式の例を、FuelLens の全車両 CSV の列名（`RECORDS_CSV_BASE_HEADERS`。任意の列は `RECORD_CSV_EXTRA_HEADERS`）で示し、CSV で保存して設定画面の「インポート」（`lib/importers/fuellensCsv.ts`。列名が違えば `genericCsv.ts` で列を選ぶ）から取り込む手順を案内します。Excel・Google スプレッドシートの操作は公式ヘルプで確認できたことだけを書き、出典の URL を `lib/fuelLogExcelPage.ts` のコメントに残しています。
 文面・FAQ・構造化データ（`WebPage` + `FAQPage`）は `lib/fuelLogPage.ts`（`fuelLogFaqs(trialEnabled)`・`buildFuelLogJsonLd`）と `lib/fuelLogExcelPage.ts`（`sheetColumns`・`fuelLogExcelFaqs`・`buildFuelLogExcelJsonLd`）、OG 画像は `lib/og/fuelLogOg.ts`・`lib/og/fuelLogExcelOg.ts`。
 `/app` への導線は `data-ga-cta` の `guide_top`（冒頭）・`guide_inline`（/fuel-log の「FuelLens で記録する」）・`excel_import`（/fuel-log-excel の取り込み手順の設定画面へのリンク）・`cta_box` で区別します。
 テストは `tests/fuelLogPages.test.ts`（ページのとおりに作った CSV を実際に取り込めることを含む）と `tests/components/FuelLogPages.test.tsx`。
@@ -721,13 +721,14 @@ DB のデータは利用者自身の Supabase クライアント（RLS）で消�
 CSV を `lib/importers/` の純粋関数でバックアップ形式（`FuelLensBackup`、version 2）に変換し、以降は復元と同じ
 `planRestore` → 確認 → `addVehicles` → `finalizeRestoreRecords` → `addRecords` の流れで **追記のみ** で追加します。
 車両の対応付け・重複判定（同じ車両 + 日付 + 給油量 ±0.01 + 支払総額）も復元と同じなので、同じファイルを 2 回取り込んでも 2 回目は何も追加されません。
-閲覧専用・車両一覧の読み込みエラー・車両 0 台のときは無効です。文字コードは UTF-8（壊れていれば Shift_JIS として読み直す）、上限は 30MB・50,000 件です。
+閲覧専用・車両一覧の読み込みエラー・車両 0 台のときは無効です。文字コードは UTF-8（壊れていれば Shift_JIS として読み直す。`csvParse.ts` の `decodeCsvBytes`）、上限は 30MB・50,000 件です。
 
 | 形式 | 判定 | 車両 |
 |---|---|---|
 | Fuelio の CSV | `"## Vehicle"` と `"## Log"` のセクション行がある | 1 台。名前は `## Vehicle` の `Name`（画面で変更可）、種別は推定（画面で変更可） |
 | FuelLens の全車両 CSV（設定画面） | ヘッダーが `車両,日付,給油量(L),支払総額(円),単価(円/L),走行距離(km),燃費(km/L),店舗名` | 車両名ごと。種別は同名の既存車両に合わせ、無ければ car |
 | FuelLens の車両別 CSV（履歴画面） | ヘッダーが `給油日,走行距離(km),給油量(L),単価(円/L),支払総額(円),燃費(km/L),ガソリンスタンド名` | 1 台。名前はファイル名から推測（画面で変更可） |
+| 汎用 CSV（Excel・スプレッドシート・他アプリ） | 上のどれでもない（1 行目を列名とみなす） | 1 台。名前は画面で入力（既定「インポートした車両」） |
 
 **Fuelio の変換**（`lib/importers/fuelio.ts`。列は位置ではなくヘッダー名で探す）:
 
@@ -748,6 +749,18 @@ CSV を `lib/importers/` の純粋関数でバックアップ形式（`FuelLensB
 
 **FuelLens CSV の変換**（`lib/importers/fuellensCsv.ts`）: 書き出し時に CSV インジェクション対策で付けた先頭の `'` を外し、日付・給油量・支払総額が読めない行は読み飛ばします。
 単価は CSV の値を優先し、空なら `calculateFuelMetrics` で補います（燃費は読み取り時の連鎖計算が決める）。オドメーター・満タン・記録漏れ・燃料種別・メモの列があれば読み、無ければ既定値にします。ID は `fuellens-csv-<車両名と各列のハッシュ>` です。
+
+**汎用 CSV の変換**（`lib/importers/genericCsv.ts`）: 列名から割り当てを推測し（`guessGenericCsvMapping`。日本語・英語、全角・半角。燃費の列は割り当てない）、
+利用者が項目ごとに列を選び直せます。必須は日付・給油量・距離で、距離は「区間距離（トリップメーター）」か「積算距離（オドメーター）」を選びます。
+トリップなら `total_distance`、オドメーターなら `odometer` に入れ、新しく作る車両の `distance_mode` もそれに合わせます。
+名前と種別が一致する既存の車両へ追加するときに方式が違えば、画面で止めて日本語で理由を出します（既存の車両の方式は変えない）。
+
+- 日付は年が先頭の形（`2026/1/5`・`2026-01-05`・`2026.1.5`・`2026年1月5日`。時刻・曜日は無視）と、1970〜2099 年の範囲の Excel の日付シリアル値だけを読みます（月/日/年は読まない）。
+- 数値は全角を半角にし、空白・`¥`・`円`・`L`・`ℓ`・`km`・桁区切りを除きます。満タンは はい/いいえ・○/×・TRUE/FALSE・1/0・満タン/部分 など（列が無い・空は満タン）。
+- 日付・給油量が読めない行、距離・金額・単価・満タンに読めない値がある行は、推測で埋めずに読み飛ばし、プレビューに行番号と理由を出します。距離が空の行は取り込みます（区間距離・燃費なし）。
+- 金額は整数円。単価は CSV の値を使い、無ければ `calculateFuelMetrics(null, 給油量, 金額)` で出します。単価だけのときは金額を作りません。
+- 燃費は取り込みません（`fuel_efficiency` は null）。プレビューの燃費も `applyFillChain` で取り込む行だけから計算した参考値です。
+- ID は `generic-csv-<日付・給油量・金額・距離・店舗名のハッシュ>`、車両は `generic-csv-v-<車両名のハッシュ>` です。
 
 ## 9. PWA
 

@@ -6,8 +6,10 @@
  *   列の順番は問わない。追加列 RECORD_CSV_EXTRA_HEADERS は任意で、満タン・記録漏れは「はい / いいえ」。
  *   日付が読めない行、給油量も支払総額も無い行は読み飛ばし。日付は yyyy/MM/dd・yyyy-MM-dd など（lib/importers/csvParse.ts の parseFlexibleDate）。
  *   1,234 のような桁区切りも読める（parseCsvNumber）。車両の種別は同じ名前の既存車両に合わせ、無ければクルマ）
- * - 文字コード: components/ImportPanel.tsx（UTF-8 で読み、壊れていれば Shift_JIS として読み直す）
- * - 取り込み画面: 設定画面の「インポート」→「FuelLens の CSV を選ぶ」→ 確認 →「取り込む」。ログイン不要
+ * - 列名が違う CSV: lib/importers/genericCsv.ts（日付・給油量・距離は必須、距離は区間距離か積算距離かを選ぶ。
+ *   金額・単価・満タン・スタンド名・メモは任意。列名から推測し、画面で選び直せる。読めない行は理由つきで読み飛ばし）
+ * - 文字コード: lib/importers/csvParse.ts の decodeCsvBytes（UTF-8 で読み、壊れていれば Shift_JIS として読み直す）
+ * - 取り込み画面: 設定画面の「インポート」→ CSV を選ぶ →（列名が違えば列を選ぶ）→ 確認 →「取り込む」。ログイン不要
  * - 追記のみ・重複スキップ: lib/backup.ts の planRestore。上限は BACKUP_MAX_TEXT_LENGTH（30MB）・BACKUP_MAX_RECORDS（50,000 件）
  * - 書き出し: 設定画面の「全車両のCSVを書き出す」（lib/csv.ts の RECORDS_CSV_HEADERS。取り込みと同じ列名）
  * - 燃費は読み込み時に lib/fillChain.ts の applyFillChain が区間距離と給油量から計算し直す（CSV の燃費の値は信頼しない）

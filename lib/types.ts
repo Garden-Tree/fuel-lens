@@ -79,7 +79,7 @@ export type FuelRecord = {
  * 記録の入口（FuelRecord.source）。
  * scan = 撮影・アルバムの読み取り結果（1 枚）の保存、batch = 写真の一括読み取りの確認シートからの保存、
  * pair = レシートとメーターを別々に撮った 2 枚の読み取り結果の保存、manual = 手動入力、
- * calc = 燃費計算ページから引き継いだ手動入力、import = Fuelio / FuelLens CSV の取り込み、
+ * calc = 燃費計算ページから引き継いだ手動入力、import = CSV の取り込み（Fuelio / FuelLens / 汎用）、
  * restore = バックアップ JSON の復元（元の値が無いとき）。
  *
  * 値は今後ほかのブランチで増えることがある（"trial" など）。増やすときは RECORD_SOURCES に足す。

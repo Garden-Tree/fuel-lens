@@ -7,6 +7,7 @@
 
 | 項目 | 実装日 | 内容 |
 |---|---|---|
+| 汎用 CSV インポート（Excel・スプレッドシート・他アプリ。`/settings`） | 2026-11-14 | Fuelio / FuelLens 以外の CSV を、日付・給油量・距離（区間距離かオドメーターかを選ぶ）・金額・単価・満タン・スタンド名・メモの列を選んで追記のみ取り込む。列名から割り当てを推測し、読めない行は理由つきで読み飛ばす。Shift_JIS の CSV も読む。詳細は [architecture.md 8 章](./architecture.md#インポートcsv) |
 | 給油のお知らせ（Web Push。`/settings`） | 2026-11-12 | ログイン中の利用者が端末ごとにオンにすると、前回の給油からいつもの間隔（記録が 3 件以上なら間隔の中央値を 3〜60 日に収めたもの、足りなければ 14 日）を過ぎた日に 1 回だけ通知し、タップで `/app?action=scan` を開く。同じ記録には 2 回送らない。iPhone はホーム画面に追加した PWA（iOS 16.4 以上）だけ。送信は Vercel Cron（毎日 18:00 JST 頃）→ `/api/push/reminders`（service_role）。VAPID の鍵が無ければ機能全体が無効。テーブルは `0006_push_subscriptions.sql`。詳細は [architecture.md](./architecture.md#給油のお知らせweb-push)・[operations.md 4-10](./operations.md#4-10-給油のお知らせweb-push) |
 | バックアップと復元（`/settings`） | 2026-10-04 | 全車両・全記録の JSON バックアップ、追記のみの復元（件数プレビュー付き）、全車両 CSV の書き出し。詳細は [architecture.md 8 章](./architecture.md#8-バックアップと復元) |
 | PWA の基本（manifest、アイコン、ショートカット） | 2026-10-04 | ホーム画面に追加でき、「スキャン」「手動で入力」のショートカットを持つ。詳細は [architecture.md 9 章](./architecture.md#9-pwa) |
@@ -89,7 +90,8 @@
   逆にオドメーター → トリップに切り替えるときは、導出した区間距離を `total_distance` に書き戻します（[design-fill-chain.md 4 章](./design-fill-chain.md#車両管理モーダル)）。書き戻した値は保存時点のもので、後から前後に記録を足しても更新されません。区間が出ない記録の保存値は残します。
 - 画面の配色はダーク固定で、ライトテーマや OS の設定への追従はありません。recharts の色は `app/(app)/stats/_components/chartTheme.ts` にトークンと同じ値を複製しているため、トークンを変えたときは手で合わせます（[design-system.md](./design-system.md#recharts-の色)）。
 - 履歴・統計・履歴画面の CSV 出力は選択中の車両単位です（全車両の CSV 出力は設定画面にあります。全車両を横断した集計はありません）。
-- 取り込みは FuelLens の JSON バックアップの復元と、Fuelio / FuelLens の CSV のインポートです（どちらも追記専用）。Fuelio の給油以外の記録（`## Costs` など）、マイル・ガロン単位の CSV、その他のアプリの CSV には対応していません。
+- 取り込みは FuelLens の JSON バックアップの復元と、CSV のインポート（Fuelio / FuelLens は自動、それ以外は列を選ぶ）です（どちらも追記専用）。Fuelio の給油以外の記録（`## Costs` など）、マイル・ガロン単位の CSV には対応していません。
+  列を選ぶ CSV は 1 行目が列名で、日付は年が先頭の形か Excel のシリアル値だけ、1 ファイル 1 車両です。燃料種別・記録漏れの列は読みません。
 - Service Worker は Web Share Target の受け取り専用でキャッシュを持たず、オフラインでは動作しません。Web Share Target は Android Chrome のみ（iOS は非対応）。
 - 未ログイン時のデータはそのブラウザの localStorage にだけあり、端末間で共有されません。
 - 他のタブや端末での変更は、ログイン中に 10 秒以上離れていた画面へ戻ったとき（30 秒に 1 回まで）に反映されます。画面を開いたまま見ている間は反映されません（Realtime は未対応）。未ログインのデータは端末内だけです。
