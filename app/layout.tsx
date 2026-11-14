@@ -43,7 +43,9 @@ export const metadata: Metadata = {
   appleWebApp: {
     capable: true,
     title: APP_NAME,
-    statusBarStyle: "black-translucent",
+    // 不透明な黒のステータスバー。black-translucent だと最近の iOS はステータスバーの下に
+    // すりガラスの効果を重ね、静止時でもぼけた帯が出るため使わない（viewportFit: "cover" は下の安全領域のために残す）
+    statusBarStyle: "black",
     // ホーム画面から起動したときの起動画像（暗い背景の中央にアイコン）。端末の一覧は lib/startupImages.json
     startupImage: startupImages(),
   },

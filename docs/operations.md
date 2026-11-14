@@ -405,6 +405,8 @@ curl -i -H "Authorization: Bearer <CRON_SECRET>" https://<your-domain>/api/push/
 | 設定画面に「給油のお知らせ」が出ない | 未ログイン、または `NEXT_PUBLIC_VAPID_PUBLIC_KEY` が未設定（設定後は再デプロイが必要）（[4-10](#4-10-給油のお知らせweb-push)） |
 | 「お知らせの設定を保存できませんでした。…」 | `0006_push_subscriptions.sql` が未適用、または障害中。ブラウザの console に Supabase のエラーが出る |
 | お知らせが届かない | `/api/push/reminders` を `curl` で呼んで `skipped` / `failed` を見る（[4-10-2](#4-10-2-動作確認)）。iPhone はホーム画面のアプリでオンにしたか、端末の設定で通知が許可されているかを確かめる |
+| iPhone のホーム画面のアプリで、ステータスバーの下がぼけた帯になる | ステータスバーが `black-translucent` のまま。いまは `black`（不透明）なので、古い設定で追加したアイコンを削除してホーム画面に追加し直す（[architecture.md 9 章](./architecture.md#9-pwa)） |
+| デプロイ後も画面が古いまま・静的ファイルのキャッシュを捨てたい | SW は `/_next/static/`（ハッシュ付きのファイル名）だけをキャッシュするので、新しいデプロイは HTML から新しいファイル名を読む。キャッシュ自体を捨てたいときは `public/sw.js` の `STATIC_CACHE` の版を上げてデプロイする（次の起動の `activate` で古い版を消す）（[architecture.md 9 章](./architecture.md#9-pwa)） |
 | AI 解析が 403 `ORIGIN_MISMATCH` | リバースプロキシやカスタムドメインで `Host` が公開ホストと異なる。`NEXT_PUBLIC_APP_URL` を設定する（[api-analyze.md](./api-analyze.md)） |
 | AI 解析が 500 `SERVER_MISCONFIGURED` | `GEMINI_API_KEY` が未設定 |
 | ローカルの記録がクラウドに移行されない | 画面の移行エラー表示を確認する。データはブラウザに残り、次回の読み込みで再試行される（[architecture.md 5 章](./architecture.md#5-ローカル--クラウド移行)） |

@@ -121,7 +121,9 @@ export function PageHeader({ title, brand = false, rightSlot }: PageHeaderProps)
   const pathname = usePathname();
   const redirectUrl = pathname || "/app";
 
-  // 上の余白に safe-area-inset-top を足す（ホーム画面から開いた PWA は black-translucent のステータスバーの下まで描画されるため）
+  // 上の余白に safe-area-inset-top を足す。ホーム画面の PWA のステータスバーは不透明な black（app/layout.tsx）で
+  // ページはその下から始まるので通常は 0。ステータスバーの下まで描画される場合（ブラウザの viewport-fit=cover など）の保険
+
   return (
     <header className="flex min-h-10 items-center justify-between gap-3 pb-3 pt-[calc(env(safe-area-inset-top)+12px)] lg:pb-5 lg:pt-0">
       <h1 className="shrink-0 text-xl font-bold">

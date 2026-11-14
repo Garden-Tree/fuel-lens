@@ -55,7 +55,7 @@
 
 | 候補 | 利用者にとっての価値 | 規模 | 主な変更ファイル |
 |---|---|---|---|
-| オフラインキュー | 電波の悪い場所でも撮影・手動入力を溜めておき、復帰後に解析・同期できる | M | `public/sw.js`（現状は共有の受け取りのみ、キャッシュなし）、`lib/scan/useScanPipeline.ts`、`lib/data/`（書き込みのキュー） |
+| オフラインキュー | 電波の悪い場所でも撮影・手動入力を溜めておき、復帰後に解析・同期できる | M | `public/sw.js`（現状は共有の受け取り・お知らせ・`/_next/static/` のキャッシュのみ。HTML やデータはキャッシュしない）、`lib/scan/useScanPipeline.ts`、`lib/data/`（書き込みのキュー） |
 | Supabase Realtime | 他の端末やタブでの変更が、画面を開いたままでも即座に反映される（画面に戻ったときの再取得は実装済み） | M | `lib/useFuelRecords.ts`、`lib/useVehicles.ts` |
 | Clerk ネイティブ Third-Party Auth への移行 | Supabase の JWT Secret を Clerk に共有しなくてよくなる（[architecture.md 7 章](./architecture.md#7-認証)） | S | `lib/supabaseClient.ts`（`getToken()` に変更）、Clerk / Supabase のダッシュボード |
 | E2E テストの追加 | 画面をまたぐ回帰を防ぐ。Playwright で `/api/analyze` をモックし、スキャン → 確認 → 保存 → 履歴の流れを検証する（コンポーネントテストは `tests/components/` にあり、未対応の画面は追加で拡充） | M | `package.json`、新規 `e2e/`、`.github/workflows/ci.yml` |
