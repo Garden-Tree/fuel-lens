@@ -12,14 +12,18 @@ import {
   ROUTE_PRICE,
   buildRouteGasCostJsonLd,
   displayKm,
+  bidirectionalRouteName,
   reverseRouteName,
   routeCostTable,
+  routeFromTo,
+  routeListReverseNote,
   routeGasCostLink,
   routeGasCostOg,
   routePriceLabel,
   routeTotal,
   snippetRoutes,
   standardTotal,
+  yenRough,
   type RouteEntry,
 } from "@/lib/routeGasCostPage";
 import { formatJaDate } from "@/lib/format";
@@ -132,6 +136,10 @@ describe("区間別の表", () => {
 
   it("逆向きの表記", () => {
     expect(reverseRouteName(ROUTES[0])).toBe("大阪→東京");
+    expect(routeFromTo(ROUTES[0])).toBe("東京から大阪");
+    expect(routeFromTo(ROUTES[0], true)).toBe("大阪から東京");
+    expect(bidirectionalRouteName(ROUTES[0])).toBe("東京⇔大阪");
+    expect(routeListReverseNote()).toContain("大阪から東京なら「東京⇔大阪」の行");
   });
 
   it("計算機へのリンクは /gas-cost が受け取れる形", () => {
@@ -155,7 +163,17 @@ describe("ページの文言と構造化データ", () => {
       expect(route).toBeDefined();
       expect(ROUTE_GAS_COST_DESCRIPTION).toContain(route!.name.replace("〜", "から"));
     }
-    expect(ROUTE_GAS_COST_PAGE_TITLE).toContain("東京〜大阪");
+    // 一覧が出る検索は特定の区間（逆方向を含む）なので、一覧であることと逆方向も載っていることをタイトルに出す
+    expect(ROUTE_GAS_COST_PAGE_TITLE).toContain("一覧");
+    expect(ROUTE_GAS_COST_PAGE_TITLE).toContain("逆方向");
+    // 代表の区間それぞれの片道の金額と「逆方向も同じ」を、モバイルで切れる前（先頭 70 字以内）に出す
+    const head = [...ROUTE_GAS_COST_DESCRIPTION].slice(0, 70).join("");
+    for (const route of snippetRoutes()) {
+      const t = standardTotal(route);
+      expect(head).toContain(`${routeFromTo(route)}は`);
+      expect(head).toContain(`約${yenRough(t.totalOneWay ?? t.gasOneWay)}円`);
+    }
+    expect(head).toContain("逆方向も同じ");
     expect(ROUTE_GAS_COST_DESCRIPTION).toContain("高速代");
     expect(ROUTE_GAS_COST_DESCRIPTION.length).toBeLessThanOrEqual(130);
   });
