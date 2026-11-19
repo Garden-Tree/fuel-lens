@@ -205,6 +205,20 @@ export function reverseRouteName(route: Pick<RouteEntry, "name">): string {
   return `${b}→${a}`;
 }
 
+/**
+ * 検索語の形（「大阪から東京 車 ガソリン代」）に合わせた「AからB」の表記。reversed なら逆向き（東京〜大阪 → 大阪から東京）。
+ * 逆方向で検索した人にも自分の区間だと分かるよう、説明文・本文で使う
+ */
+export function routeFromTo(route: Pick<RouteEntry, "name">, reversed = false): string {
+  const [a, b] = route.name.split("〜");
+  return reversed ? `${b}から${a}` : `${a}から${b}`;
+}
+
+/** どちら向きでも使えることを示す表記（東京〜大阪 → 東京⇔大阪）。一覧の表の区間名に使う */
+export function bidirectionalRouteName(route: Pick<RouteEntry, "name">): string {
+  return route.name.replace("〜", "⇔");
+}
+
 /** 金額（円、整数）の 3 桁区切り。lib/format.ts の formatInt（ページと app/route-gas-cost で呼び出しが多いので別名で出す） */
 export const yen = formatInt;
 
@@ -252,21 +266,31 @@ export function yenRough(value: number): string {
 }
 
 /**
- * 一覧ページのタイトル。モバイルの検索結果で切れない長さ（` | FuelLens` を除いて 32 字以内）にするため、区間名は代表の 1 つだけ
+ * 一覧ページのタイトル。モバイルの検索結果で切れない長さ（` | FuelLens` を除いて 32 字以内）。
+ * 一覧が出る検索はほとんどが特定の区間（逆方向を含む）なので、代表の区間名ではなく「一覧」と「往復・逆方向も」載っていることを出す
  */
-export const ROUTE_GAS_COST_PAGE_TITLE = `車のガソリン代と高速代｜${snippetRoutes()[0].name}など主要${ROUTES.length}区間の片道・往復 | FuelLens`;
+export const ROUTE_GAS_COST_PAGE_TITLE = `車のガソリン代と高速代 主要${ROUTES.length}区間の一覧｜往復・逆方向も | FuelLens`;
 
-/** 一覧ページの説明文。モバイルで切れる前（先頭 70 字以内）に代表の区間の金額を出す */
+/**
+ * 一覧ページの説明文。モバイルで切れる前（先頭 70 字以内）に代表の区間それぞれの片道の金額と「逆方向も同じ」を出し、
+ * 自分の区間の金額がこのページにあると分かるようにする
+ */
 export const ROUTE_GAS_COST_DESCRIPTION = (() => {
-  const [first, ...rest] = snippetRoutes();
-  const t = standardTotal(first);
-  const fromTo = (r: RouteEntry) => r.name.replace("〜", "から");
+  const amounts = snippetRoutes().map((r, i) => {
+    const t = standardTotal(r);
+    return `${routeFromTo(r)}は${i === 0 ? "片道" : ""}約${yenRough(t.totalOneWay ?? t.gasOneWay)}円`;
+  });
   return (
-    `${fromTo(first)}は普通車でガソリン代と高速代の合計が片道約${yenRough(t.totalOneWay ?? t.gasOneWay)}円。` +
-    `${rest.map(fromTo).join("・")}など主要${ROUTES.length}区間の合計を片道・往復でまとめました（逆方向も同じ金額）。` +
-    "軽自動車・ハイブリッド車・ミニバン別のガソリン代も。"
+    `${amounts.join("、")}（普通車のガソリン代＋高速代、逆方向も同じ）。` +
+    `主要${ROUTES.length}区間の片道・往復の一覧です。軽自動車・ミニバンなど車種別のガソリン代も。`
   );
 })();
+
+/** 一覧ページの導入の一文（逆方向の探し方）。代表の区間（ROUTES[0]）の名前から作る */
+export function routeListReverseNote(): string {
+  const first = ROUTES[0];
+  return `距離も料金もどちら向きで走っても同じなので、${routeFromTo(first, true)}なら「${bidirectionalRouteName(first)}」の行を見てください。`;
+}
 
 export type RouteCostRow = {
   route: RouteEntry;

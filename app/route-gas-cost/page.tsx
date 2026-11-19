@@ -14,9 +14,11 @@ import {
   ROUTE_GAS_COST_PATH,
   ROUTE_TOLL_NOTE,
   STANDARD_EFFICIENCY,
+  bidirectionalRouteName,
   buildRouteGasCostJsonLd,
   displayKm,
   routeCostTable,
+  routeListReverseNote,
   routePath,
   routePriceLabel,
   standardTotal,
@@ -57,7 +59,7 @@ export default function RouteGasCostPage() {
         <h1 className="text-2xl font-bold">主要区間の車のガソリン代と高速代の目安</h1>
         <p className="mt-2 text-[15px] leading-7 text-sub">
           東京〜大阪や名古屋〜大阪など主要な区間を車で走ったときのガソリン代と高速代（ETC）を、片道・往復でまとめました。
-          距離も料金もどちら向きで走っても同じなので、大阪→東京なら「東京〜大阪」の行を見てください。
+          {routeListReverseNote()}
           区間名を押すと、車種別の合計や人数で割った金額が出ます。
         </p>
 
@@ -85,7 +87,7 @@ export default function RouteGasCostPage() {
                       <tr key={route.id} className="border-b border-line align-top last:border-b-0">
                         <th scope="row" className="px-2 py-2.5 text-left font-medium text-ink">
                           <Link href={routePath(route)} className={`inline-flex min-h-8 items-center whitespace-nowrap text-[13px] ${LINK}`}>
-                            {route.name}
+                            {bidirectionalRouteName(route)}
                           </Link>
                           <span className="block whitespace-nowrap text-xs font-normal text-sub">
                             約<span className="num">{displayKm(route.sourceKm)}</span>km
@@ -149,7 +151,7 @@ export default function RouteGasCostPage() {
                   {rows.map(({ route, costs }) => (
                     <tr key={route.id} className="border-b border-line align-top last:border-b-0">
                       <th scope="row" className="whitespace-nowrap px-1 py-2.5 text-left text-[13px] font-medium text-ink">
-                        {route.name}
+                        {bidirectionalRouteName(route)}
                       </th>
                       {costs.map(({ oneWay, roundTrip }, i) => (
                         <td key={CAR_TYPE_EFFICIENCIES[i].id} className="whitespace-nowrap px-1 py-2.5">

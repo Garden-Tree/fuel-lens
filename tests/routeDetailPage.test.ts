@@ -3,7 +3,7 @@ import sitemap from "@/app/sitemap";
 import { CAR_TYPE_EFFICIENCIES } from "@/lib/gasCostPage";
 import { NATIONAL_GAS_PRICE } from "@/lib/nationalGasPrice";
 import { WARIKAN_QUERY_KEYS, computeWarikan, parseWarikanQuery } from "@/lib/warikanPage";
-import { ROUTES, gasCostYen, routePath, standardTotal, type RouteEntry } from "@/lib/routeGasCostPage";
+import { ROUTES, gasCostYen, routeFromTo, routePath, standardTotal, type RouteEntry } from "@/lib/routeGasCostPage";
 import {
   buildRouteDetailJsonLd,
   findRoute,
@@ -13,6 +13,7 @@ import {
   routeDetailOg,
   routePageDescription,
   routePageTitle,
+  routeReverseNote,
   routeSplits,
   formatDuration,
   oneWayLiters,
@@ -48,11 +49,14 @@ describe("区間ページの一覧", () => {
     for (const r of ROUTES) {
       const d = routePageDescription(r);
       expect(d.length).toBeLessThanOrEqual(130);
-      expect(d).toContain(r.name);
+      // 逆方向の検索（「大阪から東京」）でも自分の区間だと分かるよう、両方向を「AからB」の形で先頭に出す
+      expect(d.startsWith(`${routeFromTo(r)}・${routeFromTo(r, true)}`), d).toBe(true);
+      expect(routeReverseNote(r)).toContain(`${routeFromTo(r, true)}へ走る場合も`);
     }
     const t = standardTotal(tokyoOsaka);
     expect(routePageDescription(tokyoOsaka)).toContain(`片道約${yenRough(t.totalOneWay!)}円・往復約${yenRough(t.totalRoundTrip!)}円`);
-    expect(routePageDescription(tokyoOsaka)).toContain("大阪→東京も同じ");
+    expect(routePageDescription(tokyoOsaka)).toContain("どちら向きも同じ金額");
+    expect(buildRouteDetailJsonLd(tokyoOsaka)).toContain("大阪から東京の車のガソリン代と高速代の目安");
   });
 });
 

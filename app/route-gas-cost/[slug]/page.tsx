@@ -30,6 +30,7 @@ import {
   routeFaqs,
   routeInsights,
   routePageDescription,
+  routeReverseNote,
   routePageTitle,
   routeSplits,
   routeStaticParams,
@@ -111,6 +112,7 @@ export default async function RouteDetailPage({ params }: Props) {
               <strong className="num text-ink">{yen(total.gasRoundTrip)}</strong> 円が目安です（高速代は確認できていないため含みません）。
             </>
           )}
+          {routeReverseNote(route)}
         </p>
 
         <div className="mt-8 space-y-10 text-[15px] leading-7 text-ink/90 [&_h2]:mb-3 [&_h2]:text-lg [&_h2]:font-bold [&_h2]:text-ink">
