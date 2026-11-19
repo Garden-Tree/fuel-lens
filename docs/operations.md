@@ -392,6 +392,15 @@ curl -i -H "Authorization: Bearer <CRON_SECRET>" https://<your-domain>/api/push/
 同じ記録には 2 回送らず、最後に送ってから 20 時間以内も送らないため、手で何度呼んでも重複して届きません。
 すぐに試したいときは、SQL Editor で自分の購読の `last_notified_record_id` / `last_notified_at` を null に戻し、最後の記録が 14 日以上前の状態で呼びます。
 
+`failed` が増えたときは Vercel の Logs の `[push]` を見ます（値は出さず、種類だけを出す）。
+
+| ログ | 意味と対処 |
+|---|---|
+| `VAPID の設定に問題があります: key-pair-mismatch` | 秘密鍵と公開鍵が別の組。`npx web-push generate-vapid-keys` の同じ出力の 2 つを設定し直して再デプロイし、端末側でお知らせをオフ → オンにして購読し直す |
+| `… invalid-private-key` / `subject-localhost` / `subject-whitespace` | 秘密鍵の貼り間違い、`VAPID_SUBJECT` が localhost を指している、空白が混じっている |
+| `送信に失敗: <購読 id> 403 BadJwtToken` | Apple が VAPID の署名を受け付けない。多くは `VAPID_SUBJECT` の形式（`mailto:you@example.com` か `https://<本番ドメイン>` にする） |
+| `送信に失敗: <購読 id> 403 VapidPkHashMismatch` | 購読したときの公開鍵と、今の鍵が違う（鍵を作り直した）。端末でオフ → オンにして購読し直す |
+
 ## 5. トラブルシューティング
 
 | 症状 | 原因と対処 |

@@ -6,6 +6,7 @@ import webpush from "web-push";
 import { serverVapidConfig } from "@/lib/push/config";
 import { MAX_RECORDS_FOR_INTERVAL, type ReminderRecord } from "@/lib/push/reminder";
 import { runReminders, type PushSubscriptionRow } from "@/lib/server/push/reminderHandler";
+import { checkVapidConfig } from "@/lib/server/push/vapidCheck";
 
 /**
  * GET /api/push/reminders
@@ -66,6 +67,11 @@ export async function GET(request: Request) {
   const supabase = createClient(supabaseUrl, serviceRoleKey, {
     auth: { persistSession: false, autoRefreshToken: false },
   });
+  // 値は出さず、問題の種類だけをログに出す（Apple / FCM の 403 の切り分け用。送信は止めない）
+  const vapidProblems = checkVapidConfig(vapid);
+  if (vapidProblems.length > 0) {
+    console.error("[push] VAPID の設定に問題があります:", vapidProblems.join(", "));
+  }
   webpush.setVapidDetails(vapid.subject, vapid.publicKey, vapid.privateKey);
 
   const startedAt = Date.now();

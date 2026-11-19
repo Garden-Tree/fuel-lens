@@ -51,6 +51,23 @@ function statusCodeOf(e: unknown): number | undefined {
   return typeof code === "number" ? code : undefined;
 }
 
+/**
+ * プッシュサービスが返した拒否の理由（web-push の WebPushError.body）。ログで原因を切り分けるために使う。
+ * Apple は {"reason":"BadJwtToken"} のような JSON を返すので reason だけを取り出す。
+ * JSON でなければ英数字と記号の一部だけを残して 100 文字までにする（エンドポイントや鍵は本文に含まれない）。
+ */
+export function pushErrorReason(e: unknown): string | undefined {
+  const body = (e as { body?: unknown } | null)?.body;
+  if (typeof body !== "string" || body.trim() === "") return undefined;
+  try {
+    const parsed = JSON.parse(body) as { reason?: unknown };
+    if (typeof parsed?.reason === "string" && parsed.reason) return parsed.reason.slice(0, 100);
+  } catch {
+    // JSON ではない
+  }
+  return body.replace(/[^A-Za-z0-9 _.:,-]/g, "").trim().slice(0, 100) || undefined;
+}
+
 export async function runReminders(deps: ReminderDeps): Promise<ReminderSummary> {
   const subscriptions = await deps.listSubscriptions();
   const byUser = new Map<string, PushSubscriptionRow[]>();
@@ -99,7 +116,7 @@ export async function runReminders(deps: ReminderDeps): Promise<ReminderSummary>
             summary.failed += 1;
           }
         } else {
-          deps.log("error", "[push] 送信に失敗:", sub.id, status ?? e);
+          deps.log("error", "[push] 送信に失敗:", sub.id, status ?? e, pushErrorReason(e) ?? "");
           summary.failed += 1;
         }
         continue;
