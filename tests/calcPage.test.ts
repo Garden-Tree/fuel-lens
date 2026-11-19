@@ -130,13 +130,19 @@ describe("buildCalcJsonLd", () => {
 describe("タイトル・見出し・一行回答", () => {
   const len = (str: string) => [...str].length;
 
-  it("タイトルは「燃費計算」で始まり、` | FuelLens` を除いて 32 字以内", () => {
+  it("タイトルは「満タン法」で始まり「計算」を含み、` | FuelLens` を除いて 32 字以内", () => {
     const title = CALC_PAGE_TITLE.replace(/ \| FuelLens$/, "");
-    expect(title.startsWith("燃費計算")).toBe(true);
-    expect(title).toContain("満タン法");
+    expect(title.startsWith("満タン法")).toBe(true);
+    expect(title).toContain("計算");
     expect(len(title)).toBeLessThanOrEqual(32);
     expect(CALC_H1).toContain("燃費計算");
     expect(CALC_DESCRIPTION).toContain("登録不要・無料");
+  });
+
+  it("説明文の計算例は一行回答と同じ数字（calculateFuelMetrics の結果）", () => {
+    expect(CALC_DESCRIPTION.startsWith("満タン法")).toBe(true);
+    expect(CALC_DESCRIPTION).toContain("走行距離÷給油量");
+    expect(CALC_DESCRIPTION).toContain(`${CALC_EXAMPLE.distance}km÷${CALC_EXAMPLE.amount}Lなら${calcExample().efficiency}km/L`);
   });
 
   it("一行回答の燃費は calculateFuelMetrics の結果と一致する（手で書いた数字ではない）", () => {
