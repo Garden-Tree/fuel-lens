@@ -19,8 +19,10 @@ function fromBase64Url(value: string): Buffer {
 export function checkVapidConfig(config: { publicKey: string; privateKey: string; subject: string }): VapidProblem[] {
   const problems: VapidProblem[] = [];
   try {
-    const priv = fromBase64Url(config.privateKey);
-    if (priv.length !== 32) throw new Error("length");
+    const raw = fromBase64Url(config.privateKey);
+    // 先頭の 0 バイトが省かれた鍵（31 バイト以下）もあるので 32 バイトに左詰めでそろえる（極端に短いものは貼り間違いとみなす）
+    if (raw.length < 28 || raw.length > 32) throw new Error("length");
+    const priv = Buffer.concat([Buffer.alloc(32 - raw.length), raw]);
     const ecdh = createECDH("prime256v1");
     ecdh.setPrivateKey(priv);
     const derived = ecdh.getPublicKey();

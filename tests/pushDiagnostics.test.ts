@@ -14,6 +14,12 @@ function keyPair() {
 }
 
 describe("checkVapidConfig", () => {
+  it("鍵の組を何度作っても誤判定しない（先頭が 0 の秘密鍵を含む）", () => {
+    for (let i = 0; i < 2000; i++) {
+      expect(checkVapidConfig({ ...keyPair(), subject: "https://example.com" })).toEqual([]);
+    }
+  });
+
   it("対応する鍵と正しい subject なら問題なし", () => {
     expect(checkVapidConfig({ ...keyPair(), subject: "https://fuel-lens.gadelog.com" })).toEqual([]);
     expect(checkVapidConfig({ ...keyPair(), subject: "mailto:owner@example.com" })).toEqual([]);
