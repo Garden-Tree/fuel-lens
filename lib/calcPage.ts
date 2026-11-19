@@ -14,15 +14,12 @@ import { jsonLdString } from "./jsonLd";
 export const CALC_PATH = "/calc";
 /**
  * 検索結果のタイトル（ルートレイアウトの `%s | FuelLens` を使わず absolute で指定する）。
- * 検索語「燃費計算」「満タン法 計算」を先頭に置き、` | FuelLens` を除いて 32 字以内（tests/serpSnippet.test.ts）
+ * 「燃費計算」では /gas-cost に負けるため、表示が多く順位も近い「満タン法 計算」を先頭に置く。
+ * ` | FuelLens` を除いて 32 字以内（tests/serpSnippet.test.ts）
  */
-export const CALC_PAGE_TITLE = "燃費計算ツール｜満タン法で走行距離と給油量から燃費を計算 | FuelLens";
+export const CALC_PAGE_TITLE = "満タン法の燃費計算｜計算式と例・無料の計算ツール | FuelLens";
 /** ページの見出し（h1） */
 export const CALC_H1 = "燃費計算ツール（満タン法）";
-/** meta description。答え（何が出るか・入力は 2 つ）→ 登録不要・無料 → アプリでの記録の順 */
-export const CALC_DESCRIPTION =
-  "走行距離と給油量の2つを入れるだけで、満タン法の燃費（km/L）を計算。支払総額を足せば1kmあたりのガソリン代も出ます。登録不要・無料。結果はそのまま記録でき、次回からは写真1枚で自動記録。";
-
 /** 構造化データの url に使う本番の絶対 URL（canonical は metadataBase からの相対 `/calc`） */
 export const CALC_CANONICAL_URL = "https://fuel-lens.gadelog.com/calc";
 
@@ -134,6 +131,14 @@ export function calcExample(): { efficiency: string; pricePerUnit: string; costP
   });
   return { efficiency: r.efficiency!, pricePerUnit: r.pricePerUnit!, costPerKm: r.costPerKm! };
 }
+
+/**
+ * meta description。計算式 → 計算例（CALC_EXAMPLE と同じ数字）→ 入力と出るもの → 登録不要・無料 → 記録の順。
+ * 式と例を先頭 70 字に入れ、スニペットだけで答えが分かるようにする（tests/serpSnippet.test.ts）
+ */
+export const CALC_DESCRIPTION = `満タン法の燃費は「走行距離÷給油量」で計算。例: ${CALC_EXAMPLE.distance}km÷${CALC_EXAMPLE.amount}Lなら${
+  calcExample().efficiency
+}km/L。区間距離と給油量を入れるだけで計算でき、支払総額から1kmあたりのガソリン代も出ます。登録不要・無料。結果はそのまま記録できます。`;
 
 /** ページ冒頭の一行回答（計算式と計算例） */
 export function calcQuickAnswerText(): string {
