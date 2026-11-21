@@ -92,6 +92,16 @@ export function routeCarRows(route: RouteEntry): RouteCarRow[] {
   });
 }
 
+/**
+ * 車種別の表の下に置くアプリ（/app）への一文リンク（data-ga-cta="route_inline"）。
+ * ページ下の RouteCta と同じ言い回しにしない。lead のあとに link をリンクとして続ける
+ */
+export const ROUTE_INLINE_APP_LINK = {
+  href: "/app",
+  lead: "実際のガソリン代は自分の車の燃費で変わります。",
+  link: "レシートとトリップメーターの写真から実燃費を記録する（無料）",
+} as const;
+
 /** 人数で割る例の人数 */
 export const SPLIT_PEOPLE = [2, 3, 4] as const;
 /** 1 人あたりの切り上げの単位（割り勘の計算機の既定と同じ） */

@@ -5,6 +5,7 @@ import { NATIONAL_GAS_PRICE } from "@/lib/nationalGasPrice";
 import { WARIKAN_QUERY_KEYS, computeWarikan, parseWarikanQuery } from "@/lib/warikanPage";
 import { ROUTES, gasCostYen, routeFromTo, routePath, standardTotal, type RouteEntry } from "@/lib/routeGasCostPage";
 import {
+  ROUTE_INLINE_APP_LINK,
   buildRouteDetailJsonLd,
   findRoute,
   neighborRoutes,
@@ -232,5 +233,16 @@ describe("区間ごとの段落（所要時間・休日・深夜）と FAQ", () 
     expect(routeTollComparison(hakone).map((r) => r.label)).toEqual(["平日昼間", "休日", "深夜"]);
     expect(routeTollComparison(hakone)[1].note).toBe("ETC・土曜 10:20 出発");
     expect(routeTollComparison(findRoute("tokyo-kagoshima")!)[0].note).toBe("ETC・平日 6:00 出発");
+  });
+});
+
+describe("ROUTE_INLINE_APP_LINK", () => {
+  it("/app への短い一文で、ページ下の誘導枠と同じ書き出しにしない", () => {
+    expect(ROUTE_INLINE_APP_LINK.href).toBe("/app");
+    const sentence = ROUTE_INLINE_APP_LINK.lead + ROUTE_INLINE_APP_LINK.link;
+    expect(sentence.length).toBeGreaterThanOrEqual(40);
+    expect(sentence.length).toBeLessThanOrEqual(60);
+    expect(sentence).toContain("トリップメーター");
+    expect(sentence).not.toContain("表の燃費は一般的な目安です");
   });
 });
