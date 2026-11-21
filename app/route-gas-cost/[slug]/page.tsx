@@ -21,6 +21,7 @@ import {
   yen,
 } from "@/lib/routeGasCostPage";
 import {
+  ROUTE_INLINE_APP_LINK,
   SPLIT_ROUNDING_NOTE,
   buildRouteDetailJsonLd,
   findRoute,
@@ -222,6 +223,12 @@ export default async function RouteDetailPage({ params }: Props) {
                 </tbody>
               </table>
             </div>
+            <p className="mt-3 text-sm text-sub">
+              {ROUTE_INLINE_APP_LINK.lead}
+              <Link href={ROUTE_INLINE_APP_LINK.href} data-ga-cta="route_inline" className={LINK}>
+                {ROUTE_INLINE_APP_LINK.link}
+              </Link>
+            </p>
           </section>
 
           <section>

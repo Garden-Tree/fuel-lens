@@ -19,7 +19,8 @@ export type CtaPage = (typeof CTA_PAGES)[number];
  * calc_next = 燃費計算の結果の下の「次回からは写真 1 枚で自動記録」、
  * guide_top = 記録ガイド（/fuel-log・/fuel-log-excel）の冒頭のアプリへのリンク、
  * guide_inline = /fuel-log の「FuelLens で記録する」の節のアプリへのリンク、
- * excel_import = /fuel-log-excel の取り込み手順の「設定の「インポート」を開く」
+ * excel_import = /fuel-log-excel の取り込み手順の「設定の「インポート」を開く」、
+ * route_inline = 区間ページ（/route-gas-cost/[slug]）の車種別の表の下のアプリへの一文リンク
  */
 export const CTA_POSITIONS = [
   "hero",
@@ -31,6 +32,7 @@ export const CTA_POSITIONS = [
   "guide_top",
   "guide_inline",
   "excel_import",
+  "route_inline",
 ] as const;
 export type CtaPosition = (typeof CTA_POSITIONS)[number];
 
@@ -107,9 +109,13 @@ export function trackEvent<N extends AnalyticsEventName>(name: N, params: Analyt
   }
 }
 
+/** 区間ページ（/route-gas-cost/[slug]）は区間ごとに分けず /route-gas-cost にまとめる（page は列挙値だけにする） */
+const ROUTE_DETAIL_PREFIX = "/route-gas-cost/";
+
 /** クリックされた CTA の page / position。公開ページの既知の位置でなければ null（送らない） */
 export function ctaClickParamsOf(pathname: string, position: string | null | undefined): AnalyticsEvents["cta_click"] | null {
-  const page = (CTA_PAGES as readonly string[]).includes(pathname) ? (pathname as CtaPage) : null;
+  const path = pathname.startsWith(ROUTE_DETAIL_PREFIX) ? "/route-gas-cost" : pathname;
+  const page = (CTA_PAGES as readonly string[]).includes(path) ? (path as CtaPage) : null;
   const pos = position && (CTA_POSITIONS as readonly string[]).includes(position) ? (position as CtaPosition) : null;
   return page && pos ? { page, position: pos } : null;
 }

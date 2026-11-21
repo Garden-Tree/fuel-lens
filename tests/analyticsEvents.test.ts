@@ -82,6 +82,13 @@ describe("ctaClickParamsOf", () => {
     expect(ctaClickParamsOf("/fuel-log-excel", "excel_import")).toEqual({ page: "/fuel-log-excel", position: "excel_import" });
     expect(ctaClickParamsOf("/fuel-log-excel", "cta_box")).toEqual({ page: "/fuel-log-excel", position: "cta_box" });
   });
+
+  it("区間ページ（/route-gas-cost/[slug]）は /route-gas-cost にまとめる", () => {
+    expect(ctaClickParamsOf("/route-gas-cost/tokyo-osaka", "route_inline")).toEqual({ page: "/route-gas-cost", position: "route_inline" });
+    expect(ctaClickParamsOf("/route-gas-cost/tokyo-osaka", "cta_box")).toEqual({ page: "/route-gas-cost", position: "cta_box" });
+    expect(ctaClickParamsOf("/route-gas-cost", "cta_box")).toEqual({ page: "/route-gas-cost", position: "cta_box" });
+    expect(ctaClickParamsOf("/route-gas-costs", "cta_box")).toBeNull();
+  });
 });
 
 describe("gaMeasurementIdOf", () => {
