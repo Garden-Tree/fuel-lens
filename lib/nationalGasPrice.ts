@@ -5,11 +5,11 @@
  * スクリプトは `キー: 値,` の形の行を書き換えるので、この形とキー名を変えないこと。
  */
 export const NATIONAL_GAS_PRICE = {
-  regular: 169.9,
-  highOctane: 180.8,
-  diesel: 159.4,
-  surveyDate: "2026-11-09",
-  publishedDate: "2026-11-11",
+  regular: 170.0,
+  highOctane: 180.9,
+  diesel: 159.6,
+  surveyDate: "2026-11-16",
+  publishedDate: "2026-11-18",
   sourceName: "資源エネルギー庁「石油製品価格調査」",
   sourceUrl: "https://www.enecho.meti.go.jp/statistics/petroleum_and_lpgas/pl007/results.html",
 } as const;
