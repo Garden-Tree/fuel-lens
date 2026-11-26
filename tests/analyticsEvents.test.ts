@@ -85,6 +85,7 @@ describe("ctaClickParamsOf", () => {
 
   it("区間ページ（/route-gas-cost/[slug]）は /route-gas-cost にまとめる", () => {
     expect(ctaClickParamsOf("/route-gas-cost/tokyo-osaka", "route_inline")).toEqual({ page: "/route-gas-cost", position: "route_inline" });
+    expect(ctaClickParamsOf("/route-gas-cost/tokyo-osaka", "route_warikan")).toEqual({ page: "/route-gas-cost", position: "route_warikan" });
     expect(ctaClickParamsOf("/route-gas-cost/tokyo-osaka", "cta_box")).toEqual({ page: "/route-gas-cost", position: "cta_box" });
     expect(ctaClickParamsOf("/route-gas-cost", "cta_box")).toEqual({ page: "/route-gas-cost", position: "cta_box" });
     expect(ctaClickParamsOf("/route-gas-costs", "cta_box")).toBeNull();

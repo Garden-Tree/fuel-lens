@@ -33,6 +33,7 @@ export const CTA_POSITIONS = [
   "guide_inline",
   "excel_import",
   "route_inline",
+  "route_warikan",
 ] as const;
 export type CtaPosition = (typeof CTA_POSITIONS)[number];
 

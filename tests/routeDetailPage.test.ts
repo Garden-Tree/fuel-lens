@@ -6,6 +6,8 @@ import { WARIKAN_QUERY_KEYS, computeWarikan, parseWarikanQuery } from "@/lib/war
 import { ROUTES, gasCostYen, routeFromTo, routePath, standardTotal, type RouteEntry } from "@/lib/routeGasCostPage";
 import {
   ROUTE_INLINE_APP_LINK,
+  ROUTE_TITLE_MAX,
+  ROUTE_WARIKAN_LINK_TEXT,
   buildRouteDetailJsonLd,
   findRoute,
   neighborRoutes,
@@ -45,7 +47,9 @@ describe("区間ページの一覧", () => {
 
   it("タイトル・説明文・canonical", () => {
     const t0 = standardTotal(tokyoOsaka);
-    expect(routePageTitle(tokyoOsaka)).toBe(`東京〜大阪の車のガソリン代と高速代は片道約${yenRough(t0.totalOneWay!)}円 | FuelLens`);
+    expect(routePageTitle(tokyoOsaka)).toBe(
+      `東京〜大阪の高速代約${yenRough(tokyoOsaka.toll!.standard)}円・ガソリン代約${yenRough(t0.gasOneWay)}円 | FuelLens`,
+    );
     expect(routeCanonicalUrl(tokyoOsaka)).toBe("https://fuel-lens.gadelog.com/route-gas-cost/tokyo-osaka");
     for (const r of ROUTES) {
       const d = routePageDescription(r);
@@ -233,6 +237,25 @@ describe("区間ごとの段落（所要時間・休日・深夜）と FAQ", () 
     expect(routeTollComparison(hakone).map((r) => r.label)).toEqual(["平日昼間", "休日", "深夜"]);
     expect(routeTollComparison(hakone)[1].note).toBe("ETC・土曜 10:20 出発");
     expect(routeTollComparison(findRoute("tokyo-kagoshima")!)[0].note).toBe("ETC・平日 6:00 出発");
+  });
+});
+
+describe("routePageTitle の上限", () => {
+  it("どの区間も 32 字以内で、上限を超える区間だけ「約」を削る", () => {
+    for (const r of ROUTES) {
+      const body = routePageTitle(r).replace(/ \| FuelLens$/, "");
+      expect([...body].length, body).toBeLessThanOrEqual(ROUTE_TITLE_MAX);
+      if (r.toll != null) {
+        const full = `${r.name}の高速代約${yenRough(r.toll.standard)}円・ガソリン代約${yenRough(standardTotal(r).gasOneWay)}円`;
+        expect(body).toBe([...full].length <= ROUTE_TITLE_MAX ? full : full.replaceAll("約", ""));
+      }
+    }
+  });
+});
+
+describe("ROUTE_WARIKAN_LINK_TEXT", () => {
+  it("リンク先の検索語「ガソリン代の割り勘」を含む", () => {
+    expect(ROUTE_WARIKAN_LINK_TEXT).toContain("ガソリン代の割り勘");
   });
 });
 
