@@ -45,14 +45,25 @@ export function routeCanonicalUrl(route: RouteEntry): string {
   return `${SITE_ORIGIN}${routePath(route)}`;
 }
 
+/** タイトルの長さの上限（` | FuelLens` を除く）。tests/serpSnippet.test.ts と同じ、モバイルの検索結果で切れない長さ */
+export const ROUTE_TITLE_MAX = 32;
+
 /**
  * タイトル。モバイルの検索結果で切れない長さ（` | FuelLens` を除いて 32 字以内）に、区間名と片道の金額を先に出す。
- * 金額は説明文と同じ概数（普通車・ガソリン代 + 高速代。高速代が未確認ならガソリン代だけ）
+ * 「〇〇 高速代」で検索した人にも高速代がいくらか分かるよう、合計ではなく高速代（ETC・普通車）とガソリン代を分けて出す。
+ * 金額は片道・普通車（片道であることは説明文の先頭で示す）。上限を超える区間は「約」を削る。高速代が未確認ならガソリン代だけ
  */
 export function routePageTitle(route: RouteEntry): string {
   const t = standardTotal(route);
-  if (t.totalOneWay == null) return `${route.name}の車のガソリン代は片道約${yenRough(t.gasOneWay)}円 | FuelLens`;
-  return `${route.name}の車のガソリン代と高速代は片道約${yenRough(t.totalOneWay)}円 | FuelLens`;
+  if (route.toll == null) return `${route.name}の車のガソリン代は片道約${yenRough(t.gasOneWay)}円 | FuelLens`;
+  const toll = yenRough(route.toll.standard);
+  const gas = yenRough(t.gasOneWay);
+  const candidates = [
+    `${route.name}の高速代約${toll}円・ガソリン代約${gas}円`,
+    `${route.name}の高速代${toll}円・ガソリン代${gas}円`,
+  ];
+  const title = candidates.find((c) => c.length <= ROUTE_TITLE_MAX) ?? candidates[candidates.length - 1];
+  return `${title} | FuelLens`;
 }
 
 /**
@@ -131,6 +142,9 @@ export function routeSplits(route: RouteEntry): { people: number; perPerson: num
 }
 
 /** 割り勘の計算機へのリンク（普通車・往復・4 人の値を入れた状態） */
+/** 区間ページから割り勘の計算機へのリンクの文言。リンク先の主な検索語（ガソリン代の割り勘）をそのまま入れる */
+export const ROUTE_WARIKAN_LINK_TEXT = "ガソリン代の割り勘計算で、人数や運転手の分を変えて計算する";
+
 export function routeWarikanLink(route: RouteEntry, people: number = 4): string {
   return `${WARIKAN_PATH}?${buildWarikanQuery(routeWarikanInput(route, people))}#${WARIKAN_CALCULATOR_ID}`;
 }

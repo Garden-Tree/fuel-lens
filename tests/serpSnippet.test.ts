@@ -67,14 +67,21 @@ function publicPages(): Page[] {
 }
 
 describe("検索結果（モバイル）のタイトルと説明文", () => {
-  it("区間ページのタイトルは ` | FuelLens` を除いて 32 字以内で、区間名と片道の金額で始まる", () => {
+  it("区間ページのタイトルは ` | FuelLens` を除いて 32 字以内で、区間名と片道の高速代・ガソリン代で始まる", () => {
     for (const r of ROUTES) {
       const title = routePageTitle(r);
       expect(title.endsWith(" | FuelLens")).toBe(true);
       expect(len(withoutSuffix(title)), title).toBeLessThanOrEqual(TITLE_MAX);
-      expect(title.startsWith(`${r.name}の車のガソリン代`)).toBe(true);
-      const t = standardTotal(r);
-      expect(title).toContain(`片道約${yenRough(t.totalOneWay ?? t.gasOneWay)}円`);
+      const gas = yenRough(standardTotal(r).gasOneWay);
+      if (r.toll == null) {
+        expect(title.startsWith(`${r.name}の車のガソリン代`)).toBe(true);
+        expect(title).toContain(`片道約${gas}円`);
+      } else {
+        expect(title.startsWith(`${r.name}の高速代`), title).toBe(true);
+        expect(title).toContain(`${yenRough(r.toll.standard)}円`);
+        expect(title).toContain(`ガソリン代`);
+        expect(title).toContain(`${gas}円`);
+      }
     }
   });
 

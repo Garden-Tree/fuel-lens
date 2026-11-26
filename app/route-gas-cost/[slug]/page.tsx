@@ -32,6 +32,7 @@ import {
   routeInsights,
   routePageDescription,
   routeReverseNote,
+  ROUTE_WARIKAN_LINK_TEXT,
   routePageTitle,
   routeSplits,
   routeStaticParams,
@@ -245,9 +246,13 @@ export default async function RouteDetailPage({ params }: Props) {
                 </li>
               ))}
             </ul>
-            <p className="mt-3 text-sm">
-              <a href={routeWarikanLink(route)} className={LINK}>
-                割り勘の計算機で人数や運転手の分を変える
+            <p className="mt-3">
+              <a
+                href={routeWarikanLink(route)}
+                data-ga-cta="route_warikan"
+                className="block rounded-xl border border-accent/40 px-4 py-3 text-center text-sm font-bold text-accent hover:bg-surface"
+              >
+                {ROUTE_WARIKAN_LINK_TEXT}
               </a>
             </p>
           </section>
